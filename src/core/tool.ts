@@ -2,7 +2,7 @@ import { z } from "zod";
 import { IContext, IMemoryManager, IContextManager, ToolCallResult, ToolCallParams, ToolCallDefinition } from "./interfaces";
 import { render } from "./utils";
 import { ToolCallDefinitionSchema, ToolCallParamsSchema, ToolCallResultSchema } from "./interfaces";
-import { createContext } from "./utils";
+import { ContextHelper } from "./utils";
 
 const ToolAsyncCallContextDataSchema = z.object({
     toolDefinitions: z.array(ToolCallDefinitionSchema).describe("the tool defition list. ToolDefinitiondefine the tool name,desctiption,input param and the output result"),
@@ -22,11 +22,10 @@ const ToolMemorySchema = z.object({
 
 export const ToolCallContextId = "tool-call-context";
 export const ToolCallContext = Object.assign(
-    createContext({
+    ContextHelper.createContext({
         id: ToolCallContextId,
         description: "ToolCallContext stores the context for tool calls and results",
         dataSchema: ToolAsyncCallContextDataSchema,
-        memorySchema: ToolMemorySchema,
         initialData: {
             toolDefinitions: [],
             toolCalls: [],
@@ -58,15 +57,15 @@ export const ToolCallContext = Object.assign(
         toolListFn: () => []
     }),
     {
-        setToolDefinitions(this: IContext<typeof ToolAsyncCallContextDataSchema, typeof ToolMemorySchema>, toolDefinitions: ToolCallDefinition[]): void {
+        setToolDefinitions(this: IContext<typeof ToolAsyncCallContextDataSchema>, toolDefinitions: ToolCallDefinition[]): void {
             (this.data as z.infer<typeof ToolAsyncCallContextDataSchema>).toolDefinitions = toolDefinitions;
         },
         
-        setToolCalls(this: IContext<typeof ToolAsyncCallContextDataSchema, typeof ToolMemorySchema>, toolCalls: ToolCallParams[]): void {
+        setToolCalls(this: IContext<typeof ToolAsyncCallContextDataSchema>, toolCalls: ToolCallParams[]): void {
             (this.data as z.infer<typeof ToolAsyncCallContextDataSchema>).toolCalls = toolCalls;
         },
         
-        setToolCallResult(this: IContext<typeof ToolAsyncCallContextDataSchema, typeof ToolMemorySchema>, toolCallId: string, result: ToolCallResult): void {
+        setToolCallResult(this: IContext<typeof ToolAsyncCallContextDataSchema>, toolCallId: string, result: ToolCallResult): void {
             const data = this.data as z.infer<typeof ToolAsyncCallContextDataSchema>;
             const toolCall = data.toolCalls.find((tc: ToolCallParams) => tc.call_id === toolCallId);
             if (!toolCall) {

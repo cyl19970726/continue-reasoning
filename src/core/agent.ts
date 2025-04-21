@@ -3,12 +3,13 @@ import { SystemToolNames } from "./tools/index";
 import { ITaskQueue, ITask, TaskQueue } from "./taskQueue";
 import { ToolCallContext, ToolCallContextId } from "./tool";
 import { SystemToolContext } from "./tools/system";
-import { BasicToolContext } from "./tools/basic";
+import { ExecuteToolsContext } from "./tools/execute";
 import { z } from "zod";
 import { cliClientId, ClientContext,cliResponseToolName } from "./client";
 import { Message } from "./interfaces";
 import dotenv from "dotenv";
 import { time } from "console";
+import { PlanContext } from "./tools/plan";
 
 dotenv.config();
 
@@ -47,7 +48,8 @@ export class BaseAgent implements IAgent {
         this.contextManager.registerContext(ClientContext);
         this.contextManager.registerContext(ToolCallContext);
         this.contextManager.registerContext(SystemToolContext);
-        // this.contextManager.registerContext(BasicToolContext);
+        this.contextManager.registerContext(ExecuteToolsContext);
+        this.contextManager.registerContext(PlanContext);
 
         this.contextManager.contexts.forEach((context) => {
             if (context && context.toolList) {
@@ -186,7 +188,7 @@ export class BaseAgent implements IAgent {
         }
 
         clientContext.data.incomingMessages = incomingMessages;
-        await this.start(10);
+        await this.start(100);
     }
 }
 

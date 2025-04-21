@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { BasicToolNames, SystemToolNames } from "./index";
-import { createContext, createTool } from "../utils";
+import { ContextHelper, createTool } from "../utils";
 import { exec } from "child_process";
 import { promisify } from "util";
 
@@ -8,9 +8,8 @@ const BashToolInputSchema = z.object({
     command: z.string().describe("The bash command to execute"),
     workingDirectory: z
       .string()
-      .optional()
       .describe("Working directory for command execution"),
-    timeout: z.number().optional().describe("Timeout in milliseconds (default: 90000)"),
+    // timeout: z.number().optional().describe("Timeout in milliseconds (default: 90000)"),
   });
 
 const BashToolOutputSchema = z.object({
@@ -32,7 +31,8 @@ export const bashTool = createTool({
     async: false,
     execute: async (params, agent) => {
         try {
-            const { command, workingDirectory, timeout = 90000 } = params;
+            const { command, workingDirectory} = params;
+            const timeout = 90000;
       
             console.log(`Executing bash command: ${command}`);
       
@@ -52,9 +52,9 @@ export const bashTool = createTool({
       
             if (agent) {
                 // Find the context first
-                const context = agent.contextManager.findContextById(BasicToolContextId);
+                const context = agent.contextManager.findContextById(ExecuteToolsContextId);
                 // Check context, saveMemory, and getContainerId exist
-                if (context && context.saveMemory && context.getContainerId) {
+                if (context ) {
                     // Get current data first
                     const currentData = context.getData();
                     const currentRecords = currentData?.runBash?.execRecords ?? [];
@@ -77,7 +77,7 @@ export const bashTool = createTool({
                     });
 
                 } else {
-                     console.warn(`Could not find BasicToolContext (${BasicToolContextId}) or it lacks saveMemory/getContainerId.`);
+                     console.warn(`Could not find ExecuteToolsContext (${ExecuteToolsContextId}) or it lacks saveMemory/getContainerId.`);
                 }
             }
             return {
@@ -103,7 +103,7 @@ export const bashTool = createTool({
 
 
 // Define the data schema separately
-const BasicToolsContextDataSchema = z.object({
+const ExecuteToolsContextDataSchema = z.object({
     runBash: z.object({
         RootWorkingDirectory: z.string().describe("Working directory for command execution"),
         execRecords: z.array(BashToolOutputSchema).describe("The records of the bash command execution"),
@@ -111,7 +111,7 @@ const BasicToolsContextDataSchema = z.object({
 });
 
 // Define the memory schema separately
-const BasicToolsContextMemorySchema = z.object({
+const ExecuteToolsContextMemorySchema = z.object({
     success: z.boolean(),
     error: z.string().optional(),
     stdout: z.string(),
@@ -119,20 +119,19 @@ const BasicToolsContextMemorySchema = z.object({
     command: z.string(),
 });
 
-export const BasicToolContextId = "BasicToolContext";
+export const ExecuteToolsContextId = "ExecuteToolsContext";
 // Now create the context using the defined schemas
-export const BasicToolContext = createContext({
-    id: BasicToolContextId,
+export const ExecuteToolsContext = ContextHelper.createContext({
+    id: ExecuteToolsContextId,
     description: `Provides context and history for basic tools like bash execution.`,
-    dataSchema: BasicToolsContextDataSchema,
-    memorySchema: BasicToolsContextMemorySchema,
+    dataSchema: ExecuteToolsContextDataSchema,
     initialData:{
         runBash:{
             RootWorkingDirectory: process.cwd(),
             execRecords: [],
         }
     },
-    renderPromptFn: (data: z.infer<typeof BasicToolsContextDataSchema>) => {
+    renderPromptFn: (data: z.infer<typeof ExecuteToolsContextDataSchema>) => {
         // Determine the history string, showing most recent first
         const history = data.runBash.execRecords.length === 0
             ? "  - No bash commands executed yet in this session."
@@ -146,7 +145,7 @@ export const BasicToolContext = createContext({
         // Construct the prompt
         return `
         ------ Bash Command Context (${BasicToolNames.runBash}) ------
-        Current Working Directory: ${data.runBash.RootWorkingDirectory}
+        Current Working Directory: ${data.runBash.RootWorkingDirectory}, you should use this directory when executing the bash command
         *   Use the \`${BasicToolNames.runBash}\` tool to execute shell commands.
         *   Ensure any files created or manipulated are relative to the working directory unless a full path is required.
 

@@ -6,7 +6,7 @@ import { render } from "./utils";
 
 export interface IContextManager{
     contexts: AnyContext[];
-    registerContext<T extends z.ZodObject<any>,M extends z.ZodObject<any>>(context: IContext<T,M>): void;
+    registerContext<T extends z.ZodObject<any>>(context: IContext<T>): void;
     findContextById: (id: string) => AnyContext;
     renderPrompt: () => string;
     contexList: () => AnyContext[];
@@ -18,31 +18,20 @@ export interface IContextManager{
 // 同时需要 有一个 loadMemory Tool 来告知哪部分冷数据可以通过什么方法拿出来
 
 // 多个计划放在一个 PlanContext里，那么需要在 PlanContext 里维护一个 PlanMemoryList 来追踪多个计划
-export interface IContext<T extends z.ZodObject<any>, M extends z.ZodObject<any>>{
-    // this the unique id of the context
+export interface IContext<T extends z.ZodObject<any>>{
     id: string;
-    // this the description of the context
     description: string;
-    // this the schema of the context
     dataSchema: T;
-    // this the schema of the memorydata
-    memorySchema: M;
-    // the actual data stored in the context
     data: z.infer<T>;
 
     setData(data: Partial<z.infer<T>>): void;
     getData(): z.infer<T>;
 
-    getContainerId?(): string;
-    saveMemory?(memoryManager: IMemoryManager, data: z.infer<M>, containerId: string): string;
-    loadMemory?(memoryManager: IMemoryManager, memoryId: string, containerId: string): z.infer<M>;
-    deleteMemory?(memoryManager: IMemoryManager, memoryId: string, containerId: string): void;
-
     toolList: () => ITool<any,any,any>[];
     
     renderPrompt: () => string;
 }
-type AnyContext = IContext<any,any>;
+type AnyContext = IContext<any>;
 
 
 export interface Container<T> {
@@ -67,6 +56,7 @@ export interface IMemoryManager{
     getContainer<T>(id: string): Container<T>;
     listContainer(): Container<any>[];
     deleteContainer(id: string): void;
+    // return the memoryId which used to mark the memoryData
     saveMemory<T>(memory: MemoryData<T>, containerId: string): string;
     loadMemory<T>(id: string, containerId: string): MemoryData<T>;
     deleteMemory(id: string, containerId: string): void;

@@ -57,33 +57,34 @@ export class MapMemoryManager implements IMemoryManager {
         if (!storage) {
             throw new Error(`Container with id ${containerId} not found`);
         }
-        storage.set(memory.id, memory);
-        return memory.id;
+        const memoryId = randomUUID();
+        storage.set(memoryId, memory);
+        return memoryId;
     }
 
-    loadMemory<T>(id: string, containerId: string): MemoryData<T> {
+    loadMemory<T>(memoryId: string, containerId: string): MemoryData<T> {
         const storage = this.containerStorage.get(containerId);
         if (!storage) {
             throw new Error(`Container with id ${containerId} not found`);
         }
         
-        const memory = storage.get(id);
+        const memory = storage.get(memoryId);
         if (!memory) {
-            throw new Error(`Memory with id ${id} not found in container ${containerId}`);
+            throw new Error(`Memory with id ${memoryId} not found in container ${containerId}`);
         }
         return memory as MemoryData<T>;
     }
 
-    deleteMemory(id: string, containerId: string): void {
+    deleteMemory(memoryId: string, containerId: string): void {
         const storage = this.containerStorage.get(containerId);
         if (!storage) {
             throw new Error(`Container with id ${containerId} not found`);
         }
         
-        if (!storage.has(id)) {
-            throw new Error(`Memory with id ${id} not found in container ${containerId}`);
+        if (!storage.has(memoryId)) {
+            throw new Error(`Memory with id ${memoryId} not found in container ${containerId}`);
         }
-        storage.delete(id);
+        storage.delete(memoryId);
     }
 
     renderPrompt(): string {

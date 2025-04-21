@@ -6,7 +6,7 @@ export class ContextManager implements IContextManager {
     name: string;
     description: string;
     data: any;
-    contexts: IContext<any, any>[];
+    contexts: IContext<any>[];
 
     constructor(id: string, name: string, description: string, data: any) {
         this.id = id;
@@ -16,12 +16,12 @@ export class ContextManager implements IContextManager {
         this.contexts = [];
     }
 
-    registerContext<T extends z.ZodObject<any>, M extends z.ZodObject<any>>(context: IContext<T, M>): void {
+    registerContext<T extends z.ZodObject<any>>(context: IContext<T>): void {
         this.contexts.push(context);
     }
     
-    findContextById(id: string): IContext<any, any> {
-        return this.contexts.find((context) => context.id === id) as IContext<any, any>;
+    findContextById(id: string): IContext<any> {
+        return this.contexts.find((context) => context.id === id) as IContext<any>;
     }
 
     renderPrompt(): string {
@@ -30,7 +30,7 @@ export class ContextManager implements IContextManager {
         `;
     }
 
-    contexList(): IContext<any, any>[] {
+    contexList(): IContext<any>[] {
         return this.contexts;
     }
 }

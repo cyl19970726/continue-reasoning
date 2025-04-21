@@ -5,6 +5,8 @@ import { MapMemoryManager } from "./memory/baseMemory";
 import { z } from "zod";
 import { OpenAIWrapper } from "./models/openai";
 import { LLMModel, AnyTool } from "./interfaces";
+
+
 const contextManager = new ContextManager("1", "test", "test", z.object({}));
 const memoryManager = new MapMemoryManager("1", "test", "test");
 

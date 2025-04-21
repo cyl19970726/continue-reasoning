@@ -1,10 +1,9 @@
 // import { CliClient } from "./client/cli";
 import { MessageSchema, Message, IAgent, IClient, IContext, ITool, ToolCallDefinitionSchema, ClientSendFnType } from "./interfaces";
 import { z } from "zod";
-import { createContext, render } from "./utils";
 import readline from "readline";
 import { IMemoryManager } from "./interfaces";
-import { createTool, ContextHelper } from './utils';
+import { createTool, ContextHelper,render } from './utils';
 
 // 先声明工具名称常量
 export const cliResponseToolId = "cli-response-tool";
@@ -29,11 +28,10 @@ const ClientMemorySchema = z.object({
     metadata: z.record(z.unknown()).optional()
 });
 
-export const ClientContext = createContext({
+export const ClientContext = ContextHelper.createContext({
     id: ClientContextId,
     description: "CliClientContext uses to store the cli client context",
     dataSchema: ClientContextDataSchema,
-    memorySchema: ClientMemorySchema,
     initialData: {
         clientId: "cli-client",
         userId: "admin01",
@@ -157,7 +155,7 @@ export class CliClient implements IClient<typeof cliResponseToolInputSchema, typ
     output: {
         paramsSchema: typeof cliResponseToolOutputSchema;
         responseTool?: ITool<typeof cliResponseToolInputSchema, typeof cliResponseToolOutputSchema, IAgent>;
-        dealResponseResult?: (response: z.infer<typeof cliResponseToolOutputSchema>, context: IContext<any, any>) => void;
+        dealResponseResult?: (response: z.infer<typeof cliResponseToolOutputSchema>, context: IContext<any>) => void;
     };
 
     constructor() {

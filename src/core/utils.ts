@@ -56,17 +56,6 @@ export function formatValue(value: any): string {
     return value.trim();
   }
 
-// Helper to map Zod types to JSON schema types
-function zodToJsonSchemaType(zodType: z.ZodTypeAny): string {
-    if (zodType instanceof z.ZodString) return 'string';
-    if (zodType instanceof z.ZodNumber) return 'number';
-    if (zodType instanceof z.ZodBoolean) return 'boolean';
-    if (zodType instanceof z.ZodObject) return 'object';
-    if (zodType instanceof z.ZodArray) return 'array';
-    // Add more mappings as needed (e.g., ZodDate -> string with format)
-    return 'any'; // Fallback
-}
-
 /**
  * 简化工具创建的工厂函数
  * @param options 工具配置选项
@@ -74,20 +63,33 @@ function zodToJsonSchemaType(zodType: z.ZodTypeAny): string {
  */
 export function createTool<
   InputSchema extends z.ZodObject<any>,
-  OutputSchema extends z.ZodObject<any>
+  // Keep constraint ZodObject, but make optional later
+  OutputSchema extends z.ZodObject<any> = z.ZodObject<any> // Provide a default empty object schema type
 >(options: {
   id?: string;
   name: string;
   description: string;
   inputSchema: InputSchema;
-  outputSchema: OutputSchema;
+  outputSchema?: OutputSchema; // Still optional in options
   async: boolean;
   execute: (
     params: z.infer<InputSchema>,
     agent?: IAgent
-  ) => Promise<z.infer<OutputSchema>> | z.infer<OutputSchema>;
+    // Return type should correctly infer based on provided/defaulted schema
+  ) => Promise<z.infer<OutputSchema>> | z.infer<OutputSchema>; 
 }): ITool<InputSchema, OutputSchema, IAgent> {
-  const { id = `tool-${randomUUID()}`, name, description, inputSchema, outputSchema, async, execute } = options;
+  // Default outputSchema to an empty object schema if not provided
+  const { 
+    id = `tool-${randomUUID()}`, 
+    name, 
+    description, 
+    inputSchema, 
+    // Default to an empty object schema instance. 
+    // Casting needed because TS can't perfectly infer the default satisfies the generic here.
+    outputSchema = z.object({}) as OutputSchema, 
+    async, 
+    execute 
+  } = options;
 
   return {
     id,
@@ -97,47 +99,16 @@ export function createTool<
     params: inputSchema,
     async,
     execute,
-    toCallParams: () => {
-        // Generate JSON Schema for parameters
-        const properties: Record<string, { type: string; description?: string }> = {};
-        const required: string[] = [];
-
-        for (const key in inputSchema.shape) {
-            const fieldSchema = inputSchema.shape[key];
-            // Check if the field is optional
-            const isOptional = fieldSchema instanceof z.ZodOptional || fieldSchema._def.typeName === 'ZodOptional';
-            const underlyingType = isOptional ? (fieldSchema as z.ZodOptional<any>)._def.innerType : fieldSchema;
-
-            properties[key] = {
-                type: zodToJsonSchemaType(underlyingType),
-                description: underlyingType.description || undefined // Use Zod description
-            };
-
-            if (!isOptional) {
-                required.push(key);
-            }
-        }
-
-        // Return the structure expected by the modified ToolCallDefinitionSchema
-        return {
-            type: "function",
-            function: { 
-                name,
-                description,
-                parameters: {
-                    type: 'object',
-                    properties,
-                    // Only include 'required' if it's not empty
-                    ...(required.length > 0 && { required })
-                }
-            },
-            async,
-            // Include other fields from ToolCallDefinitionSchema if needed
-            strict: true, 
-            resultSchema: outputSchema,
-            resultDescription: `Result from ${name} tool`
-        };
-    }
+    toCallParams: () => ({
+      type: "function",
+      name,
+      description,
+      paramSchema: inputSchema,
+      async,
+      strict: true, 
+      resultSchema: outputSchema, // Use the (potentially defaulted) outputSchema
+      resultDescription: `Result from ${name} tool`
+    })
   };
 }
 
@@ -148,22 +119,22 @@ export const ContextHelper = {
   /**
    * 根据ID查找Context
    */
-  findContext<T extends z.ZodObject<any>, M extends z.ZodObject<any>>(
+  findContext<T extends z.ZodObject<any>>(
     agent: IAgent,
     contextId: string
-  ): IContext<T, M> {
+  ): IContext<T> {
     const context = agent.contextManager.findContextById(contextId);
     if (!context) {
       throw new Error(`Context with ID ${contextId} not found`);
     }
-    return context as IContext<T, M>;
+    return context as IContext<T>;
   },
 
   /**
    * 更新Context数据
    */
-  updateContextData<T extends z.ZodObject<any>, M extends z.ZodObject<any>>(
-    context: IContext<T, M>,
+  updateContextData<T extends z.ZodObject<any>>(
+    context: IContext<T>,
     data: Partial<z.infer<T>>
   ): void {
     if (context.setData) {
@@ -174,151 +145,59 @@ export const ContextHelper = {
   },
 
   /**
-   * 保存数据到内存
+   * 创建基本上下文的辅助函数
    */
-  saveToMemory<T extends z.ZodObject<any>, M extends z.ZodObject<any>>(
-    agent: IAgent,
-    context: IContext<T, M>,
-    data: z.infer<M>
-  ): string {
-    if (context.saveMemory && context.getContainerId) {
-      const containerId = context.getContainerId();
-      if (!containerId) {
-        throw new Error(`Context ${context.id} did not provide a containerId for saveMemory`);
-      }
-      return context.saveMemory(agent.memoryManager, data, containerId);
-    }
-    throw new Error(`Context ${context.id} does not support memory operations or getting containerId`);
-  },
-
-  /**
-   * 从内存加载数据
-   */
-  loadFromMemory<T extends z.ZodObject<any>, M extends z.ZodObject<any>>(
-    agent: IAgent,
-    context: IContext<T, M>,
-    memoryId: string
-  ): z.infer<M> {
-    if (context.loadMemory && context.getContainerId) {
-        const containerId = context.getContainerId();
-        if (!containerId) {
-          throw new Error(`Context ${context.id} did not provide a containerId for loadMemory`);
+  createContext<T extends z.ZodObject<any>>(options: {
+    id: string;
+    description: string;
+    dataSchema: T;
+    initialData?: Partial<z.infer<T>>;
+    renderPromptFn?: (data: z.infer<T>) => string;
+    toolListFn: () => ITool<any,any,any>[];
+  }): IContext<T> {
+    const { id, description, dataSchema, initialData = {}, renderPromptFn, toolListFn } = options;
+    
+    const context: IContext<T> = {
+      id,
+      description,
+      dataSchema,
+      
+      data: dataSchema.parse(initialData) as z.infer<T>,
+      
+      setData(data: Partial<z.infer<T>>): void {
+        try {
+          const mergedData = {
+            ...this.data,
+            ...data
+          };
+          this.data = this.dataSchema.parse(mergedData);
+        } catch (error) {
+          if (error instanceof z.ZodError) {
+            console.error(`Invalid data for context ${this.id}:`, error.errors);
+          }
+          throw error;
         }
-        return context.loadMemory(agent.memoryManager, memoryId, containerId);
-    }
-    throw new Error(`Context ${context.id} does not support memory operations or getting containerId`);
+      },
+      
+      getData(): z.infer<T> {
+        return this.data;
+      },
+      
+      renderPrompt(): string {
+        if (renderPromptFn) {
+          return renderPromptFn(this.data);
+        }
+        return `
+          --- Context-${this.id} ---
+          ${JSON.stringify(this.data, null, 2)}
+        `;
+      },
+
+      toolList(): ITool<any,any,any>[] {
+        return toolListFn();
+      }
+    };
+    
+    return context;
   }
 };
-
-/**
- * 创建基本上下文的辅助函数
- */
-export function createContext<T extends z.ZodObject<any>, M extends z.ZodObject<any>>(options: {
-  id: string;
-  description: string;
-  dataSchema: T;
-  memorySchema: M;
-  initialData?: Partial<z.infer<T>>;
-  saveMemoryFn?: (memoryManager: IMemoryManager, data: z.infer<M>, containerId: string) => string;
-  loadMemoryFn?: (memoryManager: IMemoryManager, memoryId: string, containerId: string) => z.infer<M>;
-  deleteMemoryFn?: (memoryManager: IMemoryManager, memoryId: string, containerId: string) => void;
-  renderPromptFn?: (data: z.infer<T>) => string;
-  getContainerIdFn?: () => string;
-  toolListFn: () => ITool<any,any,any>[];
-}): IContext<T, M> {
-  const { id, description, dataSchema, memorySchema, initialData = {}, renderPromptFn, saveMemoryFn, loadMemoryFn, deleteMemoryFn, getContainerIdFn, toolListFn } = options;
-  
-  const context: IContext<T, M> = {
-    id,
-    description,
-    dataSchema,
-    memorySchema,
-    
-    data: dataSchema.parse(initialData) as z.infer<T>,
-    
-    setData(data: Partial<z.infer<T>>): void {
-      try {
-        const mergedData = {
-          ...this.data,
-          ...data
-        };
-        this.data = this.dataSchema.parse(mergedData);
-      } catch (error) {
-        if (error instanceof z.ZodError) {
-          console.error(`Invalid data for context ${this.id}:`, error.errors);
-        }
-        throw error;
-      }
-    },
-    
-    getData(): z.infer<T> {
-      return this.data;
-    },
-    
-    getContainerId(): string {
-      if (getContainerIdFn) {
-        return getContainerIdFn();
-      }
-      return "";
-    },
-
-    saveMemory(memoryManager: IMemoryManager, data: z.infer<M>): string {
-      const containerId = this.getContainerId!();
-      if (!containerId) {
-         console.warn(`Context ${this.id}: Cannot save memory without a containerId.`);
-         return '';
-      }
-      if (saveMemoryFn) {
-        return saveMemoryFn(memoryManager, data, containerId);
-      } else {
-        return memoryManager.saveMemory({
-          id: `${this.id}-memory-${Date.now()}`,
-          description: `Memory for context ${this.id}`,
-          data
-        }, containerId);
-      }
-    },
-    
-    loadMemory(memoryManager: IMemoryManager, memoryId: string): z.infer<M> {
-      const containerId = this.getContainerId!();
-      if (!containerId) {
-         console.warn(`Context ${this.id}: Cannot load memory without a containerId.`);
-         throw new Error(`Context ${this.id}: Cannot load memory without a containerId.`);
-      }
-      if (loadMemoryFn) {
-        return loadMemoryFn(memoryManager, memoryId, containerId);
-      } else {
-        return memoryManager.loadMemory<z.infer<M>>(memoryId, containerId).data;
-      }
-    },
-    
-    deleteMemory(memoryManager: IMemoryManager, memoryId: string): void {
-      const containerId = this.getContainerId!();
-       if (!containerId) {
-         console.warn(`Context ${this.id}: Cannot delete memory without a containerId.`);
-         return;
-      }
-      if (deleteMemoryFn) {
-        deleteMemoryFn(memoryManager, memoryId, containerId);
-      } else {
-        memoryManager.deleteMemory(memoryId, containerId);
-      }
-    },
-    
-    renderPrompt(): string {
-      if (renderPromptFn) {
-        return renderPromptFn(this.data);
-      }
-      return `
-        --- Context-${this.id} ---
-        ${JSON.stringify(this.data, null, 2)}
-      `;
-    },
-
-    toolList(): ITool<any,any,any>[] {
-      return toolListFn();
-    }
-  };
-  
-  return context;
-}
