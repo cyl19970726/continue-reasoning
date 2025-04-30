@@ -9,24 +9,24 @@ import { IAgent } from '../interfaces'; // Adjust path
 import {
     MCPContextId,
     MCPContext,
-    AddMCPClientTool,
-    AddMCPClientToolInputSchema,
+    AddSseOrHttpMcpServer,
+    AddSseOrHttpMcpServerInputSchema,
+    AddStdioMcpServer,
+    AddStdioMcpServerInputSchema,
     ListToolsTool,
     ListToolsToolInputSchema,
-    MCPCallTool,
-    MCPCallToolInputSchema,
     ListPromptsTool,
     ListPromptsInputSchema,
     McpPromptSchema ,
-    GetPromptTool,
-    GetPromptInputSchema,
     ListResourcesTool,
     ListResourcesInputSchema,
     ResourceDetailSchema,
     ReadResourceTool,
-    ReadResourceInputSchema
+    ReadResourceInputSchema,
+    getServerIdTools
 } from '../tools/mcp'; // Adjust path
 import { ContextManager } from '../context';
+import { jsonToZod } from '../utils/jsonHelper';
 
 // --- Test Setup ---
 
@@ -45,7 +45,6 @@ const startServer = (): Promise<void> => {
         // Previous attempts:
         // serverProcess = spawn('node', ['--loader', 'ts-node/esm', serverScriptPath], { shell: false }); 
         // serverProcess = spawn('npx', ['ts-node', serverScriptPath], { shell: false }); 
-
         let output = '';
         const onData = (data: Buffer) => {
             const message = data.toString();
@@ -91,6 +90,7 @@ const startServer = (): Promise<void> => {
     });
 };
 
+
 // Start server before all tests
 beforeAll(async () => {
     try {
@@ -127,53 +127,119 @@ describe('MCP Tools Integration Tests', () => {
 
     // Reset MCP Context before each test in this suite
     beforeEach(() => {
-        // Reset context data using the .data property
+        // Reset context data
         MCPContext.data.clients = []; 
-        clientId = undefined; // Reset stored client ID
+        clientId = undefined;
+        
+        // 确保 mockAgent 有一个完整的初始化
+        mockAgent.tool = []; // <-- 添加这行，初始化 tool 数组
+        mockAgent.id = "test-agent"; // <-- 添加 ID，registerMcpToolsForClient 可能会用到
         mockAgent.contextManager = new ContextManager("test-context-manager", "Test Context Manager", "Test Context Manager", {});
         mockAgent.contextManager.registerContext(MCPContext);
     });
 
-     // Helper to add a client for tests that need one
-     const ensureClientConnected = async () => {
-        if (clientId !== undefined) return clientId; // Already connected
-        const params: z.infer<typeof AddMCPClientToolInputSchema> = { type: 'sse', url: serverUrl };
-        const result = await AddMCPClientTool.execute(params, mockAgent);
-        console.log("AddMCPClientTool result:", result);
-        expect(result.success).toBe(true);
-        expect(result.clientId).toBeDefined();
-        clientId = result.clientId;
-        return clientId;
+    // 确保客户端已连接的辅助函数
+    const ensureClientConnected = async () => {
+      if (clientId !== undefined) return;
+      
+      const params = { type: 'sse', url: serverUrl } as z.infer<typeof AddSseOrHttpMcpServerInputSchema>;
+      const result = await AddSseOrHttpMcpServer.execute(params, mockAgent);
+      
+      if (result.success && result.serverId !== undefined) {
+        clientId = result.serverId;
+        console.log(`Connected to client with ID: ${clientId}`);
+      } else {
+        throw new Error(`Failed to connect client: ${result.error}`);
+      }
     };
 
+    describe('AddSseOrHttpMcpServer', () => {
+    
+      it('should fail if URL is missing for SSE', async () => {
+        const params = { type: 'sse'} as z.infer<typeof AddSseOrHttpMcpServerInputSchema>; // Missing URL
+        const result = await AddSseOrHttpMcpServer.execute(params, mockAgent);
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("URL");
+        expect(MCPContext.data.clients).toHaveLength(0);
+      });
 
-    // --- AddMCPClientTool Tests ---
-    describe('AddMCPClientTool', () => {
-        it('should connect and add an SSE client', async () => {
-            const params: z.infer<typeof AddMCPClientToolInputSchema> = { type: 'sse', url: serverUrl };
-            const result = await AddMCPClientTool.execute(params, mockAgent);
+      it('should register MCP tools to agent after connection', async () => {
+        // 初始情况下没有工具
+        mockAgent.tool = [];
+        const params: z.infer<typeof AddSseOrHttpMcpServerInputSchema> = { type: 'sse', url: serverUrl };
+        
+        const result = await AddSseOrHttpMcpServer.execute(params, mockAgent);
+        expect(result.success).toBe(true);
+        expect(result.serverId).toBe(0);
+        
+        // 验证工具已被注册到 agent
+        const toolsForServer = getServerIdTools(mockAgent, 0);
+        console.log("toolsForServer:", toolsForServer);
+        expect(toolsForServer.length).toBeGreaterThan(0);
+        
+        // 验证工具名称格式
+        const toolIds = toolsForServer.map(t => t.id);
+        expect(toolIds.some(id => id?.startsWith('mcp_0_'))).toBe(true);
+        
+        // 验证 client 对象上保存了工具ID列表
+        const client = MCPContext.data.clients[0] as any; // 使用 any 类型断言
+        expect(client._mcpToolIds).toBeDefined();
+        expect(client._mcpToolIds.length).toBeGreaterThan(0);
+        expect(client._mcpToolIds).toEqual(toolIds);
+      });
+    });
 
-            expect(result.success).toBe(true);
-            expect(result.clientId).toBe(0);
-            expect(result.error).toBeUndefined();
-            expect(MCPContext.data.clients).toHaveLength(1);
-            expect(MCPContext.data.clients[0]).toBeInstanceOf(Client);
-        });
+    describe('AddStdioMcpServer', () => {
+      it('should connect and add a stdio client', async () => {
+        const params: z.infer<typeof AddStdioMcpServerInputSchema> = {
+          command: 'npx',
+          args: ['tsx', serverScriptPath, '--stdio'],
+          cwd: process.cwd()
+        };
+        const result = await AddStdioMcpServer.execute(params, mockAgent);
+        expect(result.success).toBe(true);
+        expect(result.serverId).toBe(0);
+        expect(result.error).toBeUndefined();
+        expect(MCPContext.data.clients).toHaveLength(1);
+        expect(MCPContext.data.clients[0]).toBeInstanceOf(Client);
+      });
 
-         it('should fail if URL is missing for SSE', async () => {
-            const params: z.infer<typeof AddMCPClientToolInputSchema> = { type: 'sse' }; // Missing URL
-             const result = await AddMCPClientTool.execute(params, mockAgent);
-             expect(result.success).toBe(false);
-             expect(result.error).toContain("URL required");
-             expect(MCPContext.data.clients).toHaveLength(0);
-        });
 
-        // Add tests for other transport types if implemented/needed
+      it('should register MCP tools to agent after connection', async () => {
+        // 初始情况下没有工具
+        mockAgent.tool = [];
+        const params: z.infer<typeof AddStdioMcpServerInputSchema> = {
+            command: 'npx',
+            args: ['tsx', serverScriptPath, '--stdio'],
+            cwd: process.cwd()
+          };
+        const result = await AddStdioMcpServer.execute(params, mockAgent);
+        expect(result.success).toBe(true);
+        expect(result.serverId).toBe(0);
+        
+        // 验证工具已被注册到 agent
+        const toolsForServer = getServerIdTools(mockAgent, 0);
+        console.log("toolsForServer:", toolsForServer);
+        expect(toolsForServer.length).toBeGreaterThan(0);
+        
+        // 验证工具名称格式
+        const toolIds = toolsForServer.map(t => t.id);
+        expect(toolIds.some(id => id?.startsWith('mcp_0_'))).toBe(true);
+        
+        // 验证 client 对象上保存了工具ID列表
+        const client = MCPContext.data.clients[0] as any; // 使用 any 类型断言
+        expect(client._mcpToolIds).toBeDefined();
+        expect(client._mcpToolIds.length).toBeGreaterThan(0);
+        expect(client._mcpToolIds).toEqual(toolIds);
+      });
     });
 
     // ------------------------- MCP Tools Tests -------------------------
     describe('mcp tools test', () => {
-        beforeEach(ensureClientConnected); // Ensure client is connected before each test
+        // 确保每个测试前都已连接客户端
+        beforeEach(async () => {
+          await ensureClientConnected();
+        });
 
         it('should list tools from the connected client', async () => {
             const params: z.infer<typeof ListToolsToolInputSchema> = { mcpClientId: clientId! };
@@ -181,7 +247,7 @@ describe('MCP Tools Integration Tests', () => {
             console.log("ListToolsTool result:", result);
 
             expect(result.tools).toBeInstanceOf(Array);
-            expect(result.tools.length).toBeGreaterThanOrEqual(2); // Expect 'add' and 'register_tool'
+            expect(result.tools.length).toBeGreaterThanOrEqual(3); // Expect 'add' and 'register_tool'
 
             const addTool = result.tools.find(t => t.name === 'add');
             const registerTool = result.tools.find(t => t.name === 'register_tool');
@@ -196,48 +262,15 @@ describe('MCP Tools Integration Tests', () => {
 
         });
 
-        it('should call the "add" tool on the client', async () => {
-            const params: z.infer<typeof MCPCallToolInputSchema> = {
-                mcpClientId: clientId!,
-                name: 'add',
-                arguments: { a: 10, b: 5 }
-            };
-            const result = await MCPCallTool.execute(params, mockAgent);
-            console.log("MCPCallTool result:", result);
-
-            expect(result.result).toBeDefined();
-            // Check the specific structure returned by the server's 'add' tool
-            expect(result.result).toEqual(expect.objectContaining({
-                 content: expect.arrayContaining([
-                     expect.objectContaining({ type: 'text', text: '15' })
-                 ])
-             }));
-        });
-
-        it('should call the "complex-args" tool on the client', async () => {
-            const params: z.infer<typeof MCPCallToolInputSchema> = {
-                mcpClientId: clientId!,
-                name: 'complex-args',
-                arguments: { a: 10, b: { c: 5, d: 10 } }
-            };
-            const result = await MCPCallTool.execute(params, mockAgent);
-            console.log("MCPCallTool result:", result);
-
-            expect(result.result).toBeDefined();
-            // Check the specific structure returned by the server's 'add' tool
-            expect(result.result).toEqual(expect.objectContaining({
-                 content: expect.arrayContaining([
-                    expect.objectContaining({ type: 'text', text: '25' })
-                 ])
-             }));
-        });
-
     });
 
   
     //  ------------------ Prompts Related Tests ------------------
     describe('prompts test', () => {
-        beforeEach(ensureClientConnected);
+        // 确保每个测试前都已连接客户端
+        beforeEach(async () => {
+          await ensureClientConnected();
+        });
 
         it('should list the defined prompts', async () => {
              const params: z.infer<typeof ListPromptsInputSchema> = { mcpClientId: clientId! };
@@ -251,19 +284,14 @@ describe('MCP Tools Integration Tests', () => {
              const codeArg = reviewPrompt?.arguments?.find((arg: { name: string }) => arg.name === 'code');
              expect(codeArg).toBeDefined();
         });
-
-        it('should get the "review-code" prompt successfully', async () => {
-            const params: z.infer<typeof GetPromptInputSchema> = { mcpClientId: clientId!, name: 'review-code' , arguments: { code: 'console.log("Hello, world!");'}};
-            const result = await GetPromptTool.execute(params, mockAgent);
-            expect(result.messages[0].role).toBe("user");
-            expect(result.messages[0].content.type).toBe("text");
-        });
-
     });
 
     //  --- Resources Related Tests ---
     describe('ListResourceTemplatesTool', () => {
-        beforeEach(ensureClientConnected);
+        // 确保每个测试前都已连接客户端
+        beforeEach(async () => {
+          await ensureClientConnected();
+        });
 
         it('should list available resource templates', async () => {
              const params: z.infer<typeof ListResourcesInputSchema> = { mcpClientId: clientId! };

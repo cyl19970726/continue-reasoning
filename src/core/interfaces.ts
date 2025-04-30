@@ -158,8 +158,9 @@ export interface ILLM{
     parallelToolCall: boolean;
     temperature: number;
     maxTokens: number;
-    streamCall?: (messages: string, tools: ToolCallDefinition[]) => Promise<{text: string, toolCalls: ToolCallParams[]}>;
-    call?: (messages: string, tools: ToolCallDefinition[]) => Promise<{text: string, toolCalls: ToolCallParams[]}>;
+    setParallelToolCall?: (enabled: boolean) => void;
+    streamCall: (messages: string, tools: ToolCallDefinition[]) => Promise<{text: string, toolCalls: ToolCallParams[]}>;
+    call: (messages: string, tools: ToolCallDefinition[]) => Promise<{text: string, toolCalls: ToolCallParams[]}>;
 }
 
 export const MessageSchema = z.object({

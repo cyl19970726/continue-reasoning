@@ -10,8 +10,22 @@ import { Message } from "./interfaces";
 import dotenv from "dotenv";
 import { time } from "console";
 import { PlanContext } from "./tools/plan";
+import { MCPContext } from "./tools/mcp";
+import { WebSearchContext } from "./tools/web-search";
+import { OpenAIWrapper } from "./models/openai";
+import { AnthropicWrapper } from "./models/anthropic";
+import { GeminiWrapper } from "./models/gemini";
 
 dotenv.config();
+
+export type LLMProvider = 'openai' | 'anthropic' | 'google';
+
+export interface AgentOptions {
+    llmProvider?: LLMProvider;
+    enableParallelToolCalls?: boolean;
+    temperature?: number;
+    maxTokens?: number;
+}
 
 export class BaseAgent implements IAgent {
     id: string;
@@ -24,11 +38,22 @@ export class BaseAgent implements IAgent {
     tool: AnyTool[];
     llm: ILLM; 
     taskQueue: ITaskQueue;
+    llmProvider: LLMProvider;
+    enableParallelToolCalls: boolean;
 
     isRunning: boolean;
     shouldStop: boolean;
 
-    constructor(id: string, name: string, description: string, contextManager: IContextManager, memoryManager: IMemoryManager, clients: IClient<any,any>[], llm: ILLM, maxSteps: number){
+    constructor(
+        id: string, 
+        name: string, 
+        description: string, 
+        contextManager: IContextManager, 
+        memoryManager: IMemoryManager, 
+        clients: IClient<any,any>[], 
+        llmOptions: AgentOptions = {}, 
+        maxSteps: number
+    ){
         this.id = id;
         this.name = name;
         this.description = description;
@@ -36,7 +61,32 @@ export class BaseAgent implements IAgent {
         this.memoryManager = memoryManager;
         this.clients = clients;
         this.tool = [];
-        this.llm = llm;
+        
+        // LLM配置选项
+        this.llmProvider = llmOptions.llmProvider || 'openai';
+        this.enableParallelToolCalls = llmOptions.enableParallelToolCalls ?? false;
+        const temperature = llmOptions.temperature || 0.7;
+        const maxTokens = llmOptions.maxTokens || 2048;
+        
+        // 基于配置初始化正确的LLM
+        if (this.llmProvider === 'openai') {
+            this.llm = new OpenAIWrapper('openai', true, temperature, maxTokens);
+        } else if (this.llmProvider === 'anthropic') {
+            this.llm = new AnthropicWrapper('anthropic', true, temperature, maxTokens);
+        } else if (this.llmProvider === 'google') {
+            this.llm = new GeminiWrapper('google', true, temperature, maxTokens);
+        } else {
+            throw new Error(`Unsupported LLM provider: ${this.llmProvider}`);
+        }
+        
+        // 设置LLM的parallel工具调用
+        if (this.llm.setParallelToolCall) {
+            this.llm.setParallelToolCall(this.enableParallelToolCalls);
+        } else {
+            // Directly set the property if method isn't available
+            this.llm.parallelToolCall = this.enableParallelToolCalls;
+        }
+        
         this.taskQueue = new TaskQueue(3);
         this.maxSteps = maxSteps;
         this.isRunning = false;
@@ -50,6 +100,8 @@ export class BaseAgent implements IAgent {
         this.contextManager.registerContext(SystemToolContext);
         this.contextManager.registerContext(ExecuteToolsContext);
         this.contextManager.registerContext(PlanContext);
+        this.contextManager.registerContext(MCPContext);
+        this.contextManager.registerContext(WebSearchContext);
 
         this.contextManager.contexts.forEach((context) => {
             if (context && context.toolList) {
@@ -71,6 +123,14 @@ export class BaseAgent implements IAgent {
             if (clientOutputTool) {
                 this.tool.push(clientOutputTool);
             }
+        }
+        
+        // 确保LLM的parallel工具调用设置正确
+        if (this.llm.setParallelToolCall) {
+            this.llm.setParallelToolCall(this.enableParallelToolCalls);
+        } else {
+            // Directly set the property if method isn't available
+            this.llm.parallelToolCall = this.enableParallelToolCalls;
         }
     }
 
@@ -99,11 +159,6 @@ export class BaseAgent implements IAgent {
     stop(): void{
         this.shouldStop = true;
         console.log("==========Agent Stop has been called ==========");
-        // while (this.isRunning) {
-        //     await new Promise(resolve => setTimeout(resolve, 100));
-        // }
-
-        // console.log("==========Agent Stop ==========");
     }
 
     private async processStep(): Promise<void>{
@@ -122,10 +177,11 @@ export class BaseAgent implements IAgent {
         // convert any tool to the toolcall definition
         // invoke the llm to get the response text and the toolcalls
         const prompt  = `${contextPrompt}\n${memoryPrompt}\n}`;
-        if (!this.llm.call) {
-            throw new Error("LLM call method is not implemented");
-        }
-        const {text,toolCalls} = await this.llm.call(prompt, toolCallsDefinition);  
+        
+        // 根据streaming配置选择调用streaming或非streaming API
+        const { text, toolCalls } = this.llm.streaming ? 
+                                   await this.llm.streamCall(prompt, toolCallsDefinition) : 
+                                   await this.llm.call(prompt, toolCallsDefinition);
 
         toolCallContext.setToolCalls(toolCalls);
         // push the toolcalls into the taskqueue 
@@ -143,11 +199,6 @@ export class BaseAgent implements IAgent {
                     const result = await tool.execute(toolCall.parameters, this);
                     toolCallContext.setToolCallResult(toolCall.call_id, result as ToolCallResult);
 
-                    // *** Check stop flag after sync execution ***
-                    // if (this.shouldStop) {
-                    //     console.log(`Stop signal received after executing sync tool ${tool.name}. Stopping processStep.`);
-                    //     return; // Exit processStep immediately
-                    // }
                 } catch (error) {
                      console.error(`Error executing sync tool ${tool.name} (${toolCall.call_id}):`, error);
                 }
@@ -179,9 +230,6 @@ export class BaseAgent implements IAgent {
     }
 
     async clientSendfn(clientInfo: {clientId: string, userId: string}, incomingMessages: Message): Promise<void> {
-        // console.log("==========clientSendfn:: ", clientInfo, incomingMessages);
-        // const contextList = this.contextManager.listContexts();
-        // console.log("==========contextList:: ", contextList);
         const clientContext = this.contextManager.findContextById(clientInfo.clientId) as typeof ClientContext;
         if (!clientContext) {
             throw new Error(`Client context not found for ID: ${clientInfo.clientId}`);

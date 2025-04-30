@@ -1,0 +1,109 @@
+import { describe, it, expect } from 'vitest';
+import { OpenAIWrapper } from './openai';
+import { z } from 'zod';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+describe('OpenAIWrapper', () => {
+  // Skip all tests if no API key is provided
+  const hasApiKey = !!process.env.OPENAI_API_KEY;
+
+  // Define test values at describe level to be used in multiple tests
+  const getWeatherSchema = z.object({
+    latitude: z.number(),
+    longitude: z.number(),
+  }).strict();
+
+  // Define a tool for OpenAI to use
+  const weatherTool = {
+    type: 'function' as const,
+    name: 'get_weather',
+    description: 'Get current temperature for provided coordinates in Celsius',
+    paramSchema: getWeatherSchema,
+    async: true,
+    strict: true
+  };
+
+  // Use conditional testing to skip tests when no API key is available
+  (hasApiKey ? it : it.skip)('should create a properly configured instance', () => {
+    const wrapper = new OpenAIWrapper('openai', false, 0.7, 1000);
+    
+    expect(wrapper).toBeInstanceOf(OpenAIWrapper);
+    expect(wrapper.model).toBe('openai');
+    expect(wrapper.streaming).toBe(false);
+    expect(wrapper.temperature).toBe(0.7);
+    expect(wrapper.maxTokens).toBe(1000);
+  });
+
+  (hasApiKey ? it : it.skip)('should call OpenAI API and parse response', async () => {
+    const openaiModel = new OpenAIWrapper('openai', false, 0.7, 1000);
+    
+    const response = await openaiModel.call(
+      "What's the weather like in Paris today?", 
+      [weatherTool]
+    );
+
+    // Basic response structure validation
+    expect(response).toBeDefined();
+    expect(response).toHaveProperty('text');
+    expect(response).toHaveProperty('toolCalls');
+    expect(Array.isArray(response.toolCalls)).toBe(true);
+    
+    // When tool is used, expect toolCalls to potentially contain a call
+    if (response.toolCalls.length > 0) {
+      const toolCall = response.toolCalls[0];
+      expect(toolCall).toHaveProperty('type', 'function');
+      expect(toolCall).toHaveProperty('name');
+      expect(toolCall).toHaveProperty('call_id');
+      expect(toolCall).toHaveProperty('parameters');
+      
+      // If the weather tool was called, validate its parameters
+      if (toolCall.name === 'get_weather') {
+        expect(toolCall.parameters).toHaveProperty('latitude');
+        expect(toolCall.parameters).toHaveProperty('longitude');
+        expect(typeof toolCall.parameters.latitude).toBe('number');
+        expect(typeof toolCall.parameters.longitude).toBe('number');
+      }
+    }
+    
+    // Text should be a non-empty string 
+    expect(typeof response.text).toBe('string');
+  }, 30000); // Increase timeout to 30 seconds for API call
+
+  // Testing the streaming API implementation
+  (hasApiKey ? it : it.skip)('should support streaming with OpenAI API', async () => {
+    const openaiModel = new OpenAIWrapper('openai', true, 0.7, 1000);
+    
+    const response = await openaiModel.streamCall(
+      "What's the weather like in Paris today?", 
+      [weatherTool]
+    );
+    
+    // Basic response structure validation
+    expect(response).toBeDefined();
+    expect(response).toHaveProperty('text');
+    expect(response).toHaveProperty('toolCalls');
+    expect(Array.isArray(response.toolCalls)).toBe(true);
+    
+    // When tool is used, expect toolCalls to potentially contain a call
+    if (response.toolCalls.length > 0) {
+      const toolCall = response.toolCalls[0];
+      expect(toolCall).toHaveProperty('type', 'function');
+      expect(toolCall).toHaveProperty('name');
+      expect(toolCall).toHaveProperty('call_id');
+      expect(toolCall).toHaveProperty('parameters');
+      
+      // If the weather tool was called, validate its parameters
+      if (toolCall.name === 'get_weather') {
+        expect(toolCall.parameters).toHaveProperty('latitude');
+        expect(toolCall.parameters).toHaveProperty('longitude');
+        expect(typeof toolCall.parameters.latitude).toBe('number');
+        expect(typeof toolCall.parameters.longitude).toBe('number');
+      }
+    }
+    
+    // Text should be a non-empty string from streaming
+    expect(typeof response.text).toBe('string');
+  }, 30000); // Increase timeout to 30 seconds for streaming API call
+}); 

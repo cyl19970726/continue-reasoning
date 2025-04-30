@@ -1,6 +1,7 @@
 import express, { Request, Response } from "express";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z, ZodRawShape } from "zod";
 import bodyParser from "body-parser";
 
@@ -120,55 +121,75 @@ server.prompt(
   })
 );
 
-const app = express();
-// app.use(bodyParser.json());  // Add body-parser middleware
+// 检测是否以stdio模式启动
+const isStdioMode = process.argv.includes('--stdio');
 
-// to support multiple simultaneous connections we have a lookup object from
-// sessionId to transport
-const transports: {[sessionId: string]: SSEServerTransport} = {};
+if (isStdioMode) {
+  // stdio模式：使用标准输入输出
+  console.error("[Server] Starting in stdio mode");
+  
+  // 创建stdio传输
+  const stdioTransport = new StdioServerTransport();
+  
+  // 连接到服务器
+  server.connect(stdioTransport).catch(error => {
+    console.error("[Server] Error connecting stdio transport:", error);
+    process.exit(1);
+  });
+  
+  console.error("[Server] Stdio server ready");
+} else {
+  // SSE模式：启动Express服务器
+  const app = express();
+  // app.use(bodyParser.json());  // Add body-parser middleware
 
-app.get("/sse", async (_: Request, res: Response) => {
-  try {
-    console.error("[Server] New SSE connection request");
-    const transport = new SSEServerTransport('/messages', res);
-    transports[transport.sessionId] = transport;
-    
-    res.on("close", () => {
-      console.error("[Server] SSE connection closed for session:", transport.sessionId);
-      delete transports[transport.sessionId];
-    });
+  // to support multiple simultaneous connections we have a lookup object from
+  // sessionId to transport
+  const transports: {[sessionId: string]: SSEServerTransport} = {};
 
-    await server.connect(transport);
-    console.error("[Server] SSE connection established for session:", transport.sessionId);
-  } catch (error) {
-    console.error("[Server] Error establishing SSE connection:", error);
-    // Avoid sending response headers again if already sent by SSEServerTransport error handling
-    if (!res.headersSent) {
-        res.status(500).send('Internal Server Error');
+  app.get("/sse", async (_: Request, res: Response) => {
+    try {
+      console.error("[Server] New SSE connection request");
+      const transport = new SSEServerTransport('/messages', res);
+      transports[transport.sessionId] = transport;
+      
+      res.on("close", () => {
+        console.error("[Server] SSE connection closed for session:", transport.sessionId);
+        delete transports[transport.sessionId];
+      });
+
+      await server.connect(transport);
+      console.error("[Server] SSE connection established for session:", transport.sessionId);
+    } catch (error) {
+      console.error("[Server] Error establishing SSE connection:", error);
+      // Avoid sending response headers again if already sent by SSEServerTransport error handling
+      if (!res.headersSent) {
+          res.status(500).send('Internal Server Error');
+      }
     }
-  }
-});
+  });
 
-app.post("/messages", async (req: Request, res: Response) => {
-  try {
-    const sessionId = req.query.sessionId as string;
-    const transport = transports[sessionId];
-    
-    if (transport) {
-      await transport.handlePostMessage(req, res);
-    } else {
-      console.error("[Server] No transport found for sessionId:", sessionId);
-      res.status(400).send('No transport found for sessionId');
+  app.post("/messages", async (req: Request, res: Response) => {
+    try {
+      const sessionId = req.query.sessionId as string;
+      const transport = transports[sessionId];
+      
+      if (transport) {
+        await transport.handlePostMessage(req, res);
+      } else {
+        console.error("[Server] No transport found for sessionId:", sessionId);
+        res.status(400).send('No transport found for sessionId');
+      }
+    } catch (error) {
+      console.error("[Server] Error handling message:", error);
+       if (!res.headersSent) {
+          res.status(500).send('Internal Server Error');
+      }
     }
-  } catch (error) {
-    console.error("[Server] Error handling message:", error);
-     if (!res.headersSent) {
-        res.status(500).send('Internal Server Error');
-    }
-  }
-});
+  });
 
-const port = 3001;
-app.listen(port, () => {
-  console.error(`[Server] SSE server listening on port ${port}`);
-}); 
+  const port = 3001;
+  app.listen(port, () => {
+    console.error(`[Server] SSE server listening on port ${port}`);
+  }); 
+} 

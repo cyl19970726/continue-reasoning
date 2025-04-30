@@ -5,6 +5,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { any, z } from "zod";
 import { IAgent } from "../interfaces";
+import { zodToJson, jsonToZodStrict, jsonToZodNostrict } from "../utils/jsonHelper";
 
 // Use instanceof for better type checking if possible at runtime
 const McpClientListSchema = z.array(z.instanceof(Client)).describe("List of active MCP Client instances.");
@@ -37,7 +38,6 @@ export type MCPTool = z.infer<typeof MCPToolSchema>;
 export type MCPToolCall = z.infer<typeof MCPToolCallSchema>;
 
 
-
 export const MCPContextId = "mcp-context";
 export const MCPContext = ContextHelper.createContext({
     id: MCPContextId,
@@ -49,11 +49,10 @@ export const MCPContext = ContextHelper.createContext({
     },
     // Add all MCP tools to the context
     toolListFn: () => [
-        AddMCPClientTool,
+        AddStdioMcpServer,
+        AddSseOrHttpMcpServer,
         ListToolsTool,
-        MCPCallTool,
         ListPromptsTool, 
-        GetPromptTool,  
         ListResourcesTool,
         // Add RemoveMCPClientTool, GetMCPClientTool when implemented
     ],
@@ -66,72 +65,162 @@ export const MCPContext = ContextHelper.createContext({
 export const ADD_MCP_CLIENT_ID = "add_mcp_client";
 export const REMOVE_MCP_CLIENT_ID = "remove-mcp-client";
 export const GET_MCP_CLIENT_ID = "get-mcp-client";
-
-export const AddMCPClientToolInputSchema = z.object({
-    type: z.enum(["sse", "streamableHttp", "stdio"]).describe("The transport type of the MCP client."),
-    url: z.string().optional().describe("The URL of the MCP client (required for sse, streamableHttp)."),
-    // Add stdio specific args if needed, e.g., command, args
+// 专门用于 stdio 的 schema
+export const AddStdioMcpServerInputSchema = z.object({
+    command: z.string().describe("The command to run for stdio transport."),
+    args: z.array(z.string()).describe("The arguments to pass to the command for stdio transport."),
+    cwd: z.string().describe("The working directory for the command for stdio transport."),
+    // Using object({}).passthrough() instead of record for OpenAI function calling compatibility
+    env: z.object({}).passthrough().optional().describe("The environment variables for the command for stdio transport."),
 });
 
-export const AddMCPClientTool = createTool({
-    id: ADD_MCP_CLIENT_ID,
-    name: ADD_MCP_CLIENT_ID,
-    description: "Connects a new MCP client instance using the specified transport.",
-    inputSchema: AddMCPClientToolInputSchema,
+export const generateMcpToolId = (serverId: number, toolName: string) => {
+    return `mcp_${serverId}_${toolName}`;
+}
+
+export const getServerIdTools = (agent: IAgent, serverId: number) => {
+    return agent.tool.filter(t => t.id?.startsWith(`mcp_${serverId}_`));
+}
+
+export const removeServerIdTools = (agent: IAgent, serverId: number) => {
+    const tools = getServerIdTools(agent, serverId);
+    agent.tool = agent.tool.filter(t => !tools.includes(t));
+}
+
+// --- 动态注册 MCP 工具的辅助函数 ---
+function registerMcpToolsForClient(client: Client, serverId: number, agent: IAgent, context: any) {
+    if (!client || !client.listTools) return [];
+    return client.listTools().then((listToolsResult: any) => {
+        const tools = listToolsResult?.tools ?? [];
+        const toolIds: string[] = [];
+        for (const tool of tools) {
+            // 只支持 inputSchema 为 object 且有 properties
+            if (!tool.inputSchema || typeof tool.inputSchema !== 'object' || !tool.inputSchema.properties) continue;
+            
+            // 规范化工具名称：将 "-" 替换为 "_"
+            const normalizedToolName = tool.name.replace(/-/g, '_');
+
+            // 确保 inputSchema 符合严格模式要求
+            const strictSchema = {
+                ...tool.inputSchema,
+                required: Object.keys(tool.inputSchema.properties),
+                additionalProperties: false
+            };
+            
+            // Convert JSON Schema to a strict Zod object schema for tool inputs
+            const inputSchema = jsonToZodNostrict(strictSchema) as z.ZodObject<any>;
+            const localToolId = generateMcpToolId(serverId, normalizedToolName);
+            
+            // 避免重复注册
+            if (agent.tool.find(t => t.id === localToolId)) continue;
+            
+            const localTool = createTool({
+                id: localToolId,
+                name: normalizedToolName,  // 使用规范化后的名称
+                description: tool.description || '',
+                inputSchema,
+                async: true,
+                execute: async (params) => {
+                    // 注意：调用时使用原始工具名称
+                    return await client.callTool({ name: tool.name, arguments: inputSchema.parse(params) });
+                }
+            });
+            agent.tool.push(localTool);
+            toolIds.push(localToolId);
+        }
+        // 记录 toolIds 到 client 对象
+        context.data.clients[serverId]._mcpToolIds = toolIds;
+        return toolIds;
+    });
+}
+
+// --- 修改 AddStdioMcpServer ---
+export const AddStdioMcpServer = createTool({
+    id: "add_stdio_mcp_server",
+    name: "add_stdio_mcp_server",
+    description: "Connects a new MCP client instance using stdio transport.",
+    inputSchema: AddStdioMcpServerInputSchema,
     outputSchema: z.object({
         success: z.boolean(),
-        clientId: z.number().optional().describe("The ID (index) of the newly added client."),
+        serverId: z.number().optional().describe("The ID (index) of the newly added client."),
         error: z.string().optional(),
     }),
-    async: true, // Connecting might take time
-    execute: async (params: z.infer<typeof AddMCPClientToolInputSchema>, agent?: IAgent) => {
+    async: false,
+    execute: async (params, agent) => {
         const context = ContextHelper.findContext(agent!, MCPContextId);
         if (!context) {
             return { success: false, error: "MCP context not found." };
         }
-
-        let transport;
         try {
-            switch (params.type) {
-                case "sse":
-                    if (!params.url) return { success: false, error: "URL required for SSE transport." };
-                    transport = new SSEClientTransport(new URL(params.url));
-                    break;
-                case "streamableHttp":
-                     if (!params.url) return { success: false, error: "URL required for StreamableHTTP transport." };
-                    transport = new StreamableHTTPClientTransport(new URL(params.url));
-                    break;
-                case "stdio":
-                    // Example stdio setup - adjust command/args as needed
-                    transport = new StdioClientTransport({
-                        command: "node", // Example command
-                        args: [],    // Example args
-                        cwd: process.cwd(),
-                        env: process.env as Record<string, string>,
-                    });
-                    break;
-                default:
-                     return { success: false, error: `Unsupported transport type: ${params.type}` };
-            }
-
-            // Use a more descriptive name if possible, maybe based on URL/type?
-            const client = new Client(
+            const transport = new StdioClientTransport({
+                command: params.command,
+                args: params.args ?? [],
+                cwd: params.cwd ?? process.cwd(),
+                env: params.env as Record<string, string> | undefined,
+            });
+const client = new Client(
                 { name: `mcp-client-${context.data.clients.length}`, version: "1.0.0" },
-                { capabilities: { prompts: {}, resources: {}, tools: {} } } // Define actual capabilities if known
+                { capabilities: { prompts: {}, resources: {}, tools: {} } }
             );
-            
             await client.connect(transport);
             context.data.clients.push(client);
             const newClientId = context.data.clients.length - 1;
-            console.log(`MCP Client connected via ${params.type}. Assigned ID: ${newClientId}`);
-            return { success: true, clientId: newClientId };
-
+            // 动态注册 MCP 工具
+            let toolIds = await registerMcpToolsForClient(client, newClientId, agent!, context);
+            console.log(`Added ${toolIds.length} tools for Agent ${agent!.id} on server ${newClientId}`);
+            return { success: true, serverId: newClientId, toolIds };
         } catch (error: any) {
-            console.error(`Error adding MCP client (${params.type}):`, error);
             return { success: false, error: error.message || "Failed to connect MCP client." };
         }
     },
 });
+
+// sse/http 专用
+export const AddSseOrHttpMcpServerInputSchema = z.object({
+    type: z.enum(["sse", "streamableHttp"]).describe("The transport type of the MCP client."),
+    url: z.string().describe("The URL of the MCP client."),
+});
+
+// --- 修改 AddSseOrHttpMcpServer ---4
+export const AddSseOrHttpMcpServer = createTool({
+    id: "add_sse_or_http_mcp_client",
+    name: "add_sse_or_http_mcp_client",
+    description: "Connects a new MCP Server instance using SSE or StreamableHTTP transport.",
+    inputSchema: AddSseOrHttpMcpServerInputSchema,
+    outputSchema: z.object({
+        success: z.boolean(),
+        serverId: z.number().optional().describe("The ID (index) of the newly added client."),
+        error: z.string().optional(),
+    }),
+    async: true,
+    execute: async (params, agent) => {
+        const context = ContextHelper.findContext(agent!, MCPContextId);
+        if (!context) {
+            return { success: false, error: "MCP context not found." };
+        }
+        let transport;
+        try {
+            if (params.type === "sse") {
+                transport = new SSEClientTransport(new URL(params.url));
+            } else {
+                transport = new StreamableHTTPClientTransport(new URL(params.url));
+            }
+            const client = new Client(
+                { name: `mcp-client-${context.data.clients.length}`, version: "1.0.0" },
+                { capabilities: { prompts: {}, resources: {}, tools: {} } }
+            );
+            await client.connect(transport);
+            context.data.clients.push(client);
+            const newClientId = context.data.clients.length - 1;
+            // 动态注册 MCP 工具
+            await registerMcpToolsForClient(client, newClientId, agent!, context);
+            return { success: true, serverId: newClientId };
+        } catch (error: any) {
+            return { success: false, error: error.message || "Failed to connect MCP client." };
+        }
+    },
+});
+
 
 export const LIST_TOOLS_ID = "list_mcp_tools";
 export const ListToolsToolInputSchema = z.object({
@@ -181,50 +270,6 @@ export const ListToolsTool = createTool({
         } catch (error: any) {
             console.error(`Error listing tools for client index ${params.mcpClientId}:`, error);
             return { tools: [] }; // Return empty list on error, matching schema
-        }
-    },
-});
-
-export const MCP_CALL_TOOL_ID = "mcp_call_tool";
-
-export const MCPCallToolInputSchema = z.object({
-    mcpClientId: z.number().describe("The ID (index) of the MCP client."),
-    name: z.string().describe("The name of the tool to call."),
-    arguments: z.record(z.any()).describe("The arguments to pass to the tool."),
-});
-
-export const MCPCallTool = createTool({
-    id: MCP_CALL_TOOL_ID,
-    name: MCP_CALL_TOOL_ID,
-    description: "Calls a specific tool on a specified MCP client with the given arguments.",
-    inputSchema: MCPCallToolInputSchema,
-    async: true,
-    execute: async (params: z.infer<typeof MCPCallToolInputSchema>, agent?: IAgent) => {
-        const context = ContextHelper.findContext(agent!, MCPContextId);
-        if (!context || !context.data?.clients) {
-            console.error("MCP context or clients not found in MCPCallTool.");
-            return { result: null, error: "MCP Context not found" };
-        }
-        if (params.mcpClientId < 0 || params.mcpClientId >= context.data.clients.length) {
-            console.error(`MCP client index ${params.mcpClientId} out of bounds.`);
-             return { result: null, error: `MCP client index ${params.mcpClientId} out of bounds.` };
-        }
-        const client = context.data.clients[params.mcpClientId];
-        if (!client) {
-             console.error(`MCP client at index ${params.mcpClientId} not found or invalid.`);
-            return { result: null, error: `MCP client at index ${params.mcpClientId} not found or invalid.` };
-        }
-        try {
-            // Ensure arguments is an object, even if empty
-            console.log(`Calling MCP tool '${params.name}' on client ${params.mcpClientId} with args:`, params.arguments);
-            const callResult = await client.callTool({ name: params.name, arguments: params.arguments });
-            console.log(`MCP tool '${params.name}' result:`, callResult);
-            // Extract relevant part of the result if necessary, based on SDK response structure
-            // Assuming the primary result might be in 'content' or similar, adjust as needed
-            return { result: callResult }; // Return the whole result object for now
-        } catch (error: any) {
-            console.error(`Error calling MCP tool ${params.name} on client ${params.mcpClientId}:`, error);
-            return { result: null, error: error.message || "Failed to call MCP tool." };
         }
     },
 });
@@ -285,50 +330,6 @@ export const ListPromptsTool = createTool({
         } catch (error: any) {
             console.error(`Error listing prompts for client ${params.mcpClientId}:`, error);
             return { prompts: [] };
-        }
-    },
-});
-
-// --- GetPromptTool --- 
-export const GET_PROMPT_ID = "get_mcp_prompt";
-export const GetPromptInputSchema = z.object({
-    mcpClientId: z.number().describe("ID of the MCP server to query"),
-    name: z.string().describe("Name of the prompt to get"),
-    arguments: z
-      .record(z.any())
-      .optional()
-      .describe("Arguments for the prompt"),
-  });
-export const GetPromptTool = createTool({
-    id: GET_PROMPT_ID,
-    name: GET_PROMPT_ID,
-    description: "Retrieves the details (description and messages) of a specific prompt.",
-    inputSchema: GetPromptInputSchema,
-    async: true,
-    execute: async (params: z.infer<typeof GetPromptInputSchema>, agent?: IAgent) => {
-        const context = ContextHelper.findContext(agent!, MCPContextId);
-         if (!context || !context.data?.clients) {
-            console.error("MCP context or clients not found in GetPromptTool.");
-            return { error: "MCP Context not found" };
-        }
-         if (params.mcpClientId < 0 || params.mcpClientId >= context.data.clients.length) {
-             console.error(`MCP client index ${params.mcpClientId} out of bounds.`);
-             return { error: `MCP client index ${params.mcpClientId} out of bounds.` };
-         }
-         const client = context.data.clients[params.mcpClientId];
-         if (!client) {
-             console.error(`MCP client at index ${params.mcpClientId} not found or invalid.`);
-             return { error: `MCP client at index ${params.mcpClientId} not found or invalid.` };
-         }
-        try {
-            const promptResult = await client.getPrompt({ name: params.name, arguments: params.arguments });
-            return {
-                description: promptResult.description,
-                messages: promptResult.messages, // Assuming direct mapping works, adjust if needed
-            };
-        } catch (error: any) {
-             console.error(`Error getting prompt '${params.name}' for client ${params.mcpClientId}:`, error);
-            return { error: error.message || `Failed to get prompt '${params.name}'` };
         }
     },
 });
@@ -397,3 +398,40 @@ export const ReadResourceTool = createTool({
         }
     },
 });
+
+// --- 新增 RemoveMcpServer 工具 ---
+export const RemoveMcpServerInputSchema = z.object({
+    clientId: z.number().int().nonnegative().describe("The ID (index) of the MCP client to remove."),
+});
+
+export const RemoveMcpServer = createTool({
+    id: REMOVE_MCP_CLIENT_ID,
+    name: REMOVE_MCP_CLIENT_ID,
+    description: "Removes an MCP client and all its dynamically registered tools.",
+    inputSchema: RemoveMcpServerInputSchema,
+    outputSchema: z.object({
+        success: z.boolean(),
+        error: z.string().optional(),
+    }),
+    async: true,
+    execute: async (params, agent) => {
+        const context = ContextHelper.findContext(agent!, MCPContextId);
+        if (!context) {
+            return { success: false, error: "MCP context not found." };
+        }
+        const { clientId } = params;
+        const client = context.data.clients[clientId];
+        if (!client) {
+            return { success: false, error: `MCP client at index ${clientId} not found.` };
+        }
+        // 移除本地 tool
+        const toolIds = client._mcpToolIds || [];
+        if (Array.isArray(toolIds)) {
+            agent!.tool = agent!.tool.filter(t => !toolIds.includes(t.id));
+        }
+        // 移除 client
+        context.data.clients.splice(clientId, 1);
+        return { success: true };
+    },
+});
+

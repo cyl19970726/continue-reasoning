@@ -2,7 +2,24 @@ import { z } from "zod";
 import OpenAI from "openai";
 import { IAgent, IContext, ITool } from "../interfaces";
 import { Tool, ToolExecutionOptions } from "ai";
-import { createTool } from "../utils";
+import { createTool, ContextHelper } from "../utils";
+
+
+export const WebSearchContext = ContextHelper.createContext({
+    id: "web-search",
+    description: "Web Search Context",
+    dataSchema: z.object({
+        active_active_tools: z.array(z.string()),
+    }),
+    initialData: {
+        active_active_tools: ["web-search"],
+    },
+    toolListFn: () => [WebSearchTool],
+    renderPromptFn: (data) => `
+    You are a helpful assistant that can search the web for information.
+    You are currently using the following tools: ${data.active_active_tools.join(", ")}.
+    `
+});
 
 async function openaiWebSearch(query: string) {
   const client = new OpenAI({apiKey: process.env.OPENAI_API_KEY});
@@ -19,8 +36,8 @@ const querySchema = z.object({
 });
 
 export const WebSearchTool = createTool({
-    id: "web-search",
-    name: "Web Search",
+    id: "web_search",
+    name: "Web_Search",
     description: "Search the web for information",
     inputSchema: querySchema,
     async: true,
