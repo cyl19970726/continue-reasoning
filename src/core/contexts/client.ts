@@ -1,9 +1,11 @@
 // import { CliClient } from "./client/cli";
-import { MessageSchema, Message, IAgent, IClient, IContext, ITool, ToolCallDefinitionSchema, ClientSendFnType } from "./interfaces";
+import { MessageSchema, Message, IAgent, IClient, IContext, ITool, ToolCallDefinitionSchema, ClientSendFnType } from "../interfaces";
 import { z } from "zod";
 import readline from "readline";
-import { IMemoryManager } from "./interfaces";
-import { createTool, ContextHelper,render } from './utils';
+import { IMemoryManager } from "../interfaces";
+import { createTool, ContextHelper,render } from '../utils';
+import { logger } from "../agent";
+import { SystemToolNames } from "./index";
 
 // 先声明工具名称常量
 export const cliResponseToolId = "cli-response-tool";
@@ -30,7 +32,7 @@ const ClientMemorySchema = z.object({
 
 export const ClientContext = ContextHelper.createContext({
     id: ClientContextId,
-    description: "CliClientContext uses to store the cli client context",
+    description: "Stores the context for CLI-based user interactions, including message history and the latest incoming user message. Guides the agent to analyze user input, maintain conversation state, and determine when to respond or invoke tools in a command-line environment.",
     dataSchema: ClientContextDataSchema,
     initialData: {
         clientId: "cli-client",
@@ -51,7 +53,10 @@ export const ClientContext = ContextHelper.createContext({
         New Incoming Message from User [${data.incomingMessages.timestamp}]:
         ${data.incomingMessages.text}
         `
-            : "  (No new incoming message)";
+            : `
+        No new incoming message - this means the user is waiting or the previous request has been completed.
+        If you've already responded to the last user message and there are no pending tasks, call ${SystemToolNames.stopResponse}.
+        `;
 
         // Construct the prompt
         const clientContextPrompt = `
@@ -69,13 +74,28 @@ ${history || "  (No message history yet)"}
         3.  **Only if a direct response to the user is required *after* fulfilling the request (or if clarification is needed), use the tool named '${data.responseToolName}'.**
         4.  Avoid responding if you are performing background tasks (using async tools) unless providing a status update.
         5.  Keep responses concise and relevant to the CLI environment.
+        6.  IMPORTANT: After responding to a simple user request (like greetings, simple questions, or acknowledgments):
+            - Call the '${SystemToolNames.stopResponse}' tool to prevent unnecessary processing
+            - Don't call tools repeatedly if you've already responded to the current request
+            - Always check if there's a new incoming message before responding again
+        
+        Simple Request Flow:
+        1. User message received → You analyze and respond → Call ${SystemToolNames.stopResponse}
+        2. Wait for next user message (system will pause until next input)
         `;
+        
         // Note: We are not rendering the raw 'data' object anymore, just the formatted parts.
         return clientContextPrompt; 
     },
-    toolListFn: () => [],
+    toolSetFn: () => {
+        return {
+            name: '',
+            description: '',
+            tools: [],
+            active: true
+        }
+    }
 });
-
 // 工具输入输出 Schema
 export const cliResponseToolInputSchema = z.object({
     message: z.string(),
@@ -129,13 +149,13 @@ export const cliResponseTool = createTool({
         ]
       });
     
-      
+      logger.info(`Agent response sent: ${parameters.message.substring(0, 100)}${parameters.message.length > 100 ? '...' : ''}`);
       return {
         success: true,
         text: parameters.message
       };
     } catch (error) {
-      console.error("CLI response tool execution error:", error);
+      logger.error("CLI response tool execution error:", error);
       return {
         success: false,
         text: `Error: ${error instanceof Error ? error.message : String(error)}`

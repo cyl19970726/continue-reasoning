@@ -8,6 +8,7 @@ dotenv.config();
 
 // Default model to use for Gemini
 const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash-001";
+const GEMINI_MODEL = "gemini-2.5-pro-exp-03-25"
 
 async function validateGeminiKey(): Promise<boolean> {
     try {
@@ -121,7 +122,7 @@ export class GeminiWrapper implements ILLM {
         this.parallelToolCall = false;
         this.temperature = temperature;
         this.maxTokens = maxTokens;
-        this.modelName = DEFAULT_GEMINI_MODEL;
+        this.modelName = GEMINI_MODEL;
     }
     
     setParallelToolCall(enabled: boolean): void {

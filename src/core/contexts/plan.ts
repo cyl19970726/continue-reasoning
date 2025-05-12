@@ -32,7 +32,7 @@ export const PLAN_CONTEXT_ID = "plan-context";
 
 export const PlanContext = ContextHelper.createContext({
     id: PLAN_CONTEXT_ID,
-    description: "The context for the plan",
+    description: "Stores and manages multi-step plans, including their steps, statuses, and results. Used for orchestrating complex workflows, tracking progress, and ensuring all steps are executed and resolved in order.",
     dataSchema: PlanContextSchema,
     initialData: {
         id: "",
@@ -46,17 +46,23 @@ export const PlanContext = ContextHelper.createContext({
         resolvedSteps: [],
         rejectedSteps: [],
     },
-    toolListFn: () => [
-        CreatePlanTool, 
-        ResolveOrRejectPlanTool,
-        PendingStepTool,
-        UpdatePendingStepProcessTool,
-        UpdatePendingStepResultTool,
-        ResolvedStepTool,
-        RejectedStepTool,
-        LoadStepTool,
-        UpdatePlanInfoTool,
-    ],
+    toolSetFn: () => ({
+        name: "PlanTools",
+        description: "This tool set is designed for multi-step plan management, including tools for creating, updating, executing, and querying plans. Suitable for workflow automation and complex task orchestration.",
+        tools: [
+            CreatePlanTool, 
+            ResolveOrRejectPlanTool,
+            PendingStepTool,
+            UpdatePendingStepProcessTool,
+            UpdatePendingStepResultTool,
+            ResolvedStepTool,
+            RejectedStepTool,
+            LoadStepTool,
+            UpdatePlanInfoTool,
+        ],
+        active: true,
+        source: "plan-context"
+    }),
     renderPromptFn: (data: PlanContextSchemaType) => {
         // Helper function to get steps by status
         const getWaitingSteps = () => {

@@ -123,7 +123,7 @@ export const ExecuteToolsContextId = "ExecuteToolsContext";
 // Now create the context using the defined schemas
 export const ExecuteToolsContext = ContextHelper.createContext({
     id: ExecuteToolsContextId,
-    description: `Provides context and history for basic tools like bash execution.`,
+    description: "Maintains the execution context and history for shell/bash command tools. Tracks working directory and all executed commands, including their results, to help the agent reason about system state and avoid redundant or failed operations.",
     dataSchema: ExecuteToolsContextDataSchema,
     initialData:{
         runBash:{
@@ -155,5 +155,11 @@ ${history}
         Review the history above to understand the current state and avoid repeating failed commands without adjustments.
         `;
     },
-    toolListFn: () => [bashTool],
+    toolSetFn: () => ({
+        name: "ExecuteTools",
+        description: "This tool set contains the tools for executing bash commands.",
+        tools: [bashTool],
+        active: true,
+        source: "local"
+    })
 });

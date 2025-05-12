@@ -58,7 +58,7 @@ export class OpenAIWrapper implements ILLM {
     temperature: number;
     maxTokens: number;
 
-    constructor(model: z.infer<typeof LLMModel>, streaming: boolean, temperature: number, maxTokens: number) {
+    constructor(model: z.infer<typeof LLMModel>, streaming: boolean = false, temperature: number = 0.7, maxTokens: number = 100000, parallelToolCall: boolean = false) {
     
         this.model = model;
         this.streaming = streaming;

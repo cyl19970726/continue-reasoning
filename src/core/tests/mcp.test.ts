@@ -24,7 +24,7 @@ import {
     ReadResourceTool,
     ReadResourceInputSchema,
     getServerIdTools
-} from '../tools/mcp'; // Adjust path
+} from '../contexts/mcp'; // Adjust path
 import { ContextManager } from '../context';
 import { jsonToZod } from '../utils/jsonHelper';
 
