@@ -1,24 +1,27 @@
 import { z } from "zod";
 import { ITool, IAgent, IContext, ToolCallDefinition, IMemoryManager, IRAGEnabledContext, IRAG, RAGResult, QueryOptions, AnyTool, ToolSet } from "./interfaces";
 import { randomUUID } from "crypto";
+import { logger } from "./utils/logger";
+import fs from "fs";
+import path from "path";
 
 /** Utility type to preserve type information */
 export type Pretty<type> = { [key in keyof type]: type[key] } & unknown;
 
 /**
- * 通用的搜索过滤器类型
+ * Generic search filter type
  */
 export interface SearchFilter {
   [key: string]: string | string[] | boolean | number | undefined;
 }
 
 /**
- * 从Context数据中搜索匹配条件的项目
- * @param items 要搜索的项目数组
- * @param query 搜索查询字符串
- * @param filter 过滤条件对象
- * @param options 搜索选项
- * @returns 匹配的项目数组
+ * Search for matching items from Context data
+ * @param items Array of items to search
+ * @param query Search query string
+ * @param filter Filter conditions object
+ * @param options Search options
+ * @returns Array of matching items
  */
 export function searchContextItems<T extends Record<string, any>>(
   items: T[],
@@ -40,13 +43,13 @@ export function searchContextItems<T extends Record<string, any>>(
     return [];
   }
 
-  // 过滤项目
+  // Filter items
   let filteredItems = items.filter(item => {
-    // 应用查询过滤
+    // Apply query filtering
     if (query && query.trim() !== '') {
       const q = caseSensitive ? query : query.toLowerCase();
       
-      // 检查指定字段是否匹配查询
+      // Check if specified fields match the query
       const matchesQuery = searchFields.some(field => {
         if (item[field]) {
           const fieldValue = caseSensitive 
@@ -62,20 +65,20 @@ export function searchContextItems<T extends Record<string, any>>(
       }
     }
     
-    // 应用过滤条件
+    // Apply filter conditions
     if (filter) {
       for (const [key, value] of Object.entries(filter)) {
-        // 跳过未定义的值
+        // Skip undefined values
         if (value === undefined) continue;
         
-        // 检查项目是否有这个属性
+        // Check if the item has this property
         if (!(key in item)) {
           return false;
         }
         
-        // 处理数组类型的过滤器（例如标签）
+        // Handle array type filters (e.g., tags)
         if (Array.isArray(value)) {
-          // 期望项目中有一个与过滤器数组中至少一个值匹配的数组
+          // Expect the item to have an array that matches at least one value from the filter array
           if (
             !Array.isArray(item[key]) || 
             !value.some(v => item[key].includes(v))
@@ -83,7 +86,7 @@ export function searchContextItems<T extends Record<string, any>>(
             return false;
           }
         }
-        // 处理普通值的精确匹配
+        // Handle exact matching for regular values
         else if (item[key] !== value) {
           return false;
         }
@@ -93,7 +96,7 @@ export function searchContextItems<T extends Record<string, any>>(
     return true;
   });
   
-  // 限制结果数量
+  // Limit the number of results
   if (limit > 0 && filteredItems.length > limit) {
     filteredItems = filteredItems.slice(0, limit);
   }
@@ -153,9 +156,9 @@ export function formatValue(value: any): string {
   }
 
 /**
- * 创建查询上下文数据的工具
- * @param options 工具配置选项
- * @returns 符合ITool接口的工具对象
+ * Create a tool for querying context data
+ * @param options Tool configuration options
+ * @returns Tool object conforming to ITool interface
  */
 export function createContextSearchTool<
   InputSchema extends z.ZodObject<any>,
@@ -193,26 +196,26 @@ export function createContextSearchTool<
     async: true,
     execute: async (params, agent) => {
       if (!agent) {
-        return { success: false, items: [], error: "需要Agent实例" };
+        return { success: false, items: [], error: "Agent instance required" };
       }
 
       try {
-        // 获取上下文
+        // Get context
         const context = agent.contextManager.findContextById(contextId);
         if (!context) {
-          return { success: false, items: [], error: `上下文 ${contextId} 未找到` };
+          return { success: false, items: [], error: `Context ${contextId} not found` };
         }
         
-        // 获取所有项目
+        // Get all items
         const allItems = getItems(context);
         
-        // 构建过滤器
+        // Build filter
         const filter = buildFilter(params);
         
-        // 查询字符串
+        // Query string
         const query = params.query || '';
         
-        // 使用通用搜索函数
+        // Use generic search function
         const results = searchContextItems(
           allItems,
           query as string,
@@ -224,10 +227,10 @@ export function createContextSearchTool<
           }
         );
         
-        // 转换结果
+        // Transform results
         return transformResult(results);
       } catch (error) {
-        console.error(`${name} 执行错误:`, error);
+        console.error(`${name} execution error:`, error);
         return {
           success: false,
           items: [],
@@ -239,9 +242,9 @@ export function createContextSearchTool<
 }
 
 /**
- * 简化工具创建的工厂函数
- * @param options 工具配置选项
- * @returns 符合ITool接口的工具对象
+ * Factory function to simplify tool creation
+ * @param options Tool configuration options
+ * @returns Tool object conforming to ITool interface
  */
 export function createTool<
   InputSchema extends z.ZodObject<any>,
@@ -295,11 +298,11 @@ export function createTool<
 }
 
 /**
- * 简化Context操作的辅助函数
+ * Helper functions to simplify Context operations
  */
 export const ContextHelper = {
   /**
-   * 根据ID查找Context
+   * Find Context by ID
    */
   findContext<T extends z.ZodObject<any>>(
     agent: IAgent,
@@ -313,7 +316,7 @@ export const ContextHelper = {
   },
 
   /**
-   * 更新Context数据
+   * Update Context data
    */
   updateContextData<T extends z.ZodObject<any>>(
     context: IContext<T>,
@@ -327,17 +330,31 @@ export const ContextHelper = {
   },
 
   /**
-   * 创建基本上下文的辅助函数
+   * Helper function to create a basic context
    */
   createContext<T extends z.ZodObject<any>>(options: {
     id: string;
     description: string;
     dataSchema: T;
-    initialData?: Partial<z.infer<T>>;
+    initialData: Partial<z.infer<T>>;
     renderPromptFn?: (data: z.infer<T>) => string;
     toolSetFn: () => import("./interfaces").ToolSet;
+    handleToolCall?: (toolCallResult: any) => void;
+    mcpServers?: {
+        name: string;
+        type?: "stdio" | "sse" | "streamableHttp";
+        // stdio specific
+        command?: string;
+        args?: string[];
+        cwd?: string;
+        env?: Record<string, string>;
+        // sse/http specific
+        url?: string;
+        // General options
+        autoActivate?: boolean;
+    }[];
   }): IRAGEnabledContext<T> {
-    const { id, description, dataSchema, initialData = {}, renderPromptFn, toolSetFn } = options;
+    const { id, description, dataSchema, initialData, renderPromptFn, toolSetFn, handleToolCall, mcpServers } = options;
     
     const context: IRAGEnabledContext<T> = {
       id,
@@ -345,6 +362,140 @@ export const ContextHelper = {
       dataSchema,
       
       data: dataSchema.parse(initialData) as z.infer<T>,
+      
+      // Add mcpServers if provided
+      mcpServers,
+      
+      // Add install method for MCP server connections
+      async install(agent: import("./interfaces").IAgent): Promise<void> {
+        if (!this.mcpServers || this.mcpServers.length === 0) {
+          return; // No MCP servers to connect
+        }
+        
+        try {
+          // 获取MCP context (仍然需要MCPContext提供的工具)
+          const mcpContext = agent.contextManager.findContextById("mcp-context");
+          if (!mcpContext) {
+            logger.error(`MCP context not found. Cannot connect MCP servers for ${this.id}.`);
+            return;
+          }
+          
+          // 找到可用的MCP工具
+          const allTools = agent.listToolSets()
+            .filter(ts => ts.active)
+            .flatMap(ts => ts.tools);
+          
+          const addStdioMcpServer = allTools.find(t => t.name === 'add_stdio_mcp_server');
+          const addSseOrHttpMcpServer = allTools.find(t => t.name === 'add_sse_or_http_mcp_client');
+          
+          if (!addStdioMcpServer && !addSseOrHttpMcpServer) {
+            logger.error(`MCP tools not found. Cannot connect MCP servers for ${this.id}.`);
+            return;
+          }
+          
+          // 处理每个MCP服务器配置
+          for (const serverConfig of this.mcpServers) {
+            try {
+              // 确保服务器有name属性
+              if (!serverConfig.name) {
+                serverConfig.name = this.id; // 默认使用context ID作为服务器名称
+              }
+              
+              // 处理cwd中的${workspaceRoot}变量
+              if (serverConfig.cwd && typeof serverConfig.cwd === 'string') {
+                if (serverConfig.cwd.includes('${workspaceRoot}')) {
+                  serverConfig.cwd = serverConfig.cwd.replace('${workspaceRoot}', process.cwd());
+                  logger.info(`Resolved cwd for ${serverConfig.name}: ${serverConfig.cwd}`);
+                }
+              }
+              
+              // 确定服务器类型
+              let serverType = serverConfig.type;
+              if (!serverType) {
+                if (serverConfig.url) {
+                  serverType = 'sse';
+                } else if (serverConfig.command) {
+                  serverType = 'stdio';
+                } else {
+                  logger.error(`Unknown MCP server type for ${serverConfig.name} in context ${this.id}.`);
+                  continue;
+                }
+              }
+              
+              // 自动解析命令的绝对路径（仅针对stdio类型）
+              if (serverType === 'stdio' && serverConfig.command) {
+                const command = serverConfig.command;
+                
+                // 常见需要解析路径的命令
+                const commonCommands = ['npx', 'uvx', 'node', 'python', 'python3'];
+                
+                // 如果是常见命令，尝试获取绝对路径
+                if (commonCommands.includes(command)) {
+                  try {
+                    // 使用which或where命令获取绝对路径
+                    const { execSync } = require('child_process');
+                    // 使用适用于不同平台的命令组合
+                    const resolvedPath = execSync(`which ${command} || where ${command} 2>/dev/null || echo ${command}`)
+                      .toString()
+                      .trim();
+                    
+                    if (resolvedPath && resolvedPath !== command) {
+                      logger.info(`Resolved command ${command} to absolute path: ${resolvedPath}`);
+                      serverConfig.command = resolvedPath;
+                    }
+                  } catch (error) {
+                    logger.warn(`Failed to resolve absolute path for ${command}, using as-is: ${error}`);
+                    // 继续使用原始命令
+                  }
+                }
+              }
+              
+              // 连接服务器
+              let result;
+              logger.info(`Context ${this.id} connecting to MCP server: ${serverConfig.name}...`);
+              
+              if (serverType === 'stdio' && addStdioMcpServer) {
+                result = await addStdioMcpServer.execute({
+                  name: serverConfig.name,
+                  command: serverConfig.command,
+                  args: serverConfig.args || [],
+                  cwd: serverConfig.cwd || process.cwd(),
+                  env: serverConfig.env || {}
+                }, agent);
+              } 
+              else if ((serverType === 'sse' || serverType === 'streamableHttp') && addSseOrHttpMcpServer) {
+                result = await addSseOrHttpMcpServer.execute({
+                  name: serverConfig.name,
+                  type: serverType,
+                  url: serverConfig.url
+                }, agent);
+              }
+              else {
+                logger.error(`Cannot connect MCP server ${serverConfig.name}: Missing tool or unsupported type ${serverType}`);
+                continue;
+              }
+              
+              if (result && result.success) {
+                logger.info(`Context ${this.id} successfully connected to MCP server: ${serverConfig.name}`);
+                logger.info(`Added ${result.toolCount} tools from server in ${result.categories?.length || 0} categories`);
+                
+                // 处理自动激活设置
+                if (serverConfig.autoActivate === false) {
+                  agent.deactivateToolSets([this.id]);
+                  logger.info(`Deactivated tool set ${this.id} as per configuration`);
+                }
+              } else {
+                logger.error(`Failed to connect MCP server ${serverConfig.name} for context ${this.id}:`, 
+                  result?.error || 'Unknown error');
+              }
+            } catch (error) {
+              logger.error(`Error connecting MCP server ${serverConfig.name} for context ${this.id}:`, error);
+            }
+          }
+        } catch (error) {
+          logger.error(`Error setting up MCP servers for context ${this.id}:`, error);
+        }
+      },
       
       setData(data: Partial<z.infer<T>>): void {
         try {
@@ -385,11 +536,16 @@ export const ContextHelper = {
       }
     };
     
+    // Only set onToolCall property if handleToolCall exists
+    if (handleToolCall) {
+      context.onToolCall = handleToolCall;
+    }
+    
     return context;
   },
 
   /**
-   * 创建支持RAG功能的上下文
+   * Create a context with RAG capabilities
    */
   createRAGContext<T extends z.ZodObject<any>>(options: {
     id: string;
@@ -398,6 +554,7 @@ export const ContextHelper = {
     initialData?: Partial<z.infer<T>>;
     renderPromptFn?: (data: z.infer<T>) => string;
     toolSetFn?: () => import("./interfaces").ToolSet;
+    handleToolCall?: (toolCallResult: any) => void;
     ragConfigs?: Record<string, {
       rag: IRAG,
       queryTemplate?: string,
@@ -412,10 +569,11 @@ export const ContextHelper = {
       initialData = {}, 
       renderPromptFn, 
       toolSetFn,
+      handleToolCall,
       ragConfigs = {}
     } = options;
 
-    // 首先创建基本上下文
+    // First create a basic context
     const baseContext = ContextHelper.createContext({
       id,
       description,
@@ -427,20 +585,21 @@ export const ContextHelper = {
         description: '',
         tools: [],
         active: true
-      }))
+      })),
+      handleToolCall
     });
     
-    // 扩展为RAG上下文
+    // Extend to a RAG context
     const ragContext: IRAGEnabledContext<T> = {
       ...baseContext,
       rags: {}, // Initialize empty object
       
-      // 重写renderPrompt方法为异步版本
+      // Override renderPrompt method with async version
       renderPrompt: async function(): Promise<string> {
-        // 先加载RAG相关数据
+        // First load RAG-related data
         const ragData = await this.loadRAGForPrompt!();
         
-        // 如果有自定义renderPromptFn则使用它
+        // If there's a custom renderPromptFn, use it
         let basePrompt = `
             --- Context-${this.id} ---
             Description: ${this.description}
@@ -452,17 +611,17 @@ export const ContextHelper = {
           basePrompt += `\nEmpty Context`;
         }
         
-        // 组合基本提示和RAG数据
+        // Combine basic prompt and RAG data
         return `${basePrompt}\n\n${ragData}`;
       },
       
-      // 注册RAG实例
+      // Register RAG instance
       registerRAG(ragId: string, rag: IRAG): void {
         if (!this.rags) this.rags = {};
         this.rags[ragId] = rag;
       },
       
-      // 查询RAG
+      // Query RAG
       async queryContextRAG(ragId: string, query: string, options?: QueryOptions): Promise<RAGResult[]> {
         if (!this.rags) this.rags = {};
         const rag = this.rags[ragId];
@@ -470,17 +629,17 @@ export const ContextHelper = {
           throw new Error(`RAG with ID ${ragId} not found in context ${this.id}`);
         }
         
-        // 使用配置中的模板进行查询，如果有的话
+        // Use template from config for query, if available
         const config = ragConfigs[ragId];
         const maxResults = config?.maxResults || 5;
         
-        // 应用查询模板如果有的话
+        // Apply query template if available
         let finalQuery = query;
         if (config?.queryTemplate) {
           finalQuery = render(config.queryTemplate, { query, ...this.data } as any);
         }
         
-        // 执行查询
+        // Execute query
         const results = await rag.query(finalQuery, { 
           ...options,
           limit: options?.limit || maxResults 
@@ -489,36 +648,36 @@ export const ContextHelper = {
         return results;
       },
       
-      // 加载RAG数据用于提示
+      // Load RAG data for prompt
       async loadRAGForPrompt(): Promise<string> {
         let ragData = '--- Related Knowledge ---\n';
         
-        // 初始化rags如果未定义
+        // Initialize rags if undefined
         if (!this.rags) this.rags = {};
         
-        // 遍历所有已注册的RAG
+        // Iterate through all registered RAGs
         for (const [ragId, rag] of Object.entries(this.rags)) {
           const config = ragConfigs[ragId];
           if (!config) continue;
           
-          // 使用配置中的模板构建查询，如果有的话
+          // Use template from config to build query, if available
           let query = `${this.description || id}`;
           if (config.queryTemplate) {
             query = render(config.queryTemplate, this.data as any);
           }
           
           try {
-            // 查询RAG
+            // Query RAG
             const results = await rag.query(query, { 
               limit: config.maxResults || 3 
             });
             
-            // 格式化结果
+            // Format results
             if (results.length > 0) {
               if (config.resultsFormatter) {
                 ragData += config.resultsFormatter(results);
               } else {
-                // 默认格式化
+                // Default formatting
                 ragData += `\n--- ${ragId} Knowledge ---\n`;
                 results.forEach((result, i) => {
                   ragData += `[${i+1}] ${result.content} (Score: ${result.score.toFixed(2)})\n`;
@@ -535,7 +694,12 @@ export const ContextHelper = {
       }
     };
 
-    // 预先注册配置的RAG实例
+    // Only set onToolCall property if handleToolCall exists
+    if (handleToolCall) {
+      ragContext.onToolCall = handleToolCall;
+    }
+
+    // Pre-register configured RAG instances
     for (const [ragId, config] of Object.entries(ragConfigs)) {
       ragContext.registerRAG!(ragId, config.rag);
     }

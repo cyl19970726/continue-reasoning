@@ -10,6 +10,26 @@ export interface IContextManager{
     findContextById: (id: string) => AnyRAGEnableContext;
     renderPrompt: () => string | Promise<string>;
     contextList: () => AnyRAGEnableContext[];
+    
+    /**
+     * 集中管理所有Context的MCP服务器安装
+     * 遍历所有Context，调用它们的install方法，并处理安装结果
+     * 
+     * @param agent 代理实例，将传递给每个Context的install方法
+     * @returns 安装结果的摘要信息
+     */
+    installAllContexts: (agent: IAgent) => Promise<{
+        totalContexts: number,
+        installedCount: number,
+        failedCount: number,
+        skippedCount: number,
+        details: Array<{
+            contextId: string,
+            status: 'installed' | 'failed' | 'skipped',
+            error?: string,
+            mcpServersCount?: number
+        }>
+    }>;
 }
 
 export interface IContext<T extends z.ZodObject<any>>{
@@ -36,10 +56,79 @@ export interface IContext<T extends z.ZodObject<any>>{
     dataSchema: T;
     data: z.infer<T>;
 
+    /**
+     * MCP服务器配置，直接在Context中定义，而不是从配置文件加载。
+     * 每个Context可以关联一个或多个MCP服务器，这些服务器的工具将自动注入到Context的toolSet中。
+     * 
+     * 配置示例:
+     * ```
+     * mcpServers: [
+     *   {
+     *     name: "mcp-server-name",
+     *     type: "stdio",
+     *     command: "npx",
+     *     args: ["-y", "mcp-package"],
+     *     env: { "API_KEY": "your-key" }
+     *   },
+     *   {
+     *     name: "another-server",
+     *     type: "sse",
+     *     url: "https://mcp-server-url.com"
+     *   }
+     * ]
+     * ```
+     */
+    mcpServers?: {
+        name: string;
+        type?: "stdio" | "sse" | "streamableHttp";
+        // stdio specific
+        command?: string;
+        args?: string[];
+        cwd?: string;
+        env?: Record<string, string>;
+        // sse/http specific
+        url?: string;
+        // General options
+        autoActivate?: boolean;
+    }[];
+    
+    /**
+     * Called during agent setup after context registration.
+     * Provides an opportunity for the context to initialize resources,
+     * connect to MCP servers, and configure its toolsets.
+     * 
+     * @param agent The agent instance this context is registered with
+     */
+    install?: (agent: IAgent) => Promise<void>;
+
     setData(data: Partial<z.infer<T>>): void;
     getData(): z.infer<T>;
 
-    toolSet: () => ToolSet;
+    /**
+     * Returns the tool set(s) associated with this context.
+     * 
+     * A context can now return either:
+     * 1. A single ToolSet
+     * 2. Multiple ToolSets as an array
+     * 
+     * When multiple tool sets are returned:
+     * - They should be logically related to the context
+     * - Each should serve a distinct purpose within the context's domain
+     * - The renderPrompt method should explain when to use each tool set
+     * 
+     * Example of a context with multiple tool sets:
+     * - A DatabaseContext might return [QueryToolSet, SchemaToolSet, AdminToolSet]
+     * - An MCP integration context might return tool sets organized by categories
+     */
+    toolSet: () => ToolSet | ToolSet[];
+    
+    /**
+     * Optional method to handle tool call results.
+     * Allows the context to react to tool execution results.
+     * 
+     * @param toolCallResult The result of a tool execution
+     */
+    onToolCall?: (toolCallResult: ToolCallResult) => void;
     
     /**
      * Generates the prompt content for this context, which will be included in the system prompt.
@@ -53,6 +142,7 @@ export interface IContext<T extends z.ZodObject<any>>{
      *    - Summary: Brief overview of current state (1-2 lines)
      *    - Main Content: Key information organized in logical sections
      *    - Instructions: Clear guidance on how to use this context
+     *    - Tool Set Guidance: For contexts with multiple tool sets, explain when to use each one
      * 
      * 2. FORMATTING
      *    - Use section dividers like "--- Section Name ---"
@@ -69,15 +159,52 @@ export interface IContext<T extends z.ZodObject<any>>{
      *    - Include constraints, limitations, and important rules
      *    - Use clear, concise language focused on agent actions
      * 
-     * 4. CONTEXT-SPECIFIC PATTERNS
+     * 4. MULTI-TOOLSET GUIDANCE
+     *    - When a context has multiple tool sets, clearly explain each set's purpose
+     *    - Provide decision guidelines for choosing the appropriate tool set
+     *    - Group related tools together and explain their relationships
+     *    - Use examples to illustrate typical workflows across tool sets
+     *    - Explain any sequence dependencies between tool sets
+     * 
+     * 5. CONTEXT-SPECIFIC PATTERNS
      *    - Tool-related contexts: Show available tools, their status, recent usage
      *    - Plan/workflow contexts: Show steps, progress, dependencies
      *    - Data contexts: Summarize available data, recency, relevance
      *    - Interaction contexts: Show relevant history, current query, response guidelines
+     *    - Integration contexts: Explain external system capabilities, limitations, and when to use them
      * 
      * EXAMPLES:
      * 
-     * 1. Tool Context Example:
+     * 1. Context with Multiple Tool Sets:
+     * ```
+     * --- Hacker News Integration Context ---
+     * 
+     * Current State: Connected to Hacker News API, 3 recent searches for AI topics
+     * 
+     * Available Tool Sets:
+     * 
+     * 1. BASIC STORY TOOLS
+     *    • For retrieving and searching content directly
+     *    • Use for initial exploration and specific story retrieval
+     *    • Tools: get_stories, get_story_info, search_stories
+     * 
+     * 2. USER TOOLS
+     *    • For accessing user information and submissions
+     *    • Use when tracking specific authors or companies
+     *    • Tools: get_user_info, get_user_submissions
+     * 
+     * 3. AI CONTENT TOOLS
+     *    • For specialized AI content discovery and analysis
+     *    • Use when specifically targeting AI news and trends
+     *    • Tools: find_ai_stories, analyze_ai_trends
+     * 
+     * Usage Decision Guide:
+     * - For general browsing → Use Basic Story Tools
+     * - For following specific experts → Use User Tools
+     * - For focused AI research → Use AI Content Tools first, then other tools for details
+     * ```
+     * 
+     * 2. Tool Context Example:
      * ```
      * --- Tool Call Context ---
      * Available tools: 5 tools ready, 3 async operations in progress
@@ -94,45 +221,6 @@ export interface IContext<T extends z.ZodObject<any>>{
      * Important: Wait for async tool results before making dependent calls
      * ```
      * 
-     * 2. Client Context Example:
-     * ```
-     * --- CLI Interaction Context ---
-     * User: admin01 | Latest query: "How to implement OAuth in my app?"
-     * 
-     * Conversation History (most recent first):
-     * 1. [15:45:30] User: "How to implement OAuth in my app?"
-     * 2. [15:44:20] Agent: "What kind of application are you building?"
-     * 3. [15:43:55] User: "I need help with user authentication"
-     * 
-     * Response Guidelines:
-     * • Answer the query directly using available information
-     * • If details are missing, ask clarifying questions
-     * • Use code examples for technical implementations
-     * • ONLY use cli-response-tool when a direct answer is required
-     * ```
-     * 
-     * 3. Process Context Example:
-     * ```
-     * --- Plan Context ---
-     * Goal: Create a React application with TypeScript
-     * Status: IN PROGRESS (2/5 steps completed)
-     * 
-     * Steps:
-     * ✓ 1. Initialize project with Create React App
-     * ✓ 2. Configure TypeScript settings
-     * ⟳ 3. Create component structure [IN PROGRESS]
-     * ⃝ 4. Implement state management
-     * ⃝ 5. Set up testing framework
-     * 
-     * Current Focus:
-     * - Complete step 3 (Create component structure)
-     * - Prepare for step 4 dependencies
-     * 
-     * Decision Points:
-     * • If user requests a different structure, update plan before proceeding
-     * • If step 3 completes, automatically begin step 4
-     * ```
-     * 
      * TESTING TASKS:
      * To evaluate the effectiveness of your prompts, test if the LLM can:
      * 1. Follow context-specific rules consistently (e.g., use sync vs async tools correctly)
@@ -141,6 +229,7 @@ export interface IContext<T extends z.ZodObject<any>>{
      * 4. Avoid repetitive or redundant actions (e.g., not creating duplicate requests)
      * 5. Prioritize tasks correctly based on context information
      * 6. Switch between contexts appropriately (e.g., from planning to execution)
+     * 7. Select the appropriate tool set for the current task (for contexts with multiple tool sets)
      * 
      * Example tests:
      * - Create a multi-step plan and check if steps are executed in the correct order

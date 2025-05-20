@@ -1,5 +1,5 @@
 import { AnyTool, IContextManager, IMemoryManager, IAgent, IClient, ILLM, IContext, ToolCallDefinition, ToolCallParams, ToolCallResult, IRAGEnabledContext, asRAGEnabledContext } from "./interfaces";
-import { SystemToolNames } from "./contexts/index";
+import { SystemToolNames, HackernewsContext, DeepWikiContext, FireCrawlContext } from "./contexts/index";
 import { ITaskQueue, ITask, TaskQueue } from "./taskQueue";
 import { ToolCallContext, ToolCallContextId } from "./contexts/tool";
 import { SystemToolContext } from "./contexts/system";
@@ -18,17 +18,9 @@ import { GeminiWrapper } from "./models/gemini";
 import path from "path";
 import fs from "fs";
 import { ProblemContext } from "./contexts/problem";
-import { getLogger, LogLevel, Logger } from "./utils/logger";
+import { LogLevel, Logger } from "./utils/logger";
 import { ToolSetContext } from "./contexts/toolset";
-
-// Get singleton logger instance
-export const logger = getLogger({
-    minLevel: LogLevel.INFO,
-    console: true,
-    file: true,
-    logDir: './logs',
-    timestamp: true
-});
+import { logger } from "./utils/logger";
 
 dotenv.config();
 
@@ -42,6 +34,9 @@ const DEFAULT_CONTEXTS = [
     WebSearchContext,
     MCPContext,
     ToolSetContext,
+    HackernewsContext,
+    DeepWikiContext,
+    FireCrawlContext
 ]
 
 const DEFAULT_AGENT_OPTIONS: AgentOptions = {
@@ -155,14 +150,22 @@ export class BaseAgent implements IAgent {
 
 
     async setup(): Promise<void>{
+        // Register all contexts with the context manager
         this.contexts.forEach((context) => {
             this.contextManager.registerContext(asRAGEnabledContext(context));
         });
+        
+        // Add tools from contexts
         this.contextManager.contexts.forEach((context) => {
             if (context && context.toolSet) {
                 const toolSet = context.toolSet();
                 if (toolSet) {
-                    this.toolSets.push(toolSet);
+                    // Handle both single ToolSet and array of ToolSets
+                    if (Array.isArray(toolSet)) {
+                        this.toolSets.push(...toolSet);
+                    } else {
+                        this.toolSets.push(toolSet);
+                    }
                 }
             } else if (context) {
                 logger.warn(`Context ${context.id} is missing the toolList method.`);
@@ -171,6 +174,16 @@ export class BaseAgent implements IAgent {
             }
         });
 
+          // 使用ContextManager集中安装所有Context的MCP服务器
+        const installResults = await this.contextManager.installAllContexts(this);
+        logger.info(`MCP服务器安装结果: 总数=${installResults.totalContexts}, 成功=${installResults.installedCount}, 失败=${installResults.failedCount}, 跳过=${installResults.skippedCount}`);
+        // 如果有安装失败的，记录详细信息
+        if (installResults.failedCount > 0) {
+            const failedContexts = installResults.details
+                .filter(detail => detail.status === 'failed')
+                .map(detail => `${detail.contextId}: ${detail.error}`);
+            logger.warn(`以下Context的MCP服务器安装失败:\n${failedContexts.join('\n')}`);
+        }
 
         // create the toolset for client output
         const clientOutputToolSet: ToolSet = {
@@ -194,115 +207,6 @@ export class BaseAgent implements IAgent {
             this.llm.setParallelToolCall(this.enableParallelToolCalls);
         } else {
             this.llm.parallelToolCall = this.enableParallelToolCalls;
-        }
-
-        // Load and connect MCP servers from config
-        await this.setupMcpServersFromConfig();
-    }
-
-    /**
-     * Load MCP server configurations from the config file and connect to them
-     */
-    private async setupMcpServersFromConfig(): Promise<void> {
-        try {
-            // Check if config file exists
-            if (!fs.existsSync(this.mcpConfigPath)) {
-                logger.info(`MCP config file not found at ${this.mcpConfigPath}. Skipping MCP server setup.`);
-                return;
-            }
-
-            // Read and parse config file
-            const configData = fs.readFileSync(this.mcpConfigPath, 'utf8');
-            const config = JSON.parse(configData);
-            
-            if (!config.mcpServers || typeof config.mcpServers !== 'object') {
-                logger.info('No MCP servers defined in config file. Skipping MCP server setup.');
-                return;
-            }
-
-            // Get server entries from object format
-            const serverEntries = Object.entries(config.mcpServers);
-            logger.info(`Found ${serverEntries.length} MCP servers in config.`);
-            
-            // Get the MCP context
-            const mcpContext = this.contextManager.findContextById(MCPContextId);
-            if (!mcpContext) {
-                logger.error('MCP context not found. Cannot connect to MCP servers.');
-                return;
-            }
-
-            // Connect to each server
-            for (const [serverName, serverConfig] of serverEntries) {
-                try {
-                    let result;
-                    const typedConfig = serverConfig as any;
-                    
-                    // 处理${workspaceRoot}变量
-                    if (typedConfig.cwd && typeof typedConfig.cwd === 'string') {
-                        if (typedConfig.cwd.includes('${workspaceRoot}')) {
-                            typedConfig.cwd = typedConfig.cwd.replace('${workspaceRoot}', process.cwd());
-                            logger.info(`Resolved cwd for ${serverName}: ${typedConfig.cwd}`);
-                        }
-                    }
-                    
-                    // Determine server type based on config properties
-                    let serverType = typedConfig.type;
-                    // If type not explicitly specified, infer from properties
-                    if (!serverType) {
-                        if (typedConfig.url) {
-                            serverType = 'sse'; // or streamableHttp
-                        } else if (typedConfig.command) {
-                            serverType = 'stdio';
-                        } else {
-                            logger.warn(`Unknown MCP server type for ${serverName}. Skipping.`);
-                            continue;
-                        }
-                    }
-                    
-                    logger.info(`Connecting to MCP server: ${serverName} (${serverType})`);
-                    
-                    // Connect based on server type
-                    if (serverType === 'stdio') {
-                        result = await AddStdioMcpServer.execute({
-                            command: typedConfig.command,
-                            args: typedConfig.args || [],
-                            cwd: typedConfig.cwd || process.cwd(),
-                            env: typedConfig.env || {}
-                        }, this);
-                    } 
-                    else if (serverType === 'sse' || serverType === 'streamableHttp') {
-                        result = await AddSseOrHttpMcpServer.execute({
-                            type: serverType,
-                            url: typedConfig.url
-                        }, this);
-                    }
-                    else {
-                        logger.warn(`Unknown MCP server type: ${serverType}. Skipping.`);
-                        continue;
-                    }
-
-                    if (result && result.success) {
-                        logger.info(`Successfully connected to MCP server: ${serverName}`);
-                        logger.info(`Added ${result.toolCount} tools from server in ${result.categories?.length || 0} categories`);
-                        
-                        // Set auto-activation based on config (default to true if not specified)
-                        if (typedConfig.autoActivate === false) {
-                            // Find the tool set name for this server
-                            const toolSetName = `MCPServer_${result.serverId}`;
-                            this.deactivateToolSets([toolSetName]);
-                            logger.info(`Deactivated tool set ${toolSetName} as per configuration`);
-                        }
-                    } else {
-                        logger.error(`Failed to connect to MCP server: ${serverName}`, result?.error || 'Unknown error');
-                    }
-                } 
-                catch (error) {
-                    logger.error(`Error connecting to MCP server ${serverName}:`, error);
-                }
-            }
-        } 
-        catch (error) {
-            logger.error('Error setting up MCP servers from config:', error);
         }
     }
 
@@ -388,6 +292,9 @@ export class BaseAgent implements IAgent {
                 try {
                     const result = await tool.execute(toolCall.parameters, this);
                     typedToolCallContext.setToolCallResult(toolCall.call_id, result as ToolCallResult);
+                    
+                    // Call processToolCallResult for sync tool results
+                    this.processToolCallResult(result as ToolCallResult);
 
                 } catch (error) {
                      logger.error(`Error executing sync tool ${tool.name} (${toolCall.call_id}):`, error);
@@ -407,6 +314,10 @@ export class BaseAgent implements IAgent {
                     }
                 }, 0, taskId).then((result) => {
                     typedToolCallContext.setToolCallResult(taskId, result as ToolCallResult);
+                    
+                    // Call processToolCallResult for async tool results
+                    this.processToolCallResult(result as ToolCallResult);
+                    
                 }).catch(error => {
                      logger.error(`Error processing async tool ${tool.name} (${taskId}) completion:`, error);
                      // Type check for error message
@@ -464,6 +375,28 @@ export class BaseAgent implements IAgent {
     // New: Get all tools from active tool sets
     getActiveTools(): AnyTool[] {
         return this.toolSets.filter(ts => ts.active).flatMap(ts => ts.tools);
+    }
+    
+    /**
+     * Process a tool call result by notifying relevant contexts
+     * This allows contexts to react to tool results and update their state
+     * 
+     * @param toolCallResult The result from a tool execution
+     */
+    protected processToolCallResult(toolCallResult: ToolCallResult): void {
+        if (!toolCallResult) return;
+        
+        // Iterate through all contexts and call onToolCall if it exists
+        const contexts = this.contextManager.contextList();
+        for (const context of contexts) {
+            try {
+                if (context && typeof (context as any).onToolCall === 'function') {
+                    (context as any).onToolCall(toolCallResult);
+                }
+            } catch (error) {
+                logger.error(`Error in context ${context.id} onToolCall handler:`, error);
+            }
+        }
     }
 }
 

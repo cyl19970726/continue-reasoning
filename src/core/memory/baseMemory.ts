@@ -57,7 +57,7 @@ export class MapMemoryManager implements IMemoryManager {
         if (!storage) {
             throw new Error(`Container with id ${containerId} not found`);
         }
-        const memoryId = randomUUID();
+        const memoryId = memory.id || randomUUID();
         storage.set(memoryId, memory);
         return memoryId;
     }

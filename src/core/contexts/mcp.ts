@@ -4,13 +4,14 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { any, z } from "zod";
-import { IAgent, ToolSet } from "../interfaces";
+import { IAgent, ToolSet, IRAGEnabledContext } from "../interfaces";
 import { zodToJson, jsonToZodStrict, jsonToZodNostrict } from "../utils/jsonHelper";
-import { logger } from "../agent";
+import { logger } from "../utils/logger";
 import { exec } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import os from "os";
+import { CreateRAGContext } from "./rag/createRagContext";
 
 // 使用promisify包装exec
 const execAsync = promisify(exec);
@@ -62,11 +63,12 @@ export const MCPContext = ContextHelper.createContext({
         tools: [
             AddStdioMcpServer,
             AddSseOrHttpMcpServer,
-            ListToolsTool,
+            ListToolsTool, 
             ListPromptsTool, 
             ListResourcesTool,
             RemoveMcpServer,
-            ReadResourceTool
+            ReadResourceTool,
+            CreateRAGContext
         ],
         active: true,
         source: "mcp-context"
@@ -105,6 +107,7 @@ export const REMOVE_MCP_CLIENT_ID = "remove-mcp-client";
 export const GET_MCP_CLIENT_ID = "get-mcp-client";
 // 专门用于 stdio 的 schema
 export const AddStdioMcpServerInputSchema = z.object({
+    name: z.string().describe("The name for this MCP server. Will be used as the toolset name."),
     command: z.string().describe("The command to run for stdio transport."),
     args: z.array(z.string()).describe("The arguments to pass to the command for stdio transport."),
     cwd: z.string().optional().describe("The working directory for the command for stdio transport."),
@@ -157,13 +160,13 @@ async function findNpxPath(): Promise<string> {
 }
 
 // --- Dynamic registration of MCP tools helper function ---
-function registerMcpToolsForClient(client: Client, serverId: number, agent: IAgent, context: any) {
+function registerMcpToolsForClient(client: Client, serverId: number, agent: IAgent, context: any, toolsetName?: string) {
     if (!client || !client.listTools) return [];
 
     // Create toolset for this mcp server
     const mcpToolSet: ToolSet = {
-        name: `MCPServer_${serverId}`,
-        description: `Collection of tools provided by MCP server #${serverId}. These tools are dynamically discovered from the external MCP endpoint and provide extended capabilities such as specialized APIs, integrations, and domain-specific functions.`,
+        name: toolsetName || `MCPServer_${serverId}`,
+        description: `Collection of tools provided by MCP server ${toolsetName || `#${serverId}`}. These tools are dynamically discovered from the external MCP endpoint and provide extended capabilities such as specialized APIs, integrations, and domain-specific functions.`,
         tools: [],
         active: true,
         source: "mcp"
@@ -179,6 +182,35 @@ function registerMcpToolsForClient(client: Client, serverId: number, agent: IAge
         for (const tool of tools) {
             // Only support inputSchema that is an object and has properties
             if (!tool.inputSchema || typeof tool.inputSchema !== 'object' || !tool.inputSchema.properties) continue;
+            
+            // Check for 'any' type or other suspicious schema types that might cause OpenAI API issues
+            try {
+                // Check if the schema or any of its properties use 'any' type 
+                const schemaStr = JSON.stringify(tool.inputSchema);
+                if (schemaStr.includes('"type":"any"') || schemaStr.includes('"type": "any"')) {
+                    logger.warn(`MCP Tool registration warning: Tool "${tool.name}" from server ${serverId} has parameters with 'any' type which may cause OpenAI API errors. This tool might not work properly.`);
+                    // Skip this tool since it will likely cause API errors
+                    continue;
+                }
+                
+                // Also check for missing type definitions
+                const properties = tool.inputSchema.properties;
+                let hasInvalidProperty = false;
+                for (const propName in properties) {
+                    const prop = properties[propName];
+                    if (!prop.type) {
+                        logger.warn(`MCP Tool registration warning: Tool "${tool.name}" property "${propName}" is missing type definition`);
+                        hasInvalidProperty = true;
+                    }
+                }
+                
+                if (hasInvalidProperty) {
+                    logger.warn(`Skipping tool "${tool.name}" due to invalid property definitions`);
+                    continue;
+                }
+            } catch (e) {
+                logger.warn(`Error checking schema for tool "${tool.name}":`, e);
+            }
             
             // Normalize tool name: replace "-" with "_"
             const normalizedToolName = tool.name.replace(/-/g, '_');
@@ -242,6 +274,42 @@ function registerMcpToolsForClient(client: Client, serverId: number, agent: IAge
             agent.toolSets.push(mcpToolSet);
             // Activate the tool set
             agent.activateToolSets([mcpToolSet.name]);
+            
+            // NEW: Check if there's a corresponding context with the same name as the toolset
+            // This allows for automatic association between MCP servers and contexts
+            const associatedContextId = toolsetName;
+            if (associatedContextId) {
+                const associatedContext = agent.contextManager.findContextById(associatedContextId);
+                if (associatedContext) {
+                    logger.info(`Found matching context for MCP server: ${associatedContextId}`);
+                    
+                    // If the context has a toolSet method that returns an empty tools array,
+                    // we can auto-populate it with the MCP server's tools
+                    const existingToolSet = associatedContext.toolSet?.();
+                    if (existingToolSet) {
+                        try {
+                            // Clone the tools array to avoid reference issues
+                            const toolsToAdd = [...mcpToolSet.tools];
+                            
+                            // Check if existingToolSet is an array or a single ToolSet
+                            if (Array.isArray(existingToolSet)) {
+                                // Handle array of ToolSets case
+                                logger.warn(`Context ${associatedContextId} returns multiple tool sets, cannot auto-populate tools`);
+                            } else if (existingToolSet.tools && existingToolSet.tools.length === 0) {
+                                // Find the actual toolSet in agent's toolSets that matches the context ID
+                                const contextToolSet = agent.toolSets.find(ts => ts.name === associatedContextId);
+                                if (contextToolSet) {
+                                    // Add the MCP tools to the context's toolset
+                                    contextToolSet.tools = toolsToAdd;
+                                    logger.info(`Auto-populated ${toolsToAdd.length} tools from MCP server into ${associatedContextId} context`);
+                                }
+                            }
+                        } catch (e) {
+                            logger.error(`Error auto-populating tools for context ${associatedContextId}:`, e);
+                        }
+                    }
+                }
+            }
         }
         
         // Record toolIds to client object for potential later cleanup
@@ -320,10 +388,10 @@ export const AddStdioMcpServer = createTool({
             context.data.clients.push(client);
             const newClientId = context.data.clients.length - 1;
             
-            // Dynamic registration of MCP tools
-            logger.info(`Registering tools for MCP client #${newClientId}...`);
-            const toolIds = await registerMcpToolsForClient(client, newClientId, agent, context);
-            logger.info(`Added ${toolIds.length} tools for MCPServer_${newClientId}`);
+            // Dynamic registration of MCP tools - using custom name if provided
+            logger.info(`Registering tools for MCP client ${params.name} (ID: ${newClientId})...`);
+            const toolIds = await registerMcpToolsForClient(client, newClientId, agent, context, params.name);
+            logger.info(`Added ${toolIds.length} tools for ${params.name}`);
             
             // Get tool category information to return more detailed results
             const categories = new Set<string>();
@@ -355,6 +423,7 @@ export const AddStdioMcpServer = createTool({
 
 // sse/http 专用
 export const AddSseOrHttpMcpServerInputSchema = z.object({
+    name: z.string().describe("The name for this MCP server. Will be used as the toolset name."),
     type: z.enum(["sse", "streamableHttp"]).describe("The transport type of the MCP client."),
     url: z.string().describe("The URL of the MCP client."),
 });
@@ -400,9 +469,9 @@ export const AddSseOrHttpMcpServer = createTool({
             context.data.clients.push(client);
             const newClientId = context.data.clients.length - 1;
             
-            // Dynamic registration of MCP tools
-            const toolIds = await registerMcpToolsForClient(client, newClientId, agent, context);
-            console.log(`Added ${toolIds.length} tools for MCPServer_${newClientId}`);
+            // Dynamic registration of MCP tools - using custom name if provided
+            const toolIds = await registerMcpToolsForClient(client, newClientId, agent, context, params.name);
+            console.log(`Added ${toolIds.length} tools for ${params.name}`);
             
             // Get tool category information to return more detailed results
             const categories = new Set<string>();

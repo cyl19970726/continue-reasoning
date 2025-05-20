@@ -436,3 +436,12 @@ export default Logger;
 export function getLogger(options?: LoggerOptions): Logger {
   return Logger.getInstance(options);
 } 
+
+// global logger
+export const logger = getLogger({
+    minLevel: LogLevel.INFO,
+    console: true,
+    file: true,
+    logDir: './logs',
+    timestamp: true
+}); 
