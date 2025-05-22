@@ -1,0 +1,1 @@
+use deepwiki mcp to fetch https://deepwiki.com/openai/codex
