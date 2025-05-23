@@ -584,7 +584,7 @@ export const ContextHelper = {
         name: '',
         description: '',
         tools: [],
-        active: true
+        active: false
       })),
       handleToolCall
     });

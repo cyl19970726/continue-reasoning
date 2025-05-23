@@ -21,22 +21,33 @@ import { ProblemContext } from "./contexts/problem";
 import { LogLevel, Logger } from "./utils/logger";
 import { ToolSetContext } from "./contexts/toolset";
 import { logger } from "./utils/logger";
+import { createGeminiCodingContext } from "./contexts/coding";
 
 dotenv.config();
+
+const CODING_CONTEXT = createGeminiCodingContext(process.cwd());
+
+
+const SYSTEM_CONTEXTS = [
+    ToolCallContext,
+    ClientContext,
+    SystemToolContext,
+    MCPContext,
+    ToolSetContext,
+]
 
 const DEFAULT_CONTEXTS = [
     ToolCallContext,
     ClientContext,
     SystemToolContext,
     PlanContext,
-    ProblemContext,
     ExecuteToolsContext,
     WebSearchContext,
     MCPContext,
     ToolSetContext,
     HackernewsContext,
     DeepWikiContext,
-    FireCrawlContext
+    FireCrawlContext,
 ]
 
 const DEFAULT_AGENT_OPTIONS: AgentOptions = {
@@ -76,7 +87,7 @@ export class BaseAgent implements IAgent {
     isRunning: boolean;
     shouldStop: boolean;
 
-    contexts: IContext<any>[] = [];
+    contexts: IRAGEnabledContext<any>[] = [];
 
     constructor(
         id: string, 
