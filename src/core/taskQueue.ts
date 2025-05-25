@@ -4,8 +4,10 @@ export interface ITask{
     id: string;
     execute: () => Promise<any>;
     priority: number;
+    type: 'processStep' | 'toolCall' | 'custom';
     resolve: (value: any) => void;
     reject: (reason: any) => void;
+    createdAt: number;
 }
 
 export interface ITaskQueue{
@@ -14,15 +16,20 @@ export interface ITaskQueue{
     runningTasks: Set<string>;
     concurrency: number;
     isRunning: boolean;
-    addTask<T>(taskFn: () => Promise<T>,priority: number, id?: string): Promise<T>;
+    addTask<T>(taskFn: () => Promise<T>, priority: number, type?: 'processStep' | 'toolCall' | 'custom', id?: string): Promise<T>;
 
     taskCount(): number;
 
     runningTaskCount(): number;
 
-    taskStatus(id: string): {id: string, status: string} | 'not found';
+    taskStatus(id: string): {id: string, status: string, type?: string} | 'not found';
 
     run(): Promise<void>;
+    
+    addProcessStepTask<T>(taskFn: () => Promise<T>, priority?: number, id?: string): Promise<T>;
+    addToolCallTask<T>(taskFn: () => Promise<T>, priority?: number, id?: string): Promise<T>;
+    getTasksByType(type: 'processStep' | 'toolCall' | 'custom'): ITask[];
+    clearTasks(type?: 'processStep' | 'toolCall' | 'custom'): number;
 }
 
 export class TaskQueue implements ITaskQueue{
@@ -50,18 +57,19 @@ export class TaskQueue implements ITaskQueue{
         return this.runningTasks.size;
     }
 
-    taskStatus(id: string): {id: string, status: string} | 'not found' {
+    taskStatus(id: string): {id: string, status: string, type?: string} | 'not found' {
         const task = this.tasks.find((task) => task.id === id);
         if (!task) {
             return 'not found';
         }
         return {
             id: task.id,
-            status: this.runningTasks.has(task.id) ? 'running' : 'pending'
+            status: this.runningTasks.has(task.id) ? 'running' : 'pending',
+            type: task.type
         }
     }
 
-    addTask<T>(taskFn: () => Promise<T>,priority: number, id?: string): Promise<T> {
+    addTask<T>(taskFn: () => Promise<T>, priority: number, type?: 'processStep' | 'toolCall' | 'custom', id?: string): Promise<T> {
         return new Promise((resolve, reject) => {
 
             let taskId = id? id : randomUUID();
@@ -69,8 +77,10 @@ export class TaskQueue implements ITaskQueue{
                 id: taskId,
                 execute: taskFn,
                 priority: priority,
+                type: type || 'custom',
                 resolve: resolve,
-                reject: reject
+                reject: reject,
+                createdAt: Date.now()
             }
 
             this.tasks.push(addTask);
@@ -113,5 +123,24 @@ export class TaskQueue implements ITaskQueue{
             this.isRunning = false;
         }
     } 
+
+    addProcessStepTask<T>(taskFn: () => Promise<T>, priority?: number, id?: string): Promise<T> {
+        return this.addTask(taskFn, priority || 0, 'processStep', id);
+    }
+
+    addToolCallTask<T>(taskFn: () => Promise<T>, priority?: number, id?: string): Promise<T> {
+        return this.addTask(taskFn, priority || 0, 'toolCall', id);
+    }
+
+    getTasksByType(type: 'processStep' | 'toolCall' | 'custom'): ITask[] {
+        return this.tasks.filter((task) => task.type === type);
+    }
+
+    clearTasks(type?: 'processStep' | 'toolCall' | 'custom'): number {
+        const tasksToRemove = this.tasks.filter((task) => type ? task.type === type : true);
+        const removedCount = tasksToRemove.length;
+        this.tasks = this.tasks.filter((task) => !tasksToRemove.includes(task));
+        return removedCount;
+    }
 }
 

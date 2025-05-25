@@ -1,6 +1,7 @@
 import { promises } from "dns";
 import { z } from "zod";
 import { render } from "./utils";
+import { IEventBus } from "./events/eventBus";
 
 
 
@@ -262,6 +263,11 @@ type AnyContext = IContext<any>;
 
 // Helper function to convert any IContext to IRAGEnabledContext
 export function asRAGEnabledContext<T extends z.ZodObject<any>>(context: IContext<T>): IRAGEnabledContext<T> {
+    // Check if context is null or undefined first
+    if (!context) {
+        throw new Error('Context is null or undefined');
+    }
+    
     // If it's already a RAG-enabled context, return it as is
     if ('rags' in context && context.rags) {
         return context as IRAGEnabledContext<T>;
@@ -497,6 +503,7 @@ export interface IAgent{
     toolSets: ToolSet[];
     llm: ILLM; 
     maxSteps: number;
+    eventBus?: IEventBus;
 
     setup(): void;
     start(maxSteps: number): void;

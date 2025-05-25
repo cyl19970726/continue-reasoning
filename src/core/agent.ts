@@ -22,6 +22,7 @@ import { LogLevel, Logger } from "./utils/logger";
 import { ToolSetContext } from "./contexts/toolset";
 import { logger } from "./utils/logger";
 import { createGeminiCodingContext } from "./contexts/coding";
+import { IEventBus } from "./events/eventBus";
 
 dotenv.config();
 
@@ -67,7 +68,11 @@ export interface AgentOptions {
     maxTokens?: number;
     taskConcurency?: number;
     mcpConfigPath?: string; // Path to MCP config file
+    executionMode?: 'auto' | 'manual'; // Agent执行模式：auto(无approval) | manual(有approval)
 }
+
+// Agent状态枚举
+export type AgentState = 'idle' | 'running' | 'stopping' | 'error';
 
 export class BaseAgent implements IAgent {
     id: string;
@@ -83,9 +88,13 @@ export class BaseAgent implements IAgent {
     enableParallelToolCalls: boolean;
     toolSets: ToolSet[] = [];
     mcpConfigPath: string;
+    eventBus?: IEventBus; // 添加EventBus支持
+    executionMode: 'auto' | 'manual' = 'manual'; // Agent执行模式，默认为manual
 
     isRunning: boolean;
     shouldStop: boolean;
+    currentState: AgentState = 'idle'; // 添加状态跟踪
+    currentStep: number = 0; // 添加步骤跟踪
 
     contexts: IRAGEnabledContext<any>[] = [];
 
@@ -99,7 +108,8 @@ export class BaseAgent implements IAgent {
         maxSteps: number,
         logLevel?: LogLevel,
         agentOptions?: AgentOptions, 
-        contexts?: IContext<any>[]
+        contexts?: IContext<any>[],
+        eventBus?: IEventBus // 添加EventBus参数
     ){
 
         agentOptions = agentOptions || DEFAULT_AGENT_OPTIONS;
@@ -118,7 +128,8 @@ export class BaseAgent implements IAgent {
         this.memoryManager = memoryManager;
         this.clients = clients;
         this.toolSets = [];
-
+        this.eventBus = eventBus; // 设置EventBus
+        this.executionMode = agentOptions.executionMode || 'manual'; // 设置执行模式，默认为manual
 
         // LLM configuration options
         this.llmProvider = agentOptions.llmProvider || 'openai';
@@ -219,33 +230,141 @@ export class BaseAgent implements IAgent {
         } else {
             this.llm.parallelToolCall = this.enableParallelToolCalls;
         }
+
+        // 订阅ExecutionModeChangeEvent
+        if (this.eventBus) {
+            this.subscribeToExecutionModeChanges();
+        }
     }
 
-    // start
-    // 1. processStep() --> stop tool calls ---> this.shouldStop = true; ---> 
-    async start(maxSteps: number): Promise<void>{
+    // 添加状态变更方法
+    private async changeState(newState: AgentState, reason?: string): Promise<void> {
+        const oldState = this.currentState;
+        this.currentState = newState;
+        
+        logger.info(`Agent state changed: ${oldState} -> ${newState}${reason ? ` (${reason})` : ''}`);
+        
+        // 发布状态变更事件
+        if (this.eventBus) {
+            await this.eventBus.publish({
+                type: 'agent_state_change',
+                source: 'agent',
+                sessionId: 'agent-session',
+                payload: {
+                    fromState: oldState,
+                    toState: newState,
+                    reason,
+                    currentStep: this.currentStep
+                }
+            });
+        }
+    }
 
-        let step = 0;
+    // 新的异步start方法
+    async start(maxSteps: number): Promise<void> {
         if (this.isRunning) {
+            logger.warn('Agent is already running');
             return;
         }
-        this.isRunning = true;
-        this.shouldStop = false;
-        while (!this.shouldStop && step < maxSteps){
-            logger.info(`==========Agent Current Step: ${step} ==========`);
-            await this.processStep();
-            step++;
 
-            if (this.shouldStop) {
-               logger.info("==========Agent Stop Signal ==========");
+        try {
+            await this.changeState('running', 'User requested start');
+            this.isRunning = true;
+            this.shouldStop = false;
+            this.currentStep = 0;
+
+            logger.info(`==========Agent Starting: Max Steps ${maxSteps} ==========`);
+
+            // 将主要的执行逻辑放入taskQueue
+            await this.taskQueue.addProcessStepTask(async () => {
+                return await this.executeStepsLoop(maxSteps);
+            }, 10); // 高优先级
+
+        } catch (error) {
+            logger.error('Error in agent start:', error);
+            await this.changeState('error', `Start error: ${(error as Error).message}`);
+        } finally {
+            this.isRunning = false;
+            if (this.currentState !== 'error') {
+                await this.changeState('idle', 'Execution completed');
             }
         }
-        this.isRunning = false;
     }
 
-    stop(): void{
+    // 执行步骤循环
+    private async executeStepsLoop(maxSteps: number): Promise<void> {
+        while (!this.shouldStop && this.currentStep < maxSteps) {
+            logger.info(`==========Agent Current Step: ${this.currentStep} ==========`);
+            
+            // 发布步骤开始事件
+            if (this.eventBus) {
+                await this.eventBus.publish({
+                    type: 'agent_step',
+                    source: 'agent',
+                    sessionId: 'agent-session',
+                    payload: {
+                        stepNumber: this.currentStep,
+                        action: 'start'
+                    }
+                });
+            }
+
+            try {
+                // 将每个processStep也放入taskQueue异步执行
+                await this.taskQueue.addProcessStepTask(async () => {
+                    return await this.processStep();
+                }, 5); // 中等优先级
+
+                // 发布步骤完成事件
+                if (this.eventBus) {
+                    await this.eventBus.publish({
+                        type: 'agent_step',
+                        source: 'agent',
+                        sessionId: 'agent-session',
+                        payload: {
+                            stepNumber: this.currentStep,
+                            action: 'complete'
+                        }
+                    });
+                }
+
+                this.currentStep++;
+
+            } catch (error) {
+                logger.error(`Error in step ${this.currentStep}:`, error);
+                
+                // 发布步骤错误事件
+                if (this.eventBus) {
+                    await this.eventBus.publish({
+                        type: 'agent_step',
+                        source: 'agent',
+                        sessionId: 'agent-session',
+                        payload: {
+                            stepNumber: this.currentStep,
+                            action: 'error',
+                            error: (error as Error).message
+                        }
+                    });
+                }
+                
+                throw error; // 重新抛出错误
+            }
+
+            if (this.shouldStop) {
+                logger.info("==========Agent Stop Signal ==========");
+                break;
+            }
+        }
+    }
+
+    stop(): void {
         this.shouldStop = true;
         logger.info("==========Agent Stop has been called ==========");
+        
+        // 异步更新状态
+        this.changeState('stopping', 'User requested stop').catch(error => {
+            logger.error('Error updating state to stopping:', error);
+        });
     }
 
     private async processStep(): Promise<void>{
@@ -323,7 +442,7 @@ export class BaseAgent implements IAgent {
                         const errorMessage = (err instanceof Error) ? err.message : String(err);
                         return { type: "function", name: tool.name, call_id: taskId, result: { error: `Async execution failed: ${errorMessage}` } }; 
                     }
-                }, 0, taskId).then((result) => {
+                }, 0, 'toolCall', taskId).then((result) => {
                     typedToolCallContext.setToolCallResult(taskId, result as ToolCallResult);
                     
                     // Call processToolCallResult for async tool results
@@ -383,11 +502,18 @@ export class BaseAgent implements IAgent {
         }
     }
 
-    // New: Get all tools from active tool sets
+    // New: Get all tools from active tool sets, filtered by execution mode
     getActiveTools(): AnyTool[] {
-        return this.toolSets.filter(ts => ts.active).flatMap(ts => ts.tools);
+        const allTools = this.toolSets.filter(ts => ts.active).flatMap(ts => ts.tools);
+        
+        if (this.executionMode === 'auto') {
+            // Auto模式：过滤掉ApprovalRequestTool
+            return allTools.filter(tool => tool.name !== 'approval_request');
+        }
+        
+        return allTools; // Manual模式：包含所有工具
     }
-    
+
     /**
      * Process a tool call result by notifying relevant contexts
      * This allows contexts to react to tool results and update their state
@@ -408,6 +534,75 @@ export class BaseAgent implements IAgent {
                 logger.error(`Error in context ${context.id} onToolCall handler:`, error);
             }
         }
+    }
+
+    /**
+     * 订阅ExecutionModeChangeEvent事件
+     */
+    private subscribeToExecutionModeChanges(): void {
+        if (!this.eventBus) return;
+
+        this.eventBus.subscribe('execution_mode_change', async (event: any) => {
+            const { toMode, fromMode, reason, requestId } = event.payload;
+            
+            logger.info(`Agent received execution mode change: ${fromMode} -> ${toMode} (${reason || 'No reason provided'})`);
+            
+            try {
+                // 更新Agent的执行模式
+                this.executionMode = toMode;
+                
+                logger.info(`Agent execution mode updated to: ${this.executionMode}`);
+                
+                // 发送确认事件
+                if (this.eventBus && requestId) {
+                    await this.eventBus.publish({
+                        type: 'execution_mode_change_confirmed',
+                        source: 'agent',
+                        sessionId: event.sessionId,
+                        payload: {
+                            requestId,
+                            mode: toMode,
+                            timestamp: Date.now(),
+                            success: true
+                        }
+                    });
+                }
+            } catch (error) {
+                logger.error(`Failed to change execution mode: ${error}`);
+                
+                // 发送失败确认
+                if (this.eventBus && requestId) {
+                    await this.eventBus.publish({
+                        type: 'execution_mode_change_confirmed',
+                        source: 'agent',
+                        sessionId: event.sessionId,
+                        payload: {
+                            requestId,
+                            mode: fromMode, // 保持原模式
+                            timestamp: Date.now(),
+                            success: false,
+                            error: error instanceof Error ? error.message : String(error)
+                        }
+                    });
+                }
+            }
+        });
+    }
+
+    /**
+     * 获取当前执行模式
+     */
+    public getExecutionMode(): 'auto' | 'manual' {
+        return this.executionMode;
+    }
+
+    /**
+     * 手动设置执行模式（如果没有EventBus的话）
+     */
+    public setExecutionMode(mode: 'auto' | 'manual'): void {
+        const oldMode = this.executionMode;
+        this.executionMode = mode;
+        logger.info(`Agent execution mode changed: ${oldMode} -> ${mode}`);
     }
 }
 
