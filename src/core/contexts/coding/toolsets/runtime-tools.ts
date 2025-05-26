@@ -60,6 +60,6 @@ export const ExecuteShellCommandTool = createTool({
 
 // Future ExecuteCodeTool can be added here later
 
-export const GeminiRuntimeToolSet = [
+export const RuntimeToolSet = [
     ExecuteShellCommandTool,
 ]; 

@@ -1,7 +1,7 @@
-import { createTool, ContextHelper } from "../utils";
+import { createTool, ContextHelper } from "../../utils";
 import { z } from "zod";
-import { IAgent } from "../interfaces";
-import { logger } from "../utils/logger";
+import { IAgent } from "../../interfaces";
+import { logger } from "../../utils/logger";
 import { v4 as uuidv4 } from 'uuid';
 
 export const InteractiveContextId = "interactive-context";
@@ -36,7 +36,7 @@ const ApprovalRequestInputSchema = z.object({
     riskLevel: z.enum(['low', 'medium', 'high', 'critical']),
     preview: z.string().optional().describe("Preview of the content/action")
   }),
-  timeout: z.number().optional().default(30000).describe("Timeout in milliseconds (default: 30 seconds)")
+  timeout: z.number().optional().describe("Timeout in milliseconds (default: 30 seconds if not specified)")
 });
 
 const ApprovalRequestOutputSchema = z.object({

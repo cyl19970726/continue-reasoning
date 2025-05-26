@@ -1,0 +1,63 @@
+[2025-05-25T04:55:30.032Z] [INFO] EventBus started
+[2025-05-25T04:55:30.033Z] [INFO] HTTP server listening on port 3000
+[2025-05-25T04:55:30.033Z] [INFO] WebSocket server started on /ws
+[2025-05-25T04:55:30.034Z] [INFO] Web UI Client started on port 3000
+[2025-05-25T04:55:30.034Z] [INFO] ContextManager initialized: web-ui-agent
+[2025-05-25T04:55:30.034Z] [INFO] Setting log level to: INFO
+[2025-05-25T04:55:30.034Z] [INFO] Using OpenAI model: openai
+[2025-05-25T04:55:30.034Z] [INFO] MCP config path: /Users/hhh0x/agent/hhh-agi/examples/config/mcp.json
+[2025-05-25T04:55:30.035Z] [INFO] 开始安装所有Context的MCP服务器，共11个Context
+[2025-05-25T04:55:30.035Z] [INFO] 开始安装Context mcp-hn 的 1 个MCP服务器
+[2025-05-25T04:55:30.043Z] [INFO] Resolved command uvx to absolute path: /Users/hhh0x/.pyenv/versions/3.11.11/bin/uvx
+[2025-05-25T04:55:30.043Z] [INFO] Context mcp-hn connecting to MCP server: mcp-hn...
+[2025-05-25T04:55:30.043Z] [INFO] Starting MCP server with command: /Users/hhh0x/.pyenv/versions/3.11.11/bin/uvx mcp-hn
+[2025-05-25T04:55:30.043Z] [INFO] Working directory: /Users/hhh0x/agent/hhh-agi/examples
+[2025-05-25T04:55:30.043Z] [INFO] Environment variables: {}
+[2025-05-25T04:55:30.044Z] [INFO] Connecting to MCP client using args: mcp-hn...
+[2025-05-25T04:55:30.676Z] [INFO] Successfully connected to MCP client.
+[2025-05-25T04:55:30.677Z] [INFO] Registering tools for MCP client mcp-hn (ID: 0)...
+[2025-05-25T04:55:30.678Z] [INFO] Found matching context for MCP server: mcp-hn
+[2025-05-25T04:55:30.678Z] [INFO] Auto-populated 4 tools from MCP server into mcp-hn context
+[2025-05-25T04:55:30.678Z] [INFO] Added 4 tools for mcp-hn
+[2025-05-25T04:55:30.678Z] [INFO] Context mcp-hn successfully connected to MCP server: mcp-hn
+[2025-05-25T04:55:30.678Z] [INFO] Added 4 tools from server in 2 categories
+[2025-05-25T04:55:30.678Z] [INFO] Context mcp-hn 的MCP服务器安装完成
+[2025-05-25T04:55:30.678Z] [INFO] 开始安装Context mcp-deepwiki 的 1 个MCP服务器
+[2025-05-25T04:55:30.687Z] [INFO] Resolved command npx to absolute path: /Users/hhh0x/.nvm/versions/node/v23.0.0/bin/npx
+[2025-05-25T04:55:30.687Z] [INFO] Context mcp-deepwiki connecting to MCP server: mcp-deepwiki...
+[2025-05-25T04:55:30.687Z] [INFO] Starting MCP server with command: /Users/hhh0x/.nvm/versions/node/v23.0.0/bin/npx -y mcp-deepwiki@latest
+[2025-05-25T04:55:30.687Z] [INFO] Working directory: /Users/hhh0x/agent/hhh-agi/examples
+[2025-05-25T04:55:30.687Z] [INFO] Environment variables: {}
+[2025-05-25T04:55:30.687Z] [INFO] Connecting to MCP client using args: -y mcp-deepwiki@latest...
+[2025-05-25T04:55:31.010Z] [INFO] WebSocket client connected: 769a8c74-524c-4efd-b80d-95019b97eb76 (session: 6a871445-570b-4d3e-9c06-e1d30a4d4cf1) from Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Ap...
+[2025-05-25T04:55:32.206Z] [INFO] Successfully connected to MCP client.
+[2025-05-25T04:55:32.206Z] [INFO] Registering tools for MCP client mcp-deepwiki (ID: 1)...
+[2025-05-25T04:55:32.208Z] [INFO] Found matching context for MCP server: mcp-deepwiki
+[2025-05-25T04:55:32.208Z] [INFO] Auto-populated 1 tools from MCP server into mcp-deepwiki context
+[2025-05-25T04:55:32.208Z] [INFO] Added 1 tools for mcp-deepwiki
+[2025-05-25T04:55:32.208Z] [INFO] Context mcp-deepwiki successfully connected to MCP server: mcp-deepwiki
+[2025-05-25T04:55:32.208Z] [INFO] Added 1 tools from server in 1 categories
+[2025-05-25T04:55:32.208Z] [INFO] Context mcp-deepwiki 的MCP服务器安装完成
+[2025-05-25T04:55:32.208Z] [INFO] 开始安装Context mcp-server-firecrawl 的 1 个MCP服务器
+[2025-05-25T04:55:32.218Z] [INFO] Resolved command npx to absolute path: /Users/hhh0x/.nvm/versions/node/v23.0.0/bin/npx
+[2025-05-25T04:55:32.218Z] [INFO] Context mcp-server-firecrawl connecting to MCP server: mcp-server-firecrawl...
+[2025-05-25T04:55:32.218Z] [INFO] Starting MCP server with command: /Users/hhh0x/.nvm/versions/node/v23.0.0/bin/npx -y firecrawl-mcp
+[2025-05-25T04:55:32.218Z] [INFO] Working directory: /Users/hhh0x/agent/hhh-agi/examples
+[2025-05-25T04:55:32.218Z] [INFO] Environment variables: {"FIRECRAWL_API_KEY":"fc-6f5db9c3fa5c4795a02b47c6ba8e4c59"}
+[2025-05-25T04:55:32.218Z] [INFO] Connecting to MCP client using args: -y firecrawl-mcp...
+[2025-05-25T04:55:33.511Z] [INFO] Successfully connected to MCP client.
+[2025-05-25T04:55:33.511Z] [INFO] Registering tools for MCP client mcp-server-firecrawl (ID: 2)...
+[2025-05-25T04:55:33.513Z] [WARN] MCP Tool registration warning: Tool "firecrawl_crawl" property "webhook" is missing type definition
+[2025-05-25T04:55:33.513Z] [WARN] Skipping tool "firecrawl_crawl" due to invalid property definitions
+[2025-05-25T04:55:33.513Z] [INFO] Found matching context for MCP server: mcp-server-firecrawl
+[2025-05-25T04:55:33.513Z] [INFO] Auto-populated 7 tools from MCP server into mcp-server-firecrawl context
+[2025-05-25T04:55:33.513Z] [INFO] Added 7 tools for mcp-server-firecrawl
+[2025-05-25T04:55:33.513Z] [INFO] Context mcp-server-firecrawl successfully connected to MCP server: mcp-server-firecrawl
+[2025-05-25T04:55:33.513Z] [INFO] Added 7 tools from server in 1 categories
+[2025-05-25T04:55:33.513Z] [INFO] Context mcp-server-firecrawl 的MCP服务器安装完成
+[2025-05-25T04:55:33.513Z] [INFO] 所有Context MCP服务器安装完成: 成功=3, 失败=0, 跳过=8
+[2025-05-25T04:55:33.513Z] [INFO] MCP服务器安装结果: 总数=11, 成功=3, 失败=0, 跳过=8
+[2025-05-25T04:56:10.045Z] [INFO] WebSocket client disconnected: 769a8c74-524c-4efd-b80d-95019b97eb76
+[2025-05-25T04:56:10.479Z] [INFO] WebSocket client connected: 95a6ef6b-998f-4f24-8d69-501f0ea8c3ce (session: 6a871445-570b-4d3e-9c06-e1d30a4d4cf1) from Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Ap...
+[2025-05-25T04:56:12.435Z] [WARN] Unknown message type: execution_mode_change
+[2025-05-25T04:56:35.400Z] [INFO] ==========Agent Stop has been called ==========

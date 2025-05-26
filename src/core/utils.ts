@@ -507,6 +507,8 @@ export const ContextHelper = {
         } catch (error) {
           if (error instanceof z.ZodError) {
             console.error(`Invalid data for context ${this.id}:`, error.errors);
+          } else {
+            console.error(`Error setting data for context ${this.id}:`, error);
           }
           throw error;
         }

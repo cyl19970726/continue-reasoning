@@ -129,6 +129,6 @@ export const ApplyWholeFileEditTool = createTool({
   },
 });
 
-export const GeminiEditingStrategyToolSet = [
+export const EditingStrategyToolSet = [
     ApplyWholeFileEditTool,
 ]; 

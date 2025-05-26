@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { IContext, ITool, IAgent, ToolCallResult, ToolSet as ToolSetInterface, IRAGEnabledContext } from '../../interfaces';
-import { GeminiFileSystemToolSet, GeminiRuntimeToolSet, GeminiEditingStrategyToolSet, GeminiBashToolSet } from './toolsets';
+import { FileSystemToolSet, RuntimeToolSet, EditingStrategyToolSet, BashToolSet } from './toolsets';
 import { IRuntime } from './runtime/interface';
 import { NodeJsSandboxedRuntime } from './runtime/impl/node-runtime';
 import { ISandbox } from './sandbox';
@@ -99,10 +99,10 @@ export function createGeminiCodingContext(workspacePath: string, initialData?: P
   });
 
   const allTools: ITool<any, any, IAgent>[] = [
-    ...GeminiFileSystemToolSet,
-    ...GeminiRuntimeToolSet,
-    ...GeminiEditingStrategyToolSet,
-    ...GeminiBashToolSet,
+    ...FileSystemToolSet,
+    ...RuntimeToolSet,
+    ...EditingStrategyToolSet,
+    ...BashToolSet,
   ];
   
   // Create the base RAG context

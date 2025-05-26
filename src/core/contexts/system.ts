@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { createTool,ContextHelper } from "../utils";
 import { SystemToolNames } from "./index";
-import { logger } from "../agent";
+import { logger } from "../utils/logger";
 
 export const systemToolContextId = "systemToolContext";
 export const SystemToolContext = ContextHelper.createContext({

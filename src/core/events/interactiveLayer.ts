@@ -126,9 +126,9 @@ export abstract class BaseInteractiveLayer implements IInteractiveLayer {
     // 创建确认等待Promise
     const confirmationPromise = this.waitForModeChangeConfirmation(requestId, 5000);
     
-    // 发布执行模式变更事件
+    // 发布执行模式变更请求事件
     await this.config.eventBus.publish({
-      type: 'execution_mode_change',
+      type: 'execution_mode_change_request',
       source: 'user',
       sessionId: this.currentSession,
       payload: {
@@ -167,8 +167,8 @@ export abstract class BaseInteractiveLayer implements IInteractiveLayer {
         }
       }, timeout);
       
-      // 订阅确认事件
-      const subscriptionId = this.config.eventBus.subscribe('execution_mode_change_confirmed', async (event: any) => {
+      // 订阅响应事件
+      const subscriptionId = this.config.eventBus.subscribe('execution_mode_change_response', async (event: any) => {
         if (resolved) return;
         
         // 检查是否是我们等待的确认
@@ -199,16 +199,18 @@ export abstract class BaseInteractiveLayer implements IInteractiveLayer {
       .filter((event): event is InteractiveMessage => {
         // 过滤出只属于 InteractiveMessage 联合类型的事件
         const interactiveEventTypes = [
-          'execution_mode_change',
+          'execution_mode_change_request',
+          'execution_mode_change_response',
           'approval_request',
           'approval_response', 
           'collaboration_request',
           'collaboration_response',
+          'input_request',
+          'input_response',
+          'user_message',
           'status_update',
           'file_operation',
           'command_execution',
-          'input_request',
-          'input_response',
           'error',
           'data_collection',
           'task_event',

@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Send, Terminal, AlertCircle, CheckCircle, Clock, User, Bot, Settings } from 'lucide-react';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { Send, Terminal, AlertCircle, User, Bot, Settings } from 'lucide-react';
+import { useWebSocketMessage } from '../hooks/useWebSocketMessage';
 import { 
   ChatMessage, 
   ServerMessage, 
@@ -58,8 +58,7 @@ export function ChatInterface({ sessionId }: ChatInterfaceProps) {
     }
   }, []);
 
-  const { isConnected, error, sendMessage, reconnect } = useWebSocket({
-    url: `ws://${window.location.hostname}:3001/ws`,
+  const { isConnected, error, sendMessage, reconnect } = useWebSocketMessage({
     onMessage: handleWebSocketMessage,
     onConnect: () => {
       setUIState(prev => ({ ...prev, connected: true, error: null }));

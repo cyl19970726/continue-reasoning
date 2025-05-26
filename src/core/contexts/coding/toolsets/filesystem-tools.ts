@@ -83,8 +83,7 @@ const WriteFileParamsSchema = z.object({
   end_line: z.number().int().optional().describe("For 'overwrite_range' mode, the line to end overwriting."),
   mode: z.enum(["overwrite", "append", "overwrite_range", "create_or_overwrite"])
     .optional()
-    .default("create_or_overwrite")
-    .describe("The mode of writing: 'overwrite', 'append', 'overwrite_range', 'create_or_overwrite'."),
+    .describe("The mode of writing: 'overwrite', 'append', 'overwrite_range', 'create_or_overwrite' (default: 'create_or_overwrite' if not specified)."),
 });
 
 const WriteFileReturnsSchema = z.object({
@@ -115,12 +114,15 @@ export const WriteFileTool = createTool({
     const workspacePath = codingContext.getData()?.current_workspace || process.cwd();
     const filePath = path.isAbsolute(params.path) ? params.path : path.join(workspacePath, params.path);
     
-    console.log(`WriteFileTool: Writing to file ${filePath} in mode ${params.mode}`);
+    // Handle default value for mode
+    const mode = params.mode || "create_or_overwrite";
+    
+    console.log(`WriteFileTool: Writing to file ${filePath} in mode ${mode}`);
     
     try {
       // Use the runtime's writeFile method directly
       const result = await runtime.writeFile(filePath, params.content, {
-        mode: params.mode as any, // The types should match
+        mode: mode as any, // The types should match
         startLine: params.start_line,
         endLine: params.end_line
       });
@@ -348,7 +350,7 @@ export const CreateDirectoryTool = createTool({
     }
 });
 
-export const GeminiFileSystemToolSet = [
+export const FileSystemToolSet = [
   ReadFileTool,
   WriteFileTool,
   ListDirectoryTool,

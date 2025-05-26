@@ -3,7 +3,7 @@ import { IContext, IMemoryManager, IContextManager, ToolCallResult, ToolCallPara
 import { render } from "../utils";
 import { ToolCallDefinitionSchema, ToolCallParamsSchema, ToolCallResultSchema } from "../interfaces";
 import { ContextHelper } from "../utils";
-import { logger } from "../agent";
+import { logger } from "../utils/logger";
 
 const SimpleToolCallDefSchema = ToolCallDefinitionSchema.pick({
     name: true,

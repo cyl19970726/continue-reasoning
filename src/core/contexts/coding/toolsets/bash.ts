@@ -9,7 +9,7 @@ const BashCommandParamsSchema = z.object({
   cwd: z.string().optional().describe("The current working directory for the command. Defaults to the agent's workspace root or process.cwd()."),
   timeout_ms: z.number().int().optional().describe("Timeout in milliseconds for the command. Defaults to 60000ms (60s)."),
   writable_paths: z.array(z.string()).optional().describe("Additional directories that should be writable by the command."),
-  allow_network: z.boolean().optional().default(false).describe("Whether to allow network access.")
+  allow_network: z.boolean().optional().describe("Whether to allow network access (default: false if not specified).")
 });
 
 const BashCommandReturnsSchema = z.object({
@@ -41,11 +41,16 @@ export const BashCommandTool = createTool({
     console.log(`BashCommandTool: Using runtime (${runtime.type}) with sandbox of type: ${runtime.sandbox.type}`);
 
     const workspacePath = codingContext.getData()?.current_workspace || process.cwd();
+    
+    // Handle default values
+    const allowNetwork = params.allow_network !== undefined ? params.allow_network : false;
+    const timeout = params.timeout_ms || 60000; // Default 60 seconds
+    
     const executionOptions: ExecutionOptions = {
       cwd: params.cwd || workspacePath,
-      timeout: params.timeout_ms,
+      timeout: timeout,
       writablePaths: params.writable_paths,
-      allowNetwork: params.allow_network,
+      allowNetwork: allowNetwork,
       // We assume IRuntime's execute method can take these ISandbox ExecutionOptions
       // or that the IRuntime implementation will correctly pass them to its ISandbox.
     };
@@ -63,6 +68,6 @@ export const BashCommandTool = createTool({
   },
 });
 
-export const GeminiBashToolSet = [
+export const BashToolSet = [
   BashCommandTool,
 ]; 

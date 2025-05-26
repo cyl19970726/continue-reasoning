@@ -89,7 +89,7 @@ export class BaseAgent implements IAgent {
     toolSets: ToolSet[] = [];
     mcpConfigPath: string;
     eventBus?: IEventBus; // 添加EventBus支持
-    executionMode: 'auto' | 'manual' = 'manual'; // Agent执行模式，默认为manual
+    executionMode: 'auto' | 'manual' | 'supervised' = 'manual'; // Agent执行模式，默认为manual
 
     isRunning: boolean;
     shouldStop: boolean;
@@ -234,6 +234,7 @@ export class BaseAgent implements IAgent {
         // 订阅ExecutionModeChangeEvent
         if (this.eventBus) {
             this.subscribeToExecutionModeChanges();
+            this.setupEventHandlers(); // 设置用户输入相关的事件处理器
         }
     }
 
@@ -537,15 +538,15 @@ export class BaseAgent implements IAgent {
     }
 
     /**
-     * 订阅ExecutionModeChangeEvent事件
+     * 订阅ExecutionModeChangeRequestEvent事件
      */
     private subscribeToExecutionModeChanges(): void {
         if (!this.eventBus) return;
 
-        this.eventBus.subscribe('execution_mode_change', async (event: any) => {
+        this.eventBus.subscribe('execution_mode_change_request', async (event: any) => {
             const { toMode, fromMode, reason, requestId } = event.payload;
             
-            logger.info(`Agent received execution mode change: ${fromMode} -> ${toMode} (${reason || 'No reason provided'})`);
+            logger.info(`Agent received execution mode change request: ${fromMode} -> ${toMode} (${reason || 'No reason provided'})`);
             
             try {
                 // 更新Agent的执行模式
@@ -553,10 +554,10 @@ export class BaseAgent implements IAgent {
                 
                 logger.info(`Agent execution mode updated to: ${this.executionMode}`);
                 
-                // 发送确认事件
+                // 发送响应事件
                 if (this.eventBus && requestId) {
                     await this.eventBus.publish({
-                        type: 'execution_mode_change_confirmed',
+                        type: 'execution_mode_change_response',
                         source: 'agent',
                         sessionId: event.sessionId,
                         payload: {
@@ -570,10 +571,10 @@ export class BaseAgent implements IAgent {
             } catch (error) {
                 logger.error(`Failed to change execution mode: ${error}`);
                 
-                // 发送失败确认
+                // 发送失败响应
                 if (this.eventBus && requestId) {
                     await this.eventBus.publish({
-                        type: 'execution_mode_change_confirmed',
+                        type: 'execution_mode_change_response',
                         source: 'agent',
                         sessionId: event.sessionId,
                         payload: {
@@ -592,17 +593,165 @@ export class BaseAgent implements IAgent {
     /**
      * 获取当前执行模式
      */
-    public getExecutionMode(): 'auto' | 'manual' {
+    public getExecutionMode(): 'auto' | 'manual' | 'supervised' {
         return this.executionMode;
     }
 
     /**
-     * 手动设置执行模式（如果没有EventBus的话）
+     * 设置执行模式（支持异步）
      */
-    public setExecutionMode(mode: 'auto' | 'manual'): void {
+    public async setExecutionMode(mode: 'auto' | 'manual' | 'supervised'): Promise<void> {
         const oldMode = this.executionMode;
         this.executionMode = mode;
         logger.info(`Agent execution mode changed: ${oldMode} -> ${mode}`);
+        
+        // 如果有EventBus，发布状态变更事件
+        if (this.eventBus) {
+            await this.eventBus.publish({
+                type: 'agent_state_change',
+                source: 'agent',
+                sessionId: this.eventBus.getActiveSessions()[0] || 'default',
+                payload: {
+                    fromState: 'idle',
+                    toState: 'idle',
+                    reason: `Execution mode changed to ${mode}`,
+                    currentStep: this.currentStep
+                }
+            });
+        }
+    }
+
+    /**
+     * 处理用户输入（通过事件系统）
+     * 这个方法现在主要用于直接调用，事件处理通过 setupEventHandlers 进行
+     */
+    public async processUserInput(input: string, sessionId: string): Promise<void> {
+        logger.info(`Agent processing user input directly: "${input}" in session ${sessionId}`);
+        
+        // 直接更新 UserInputContext
+        const userInputContext = this.contextManager.findContextById('user-input-context');
+        if (userInputContext && 'processUserInput' in userInputContext) {
+            (userInputContext as any).processUserInput(input, sessionId);
+        }
+        
+        // 启动Agent处理
+        await this.start(10); // 处理用户输入时限制步数
+    }
+
+    /**
+     * 设置事件处理器（在 Agent 启动时调用）
+     */
+    private setupEventHandlers(): void {
+        if (!this.eventBus) return;
+
+        // 处理用户消息事件
+        this.eventBus.subscribe('user_message', async (event: any) => {
+            await this.handleUserMessage(event);
+        });
+
+        // 处理输入响应事件
+        this.eventBus.subscribe('input_response', async (event: any) => {
+            await this.handleInputResponse(event);
+        });
+    }
+
+    /**
+     * 处理用户消息事件
+     */
+    private async handleUserMessage(event: any): Promise<void> {
+        const { content, messageType, context } = event.payload;
+        logger.info(`Agent handling user message: "${content}" (type: ${messageType})`);
+        
+        // 更新 UserInputContext
+        const userInputContext = this.contextManager.findContextById('user-input-context');
+        if (userInputContext && 'handleUserMessage' in userInputContext) {
+            await (userInputContext as any).handleUserMessage(event);
+        }
+        
+        // 启动Agent处理
+        await this.start(10);
+    }
+
+    /**
+     * 处理输入响应事件
+     */
+    private async handleInputResponse(event: any): Promise<void> {
+        const { requestId, value } = event.payload;
+        logger.info(`Agent handling input response for request ${requestId}: ${value}`);
+        
+        // 更新 UserInputContext
+        const userInputContext = this.contextManager.findContextById('user-input-context');
+        if (userInputContext && 'handleInputResponse' in userInputContext) {
+            await (userInputContext as any).handleInputResponse(event);
+        }
+        
+        // 启动Agent处理（如果需要）
+        await this.start(5);
+    }
+
+    /**
+     * 请求用户批准
+     */
+    public async requestApproval(request: any): Promise<any> {
+        if (!this.eventBus) {
+            throw new Error('EventBus is required for approval requests');
+        }
+        
+        const requestId = `approval_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        await this.eventBus.publish({
+            type: 'approval_request',
+            source: 'agent',
+            sessionId: this.eventBus.getActiveSessions()[0] || 'default',
+            payload: {
+                requestId,
+                ...request
+            }
+        });
+        
+        // 等待响应（这里简化处理，实际应该有超时机制）
+        return new Promise((resolve) => {
+            const subscriptionId = this.eventBus!.subscribe('approval_response', async (event: any) => {
+                if (event.payload.requestId === requestId) {
+                    this.eventBus!.unsubscribe(subscriptionId);
+                    resolve(event.payload);
+                }
+            });
+        });
+    }
+
+    /**
+     * 请求用户输入（已废弃，建议使用UserInputContext中的request_user_input工具）
+     * @deprecated Use request_user_input tool from UserInputContext instead
+     */
+    public async requestUserInput(request: any): Promise<any> {
+        logger.warn('requestUserInput method is deprecated. Use request_user_input tool from UserInputContext instead.');
+        
+        if (!this.eventBus) {
+            throw new Error('EventBus is required for input requests');
+        }
+        
+        const requestId = `input_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        await this.eventBus.publish({
+            type: 'input_request',
+            source: 'agent',
+            sessionId: this.eventBus.getActiveSessions()[0] || 'default',
+            payload: {
+                requestId,
+                ...request
+            }
+        });
+        
+        // 等待响应
+        return new Promise((resolve) => {
+            const subscriptionId = this.eventBus!.subscribe('input_response', async (event: any) => {
+                if (event.payload.requestId === requestId) {
+                    this.eventBus!.unsubscribe(subscriptionId);
+                    resolve(event.payload);
+                }
+            });
+        });
     }
 }
 

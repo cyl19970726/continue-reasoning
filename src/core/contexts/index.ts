@@ -18,4 +18,5 @@ export enum BasicToolNames {
 export { HackernewsContext, HackernewsContextId } from './hackernews';
 export { DeepWikiContext, DeepWikiContextId } from './deepwiki';
 export { FireCrawlContext, FireCrawlContextId } from './firecrawl';
-export { InteractiveContext, InteractiveContextId, ApprovalRequestTool, ListPendingApprovalsTool } from './interactive';
+export { InteractiveContext, InteractiveContextId, ApprovalRequestTool, ListPendingApprovalsTool } from './interaction/interactive';
+export { UserInputContext } from './interaction/userInput';

@@ -29,18 +29,30 @@ export class WebUIClient extends BaseInteractiveLayer {
 
   constructor(config: WebUIClientConfig) {
     super(config);
+    
+    // 修复静态文件路径 - 使用相对于项目根目录的路径
+    const defaultStaticPath = path.resolve(process.cwd(), 'src/web/frontend/dist');
+    
     this.config = {
-      serverPort: 3000,
-      staticPath: path.join(__dirname, '../frontend/dist'),
+      serverPort: 3002,
+      staticPath: defaultStaticPath,
       enableWebSocket: true,
       corsOrigins: ['http://localhost:3000', 'http://localhost:3001'],
       maxConcurrentConnections: 100,
       sessionTimeout: 30 * 60 * 1000, // 30 minutes
       enableFileUpload: true,
       uploadMaxSize: 10 * 1024 * 1024, // 10MB
-      webSocketPort: 3001, // 使用独立的 WebSocket 端口
       ...config
     };
+    
+    // 验证静态文件路径是否存在
+    if (!fs.existsSync(this.config.staticPath!)) {
+      logger.warn(`Static path does not exist: ${this.config.staticPath}`);
+      logger.info(`Current working directory: ${process.cwd()}`);
+      logger.info(`__dirname: ${__dirname}`);
+    } else {
+      logger.info(`Static files will be served from: ${this.config.staticPath}`);
+    }
     
     this.startTime = Date.now();
     this.stats = {
@@ -80,7 +92,7 @@ export class WebUIClient extends BaseInteractiveLayer {
       name: 'Web UI Client',
       capabilities,
       eventBus,
-      serverPort: 3000,
+      serverPort: 3002,
       enableWebSocket: true,
       enableFileUpload: true
     });
@@ -325,53 +337,67 @@ export class WebUIClient extends BaseInteractiveLayer {
   }
 
   private handleWebSocketConnection(socket: WebSocket, request: http.IncomingMessage): void {
-    // 验证连接来源，拒绝非浏览器连接
     const userAgent = request.headers['user-agent'] || '';
     const origin = request.headers.origin || '';
     const host = request.headers.host || '';
+    const upgrade = request.headers.upgrade || '';
+    const connectionHeader = request.headers.connection || '';
     
-    // 检查是否是浏览器连接
-    const isBrowserConnection = (
-      userAgent.includes('Mozilla') || 
-      userAgent.includes('Chrome') || 
-      userAgent.includes('Safari') || 
-      userAgent.includes('Firefox') ||
-      userAgent.includes('Edge')
-    );
+    logger.info(`WebSocket connection attempt - Origin: "${origin}", Host: "${host}", UserAgent: "${userAgent.substring(0, 100)}"`);
     
-    // 检查是否是本地连接
-    const isLocalConnection = (
-      host.includes('localhost') || 
-      host.includes('127.0.0.1') ||
-      origin.includes('localhost') ||
-      origin.includes('127.0.0.1')
-    );
-    
-    // 如果不是浏览器连接且不是明确的本地连接，拒绝连接
-    if (!isBrowserConnection && !isLocalConnection && !origin) {
-      logger.warn(`Rejected WebSocket connection from non-browser source: ${userAgent}`);
-      socket.close(1008, 'Connection rejected: Non-browser source');
+    // 检查是否是有效的 WebSocket 升级请求
+    if (upgrade.toLowerCase() !== 'websocket' || !connectionHeader.toLowerCase().includes('upgrade')) {
+      logger.warn(`Rejected invalid WebSocket upgrade request from ${request.socket.remoteAddress}`);
+      socket.close(1002, 'Invalid WebSocket upgrade');
       return;
     }
     
-    const connectionId = uuidv4();
-    const sessionId = this.currentSession || this.config.eventBus.createSession();
+    // 更宽松的浏览器检查
+    const isBrowserConnection = (
+      userAgent.includes('Mozilla') || 
+        userAgent.includes('Chrome') || 
+        userAgent.includes('Safari') || 
+        userAgent.includes('Firefox') ||
+      userAgent.includes('Edge') ||
+      userAgent.includes('WebKit')
+    );
     
-    const connection: WebSocketConnection = {
-      id: connectionId,
+    // 更宽松的 Origin 检查 - 允许 localhost 和 127.0.0.1 的各种端口
+    const hasValidOrigin = (
+      !origin || // 允许没有 Origin 头的连接
+      origin.includes('localhost') ||
+      origin.includes('127.0.0.1') ||
+      host.includes('localhost') ||
+      host.includes('127.0.0.1')
+    );
+    
+    logger.debug(`Connection validation - isBrowser: ${isBrowserConnection}, hasValidOrigin: ${hasValidOrigin}`);
+    
+    // 只在明显不是浏览器连接时才拒绝
+    if (!hasValidOrigin && origin && !isBrowserConnection) {
+      logger.warn(`Rejected WebSocket connection - UserAgent: "${userAgent}", Origin: "${origin}", Host: "${host}"`);
+      socket.close(1008, 'Unauthorized connection');
+      return;
+    }
+
+    const clientId = uuidv4();
+    const sessionId = this.getCurrentSession();
+    
+    logger.info(`✅ WebSocket client connected: ${clientId} (session: ${sessionId})`);
+
+    const wsConnection: WebSocketConnection = {
+      id: clientId,
       socket,
       sessionId,
       connectedAt: Date.now(),
       lastActivity: Date.now()
     };
 
-    this.connections.set(connectionId, connection);
+    this.connections.set(clientId, wsConnection);
     this.stats.activeConnections = this.connections.size;
 
-    logger.info(`WebSocket client connected: ${connectionId} (session: ${sessionId}) from ${userAgent.substring(0, 50)}...`);
-
     // Send welcome message
-    this.sendToConnection(connection, {
+    this.sendToConnection(wsConnection, {
       id: uuidv4(),
       type: 'status',
       payload: {
@@ -384,20 +410,20 @@ export class WebUIClient extends BaseInteractiveLayer {
 
     // Handle messages
     socket.on('message', (data: Buffer) => {
-      this.handleWebSocketMessage(connection, data);
+      this.handleWebSocketMessage(wsConnection, data);
     });
 
     // Handle disconnect
-    socket.on('close', () => {
-      this.connections.delete(connectionId);
+    socket.on('close', (code, reason) => {
+      this.connections.delete(clientId);
       this.stats.activeConnections = this.connections.size;
-      logger.info(`WebSocket client disconnected: ${connectionId}`);
+      logger.info(`WebSocket client disconnected: ${clientId} (code: ${code}, reason: ${reason})`);
     });
 
     // Handle errors
     socket.on('error', (error: Error) => {
-      logger.error(`WebSocket error for ${connectionId}:`, error);
-      this.connections.delete(connectionId);
+      logger.error(`WebSocket error for ${clientId}:`, error);
+      this.connections.delete(clientId);
       this.stats.activeConnections = this.connections.size;
     });
   }

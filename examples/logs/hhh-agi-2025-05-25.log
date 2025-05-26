@@ -1,0 +1,28 @@
+[2025-05-25T04:10:27.341Z] [INFO] EventBus started
+[2025-05-25T04:10:27.342Z] [INFO] ContextManager initialized: cli-context-manager
+[2025-05-25T04:10:27.342Z] [INFO] Setting log level to: INFO
+[2025-05-25T04:10:27.342Z] [INFO] Using OpenAI model: openai
+[2025-05-25T04:10:27.342Z] [INFO] MCP config path: /Users/hhh0x/agent/hhh-agi/examples/config/mcp.json
+[2025-05-25T04:10:27.343Z] [INFO] 开始安装所有Context的MCP服务器，共1个Context
+[2025-05-25T04:10:27.343Z] [INFO] 所有Context MCP服务器安装完成: 成功=0, 失败=0, 跳过=1
+[2025-05-25T04:10:27.343Z] [INFO] MCP服务器安装结果: 总数=1, 成功=0, 失败=0, 跳过=1
+[2025-05-25T04:10:27.343Z] [INFO] Agent state changed: idle -> running (User requested start)
+[2025-05-25T04:10:27.344Z] [INFO] ==========Agent Starting: Max Steps 100 ==========
+[2025-05-25T04:10:27.346Z] [INFO] ==========Agent Current Step: 0 ==========
+[2025-05-25T04:10:27.348Z] [ERROR] Error in step 0: TypeError: Cannot use 'in' operator to search for 'rags' in undefined
+    at asRAGEnabledContext (/Users/hhh0x/agent/hhh-agi/src/core/interfaces.ts:267:9)
+    at BaseAgent.processStep (/Users/hhh0x/agent/hhh-agi/src/core/agent.ts:371:33)
+    at Object.execute (/Users/hhh0x/agent/hhh-agi/src/core/agent.ts:315:39)
+    at TaskQueue.run (/Users/hhh0x/agent/hhh-agi/src/core/taskQueue.ts:108:18)
+    at Timeout._onTimeout (/Users/hhh0x/agent/hhh-agi/src/core/taskQueue.ts:88:22)
+    at listOnTimeout (node:internal/timers:614:17)
+    at process.processTimers (node:internal/timers:549:7)
+[2025-05-25T04:10:27.349Z] [ERROR] Error in agent start: TypeError: Cannot use 'in' operator to search for 'rags' in undefined
+    at asRAGEnabledContext (/Users/hhh0x/agent/hhh-agi/src/core/interfaces.ts:267:9)
+    at BaseAgent.processStep (/Users/hhh0x/agent/hhh-agi/src/core/agent.ts:371:33)
+    at Object.execute (/Users/hhh0x/agent/hhh-agi/src/core/agent.ts:315:39)
+    at TaskQueue.run (/Users/hhh0x/agent/hhh-agi/src/core/taskQueue.ts:108:18)
+    at Timeout._onTimeout (/Users/hhh0x/agent/hhh-agi/src/core/taskQueue.ts:88:22)
+    at listOnTimeout (node:internal/timers:614:17)
+    at process.processTimers (node:internal/timers:549:7)
+[2025-05-25T04:10:27.349Z] [INFO] Agent state changed: running -> error (Start error: Cannot use 'in' operator to search for 'rags' in undefined)

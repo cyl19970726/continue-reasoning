@@ -3,6 +3,37 @@ import { z } from "zod";
 import { render } from "./utils";
 import { IEventBus } from "./events/eventBus";
 
+// 从 agent.ts 导入类型定义
+export type LLMProvider = 'openai' | 'anthropic' | 'google';
+export type AgentState = 'idle' | 'running' | 'stopping' | 'error';
+
+// 从 taskQueue.ts 导入接口
+export interface ITask{
+    id: string;
+    execute: () => Promise<any>;
+    priority: number;
+    type: 'processStep' | 'toolCall' | 'custom';
+    resolve: (value: any) => void;
+    reject: (reason: any) => void;
+    createdAt: number;
+}
+
+export interface ITaskQueue{
+    tasks: ITask[];     
+    runningTasks: Set<string>;
+    concurrency: number;
+    isRunning: boolean;
+    addTask<T>(taskFn: () => Promise<T>, priority: number, type?: 'processStep' | 'toolCall' | 'custom', id?: string): Promise<T>;
+    taskCount(): number;
+    runningTaskCount(): number;
+    taskStatus(id: string): {id: string, status: string, type?: string} | 'not found';
+    run(): Promise<void>;
+    addProcessStepTask<T>(taskFn: () => Promise<T>, priority?: number, id?: string): Promise<T>;
+    addToolCallTask<T>(taskFn: () => Promise<T>, priority?: number, id?: string): Promise<T>;
+    getTasksByType(type: 'processStep' | 'toolCall' | 'custom'): ITask[];
+    clearTasks(type?: 'processStep' | 'toolCall' | 'custom'): number;
+}
+
 
 
 export interface IContextManager{
@@ -495,24 +526,59 @@ export interface Swarms{
 
 export type ClientSendFnType = (clientInfo: {clientId: string, userId: string}, incomingMessages: Message) => void;
 export interface IAgent{
+    // 基本属性
     id: string;
+    name: string;
     description: string;
+    maxSteps: number;
+    
+    // 核心组件
     contextManager: IContextManager;
     memoryManager: IMemoryManager;
     clients: IClient<any,any>[];
-    toolSets: ToolSet[];
     llm: ILLM; 
-    maxSteps: number;
+    taskQueue: ITaskQueue;
+    
+    // 工具和配置
+    toolSets: ToolSet[];
+    llmProvider: LLMProvider;
+    enableParallelToolCalls: boolean;
+    mcpConfigPath: string;
+    
+    // 事件和状态管理
     eventBus?: IEventBus;
+    executionMode: 'auto' | 'manual' | 'supervised';
+    isRunning: boolean;
+    shouldStop: boolean;
+    currentState: AgentState;
+    currentStep: number;
+    
+    // 上下文集合
+    contexts: IRAGEnabledContext<any>[];
 
-    setup(): void;
-    start(maxSteps: number): void;
+    // 核心生命周期方法
+    setup(): Promise<void>;
+    start(maxSteps: number): Promise<void>;
     stop(): void;
+    
+    // 客户端交互
     clientSendfn: ClientSendFnType;
 
+    // 工具集管理
     listToolSets(): ToolSet[];
+    addToolSet(toolSet: ToolSet): void;
     activateToolSets(toolSetNames: string[]): void;
     deactivateToolSets(toolSetNames: string[]): void;
+    getActiveTools(): AnyTool[];
+    
+    // 执行模式管理
+    getExecutionMode(): 'auto' | 'manual' | 'supervised';
+    setExecutionMode(mode: 'auto' | 'manual' | 'supervised'): Promise<void>;
+    
+    // 用户交互方法
+    processUserInput(input: string, sessionId: string): Promise<void>;
+    requestApproval(request: any): Promise<any>;
+    requestUserInput(request: any): Promise<any>;
 }
 
 
@@ -567,3 +633,28 @@ export const MessageSchema = z.object({
     timestamp: z.string().describe("timestamp uses to mark the timestamp of the message"),
 });
 export type Message = z.infer<typeof MessageSchema>;
+
+// 新增：交互中心接口，管理Agent和InteractiveLayer之间的协作
+export interface IInteractionHub {
+    eventBus: IEventBus;
+    
+    // 注册组件
+    registerAgent(agent: IAgent): void;
+    registerInteractiveLayer(layer: any): void; // 使用any避免循环依赖
+    
+    // 启动和停止
+    start(): Promise<void>;
+    stop(): Promise<void>;
+    
+    // 获取注册的组件
+    getAgents(): IAgent[];
+    getInteractiveLayers(): any[];
+    
+    // 事件路由（可选，用于复杂的多对多场景）
+    routeEvent?(event: any, targetType: 'agent' | 'interactive_layer', targetId?: string): Promise<void>;
+}
+
+// 简化的用户输入处理工具接口
+export interface IUserInputTool extends ITool<any, any, IAgent> {
+    handleUserMessage(message: string, sessionId: string): Promise<any>;
+}

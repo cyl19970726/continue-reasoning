@@ -58,7 +58,8 @@ export class CLIClient extends BaseInteractiveLayer {
         'input_response',
         'status_update',
         'error',
-        'execution_mode_change',
+        'execution_mode_change_request',
+        'execution_mode_change_response',
         'task_event'
       ]
     };
@@ -89,6 +90,7 @@ export class CLIClient extends BaseInteractiveLayer {
     this.subscribe(['status_update'], this.handleStatusUpdate.bind(this));
     this.subscribe(['error'], this.handleError.bind(this));
     this.subscribe(['collaboration_request'], this.handleCollaborationRequest.bind(this));
+    this.subscribe(['agent_reply'], this.handleAgentReply.bind(this));
 
     this.displayWelcome();
     this.startInteractiveLoop();
@@ -192,16 +194,19 @@ export class CLIClient extends BaseInteractiveLayer {
   }
 
   private async sendUserMessage(content: string): Promise<void> {
+    // 发送用户消息事件而不是输入响应事件
     const message: InteractiveMessage = {
       id: '',
       timestamp: 0,
-      type: 'input_response',
+      type: 'user_message',
       source: 'user',
       sessionId: this.currentSession,
       payload: {
-        requestId: 'user-input',
-        value: content,
-        cancelled: false
+        content,
+        messageType: 'question',
+        context: {
+          currentTask: 'user_interaction'
+        }
       }
     };
 
@@ -398,6 +403,54 @@ export class CLIClient extends BaseInteractiveLayer {
     };
 
     await this.sendMessage(responseMessage);
+  }
+
+  private async handleAgentReply(message: AllEventMessages): Promise<void> {
+    const event = message as any; // AgentReplyEvent
+    const { content, replyType, metadata } = event.payload;
+
+    // 根据回复类型选择不同的显示样式
+    let icon = '🤖';
+    let color = chalk.blue;
+    
+    switch (replyType) {
+      case 'text':
+        icon = '💬';
+        color = chalk.white;
+        break;
+      case 'markdown':
+        icon = '📝';
+        color = chalk.cyan;
+        break;
+      case 'structured':
+        icon = '📊';
+        color = chalk.green;
+        break;
+    }
+
+    console.log(color(`\n${icon} Agent Reply (${replyType}):`));
+    console.log(chalk.white(content));
+    
+    // 显示元数据信息
+    if (metadata) {
+      if (metadata.reasoning) {
+        console.log(chalk.gray(`💭 Reasoning: ${metadata.reasoning}`));
+      }
+      
+      if (metadata.confidence !== undefined) {
+        const confidencePercent = Math.round(metadata.confidence * 100);
+        console.log(chalk.gray(`🎯 Confidence: ${confidencePercent}%`));
+      }
+      
+      if (metadata.suggestions && metadata.suggestions.length > 0) {
+        console.log(chalk.yellow('💡 Suggestions:'));
+        metadata.suggestions.forEach((suggestion: string, index: number) => {
+          console.log(chalk.yellow(`  ${index + 1}. ${suggestion}`));
+        });
+      }
+    }
+    
+    console.log(''); // 添加空行
   }
 
   private promptUser(prompt: string): Promise<string> {
