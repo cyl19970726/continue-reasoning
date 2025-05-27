@@ -6,15 +6,15 @@ import { EventBus } from '../src/core/events/eventBus';
 import { 
   InteractiveContext, 
   UserInputContext, 
-  PlanContext, 
-  CoordinationContext 
+  PlanContext,
 } from '../src/core/contexts/interaction';
-import { createGeminiCodingContext } from '../src/core/contexts/coding';
+import { createCodingContext } from '../src/core/contexts/coding';
 import { ToolCallContext } from '../src/core/contexts/tool';
 import { InteractionHub } from '../src/core/interactive/interactionHub';
 import { LogLevel } from '../src/core/utils/logger';
 import chalk from 'chalk';
 import * as path from 'path';
+import { ANTHROPIC_MODELS, OPENAI_MODELS } from '@/core/models';
 
 async function main() {
   console.log(chalk.green('🚀 Starting HHH-AGI CLI with Agent...'));
@@ -27,12 +27,18 @@ async function main() {
   const cliClient = CLIClient.createDefault(eventBus);
 
   // 创建 Agent
-  const contextManager = new ContextManager('cli-context-manager', 'CLI Context Manager', 'Manages contexts for CLI agent', {});
+  const contextManager = new ContextManager(
+    'cli-context-manager', 
+    'CLI Context Manager', 
+    'Manages contexts for CLI agent', 
+    {},
+    { mode: 'minimal', maxTokens: 8000 } // 使用 minimal 模式优化 prompt
+  );
   const memoryManager = new MapMemoryManager('cli-agent-memory', 'CLI Agent Memory', 'Memory manager for CLI agent');
 
   // 创建 Coding Context (需要工作空间路径)
   const workspacePath = path.resolve(process.cwd());
-  const codingContext = createGeminiCodingContext(workspacePath);
+  const codingContext = createCodingContext(workspacePath);
 
   const agent = new BaseAgent(
     'cli-agent',
@@ -41,43 +47,39 @@ async function main() {
     contextManager,
     memoryManager,
     [], // 不需要传统的 clients，我们使用 EventBus
-    50, // maxSteps
+    30, // maxSteps
     LogLevel.INFO,
     {
-      llmProvider: 'openai',
+      model: OPENAI_MODELS.GPT_4O,
       enableParallelToolCalls: false,
       temperature: 0.7,
-      maxTokens: 4000,
+      maxTokens: 200000,
       taskConcurency: 3,
       executionMode: 'manual' // 默认为 manual 模式
     },
     [
-      ToolCallContext, 
-      InteractiveContext, 
-      UserInputContext, 
       PlanContext, 
-      CoordinationContext,
-      codingContext
+      UserInputContext, 
+      InteractiveContext, 
+      codingContext, 
+      ToolCallContext,
     ], // 添加所有 interaction 和 coding contexts
     eventBus // 传递 EventBus
   );
 
-  // 设置 Agent
-  await agent.setup();
-
   // 配置协调上下文的集成设置
-  const coordinationContext = agent.contextManager.findContextById('coordination-context');
-  if (coordinationContext) {
-    const coordinationData = coordinationContext.getData();
-    coordinationData.integrationSettings = {
-      autoCreatePlansForCoding: true,      // 自动为编码任务创建计划项目
-      requireApprovalForFileOps: false,    // CLI 模式下不需要审批（提高效率）
-      syncCodingProgress: true,            // 同步编码进度到计划
-      consolidatePrompts: true             // 启用 prompt 合并
-    };
-    coordinationContext.setData(coordinationData);
-    console.log(chalk.blue('🔧 Coordination settings configured for CLI mode'));
-  }
+  // const coordinationContext = agent.contextManager.findContextById('coordination-context');
+  // if (coordinationContext) {
+  //   const coordinationData = coordinationContext.getData();
+  //   coordinationData.integrationSettings = {
+  //     autoCreatePlansForCoding: true,      // 自动为编码任务创建计划项目
+  //     requireApprovalForFileOps: false,    // CLI 模式下不需要审批（提高效率）
+  //     syncCodingProgress: true,            // 同步编码进度到计划
+  //     consolidatePrompts: true             // 启用 prompt 合并
+  //   };
+  //   coordinationContext.setData(coordinationData);
+  //   console.log(chalk.blue('🔧 Coordination settings configured for CLI mode'));
+  // }
 
   // 创建 InteractionHub 来管理 Agent 和 CLI 的协作
   const interactionHub = new InteractionHub(eventBus);
@@ -86,7 +88,7 @@ async function main() {
   interactionHub.registerAgent(agent);
   interactionHub.registerInteractiveLayer(cliClient);
 
-  // 启动交互中心
+  // 启动交互中心 (InteractionHub会自动调用agent.setup())
   await interactionHub.start();
 
   console.log(chalk.cyan('\n📋 Available Commands:'));

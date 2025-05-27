@@ -1,0 +1,51 @@
+{
+  "name": "hhh-agi-coding-benchmark",
+  "version": "1.0.0",
+  "description": "Comprehensive benchmark suite for testing HHH-AGI coding agent performance",
+  "main": "test-runner.js",
+  "scripts": {
+    "test": "node test-runner.js",
+    "test:basic": "node run-agent-test.js --basic",
+    "test:level1": "node test-runner.js --level level1",
+    "test:level2": "node test-runner.js --level level2",
+    "test:level3": "node test-runner.js --level level3",
+    "test:file-ops": "node run-agent-test.js --test file-operations",
+    "test:bug-fix": "node run-agent-test.js --test bug-fixing",
+    "test:todo-app": "node run-agent-test.js --test todo-app",
+    "test:detailed": "node test-runner.js --report",
+    "test:timed": "node test-runner.js --timeout 300",
+    "clean": "rm -rf test-workspace reports/*.json",
+    "setup": "mkdir -p reports test-workspace",
+    "help": "node test-runner.js --help"
+  },
+  "keywords": [
+    "ai",
+    "coding-agent",
+    "benchmark",
+    "testing",
+    "performance",
+    "evaluation"
+  ],
+  "author": "HHH-AGI Team",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "tsx": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/hhh-agi.git",
+    "directory": "tests/coding-agent-benchmark"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/hhh-agi/issues"
+  },
+  "homepage": "https://github.com/your-org/hhh-agi#readme"
+} 

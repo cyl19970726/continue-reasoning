@@ -26,141 +26,182 @@ const InteractiveContextSchema = z.object({
   })).default([])
 });
 
-// Approval Request Tool Schema
-const ApprovalRequestInputSchema = z.object({
-  actionType: z.enum(['file_write', 'file_delete', 'command_execute', 'git_operation', 'network_access']),
-  description: z.string().describe("Clear description of what action requires approval"),
+// Interaction Management Tool - handles all interaction operations
+const InteractionManagementInputSchema = z.object({
+  command: z.enum(['request_approval', 'list_pending']).describe("Interaction operation to perform"),
+  
+  // For request_approval command
+  actionType: z.enum(['file_write', 'file_delete', 'command_execute', 'git_operation', 'network_access']).optional().describe("Type of action requiring approval (required for request_approval)"),
+  description: z.string().optional().describe("Clear description of what action requires approval (required for request_approval)"),
   details: z.object({
     command: z.string().optional().describe("Command to be executed (if applicable)"),
     filePaths: z.array(z.string()).optional().describe("Paths of files to be affected"),
     riskLevel: z.enum(['low', 'medium', 'high', 'critical']),
     preview: z.string().optional().describe("Preview of the content/action")
-  }),
+  }).optional().describe("Action details (required for request_approval)"),
   timeout: z.number().optional().describe("Timeout in milliseconds (default: 30 seconds if not specified)")
 });
 
-const ApprovalRequestOutputSchema = z.object({
-  approved: z.boolean(),
-  requestId: z.string(),
+const InteractionManagementOutputSchema = z.object({
+  success: z.boolean(),
+  message: z.string(),
+  
+  // For request_approval response
+  approved: z.boolean().optional(),
+  requestId: z.string().optional(),
   decision: z.enum(['accept', 'reject', 'modify']).optional(),
   modification: z.string().optional(),
-  error: z.string().optional()
+  
+  // For list_pending response
+  pendingApprovals: z.array(z.object({
+    id: z.string(),
+    timestamp: z.number(),
+    actionType: z.string(),
+    description: z.string(),
+    status: z.string()
+  })).optional()
 });
 
-// Create the Approval Request Tool
-export const ApprovalRequestTool = createTool({
-  id: "approval_request",
-  name: "approval_request", 
-  description: "Request user approval for potentially risky or important actions before executing them. Use this tool when you need to write files, delete files, execute commands, or perform other operations that require user consent.",
-  inputSchema: ApprovalRequestInputSchema,
-  outputSchema: ApprovalRequestOutputSchema,
-  async: true, // This is async as it waits for user response
+export const InteractionManagementTool = createTool({
+  id: "interaction_management",
+  name: "interaction_management",
+  description: "Manage user interactions including approval requests and pending approval status. Use this tool to request user approval for risky actions or check approval status.",
+  inputSchema: InteractionManagementInputSchema,
+  outputSchema: InteractionManagementOutputSchema,
+  async: true, // This is async as approval requests wait for user response
   execute: async (params, agent?: IAgent) => {
-    if (!agent || !agent.eventBus) {
-      return { 
-        approved: false, 
-        requestId: '', 
-        error: "EventBus not available. Cannot request approval." 
-      };
+    if (!agent) {
+      return { success: false, message: "Agent not available" };
     }
 
-    const requestId = uuidv4();
     const context = agent.contextManager.findContextById(InteractiveContextId);
-    
     if (!context) {
-      return { 
-        approved: false, 
-        requestId, 
-        error: "Interactive context not found" 
-      };
+      return { success: false, message: "Interactive context not found" };
     }
 
     try {
-      // Add to pending approvals
-      const currentData = context.getData();
-      const pendingApproval = {
-        id: requestId,
-        timestamp: Date.now(),
-        actionType: params.actionType,
-        description: params.description,
-        status: 'pending' as const
-      };
-      
-      context.setData({
-        ...currentData,
-        pendingApprovals: [...currentData.pendingApprovals, pendingApproval]
-      });
+      switch (params.command) {
+        case 'request_approval': {
+          if (!params.actionType || !params.description || !params.details) {
+            return { 
+              success: false, 
+              message: "actionType, description, and details are required for request_approval command",
+              approved: false
+            };
+          }
 
-      // Use existing session or create new one - should match InteractiveLayer session
-      const activeSessions = agent.eventBus.getActiveSessions();
-      const sessionId = activeSessions.length > 0 ? activeSessions[0] : agent.eventBus.createSession();
+          if (!agent.eventBus) {
+            return { 
+              success: false, 
+              message: "EventBus not available. Cannot request approval.",
+              approved: false,
+              requestId: ''
+            };
+          }
 
-      logger.info(`Approval request sent: ${requestId} - ${params.description}`);
-      logger.info(`Using sessionId: ${sessionId} for approval request`);
+          const requestId = uuidv4();
+          const currentData = context.getData();
+          
+          // Add to pending approvals
+          const pendingApproval = {
+            id: requestId,
+            timestamp: Date.now(),
+            actionType: params.actionType,
+            description: params.description,
+            status: 'pending' as const
+          };
+          
+          context.setData({
+            ...currentData,
+            pendingApprovals: [...currentData.pendingApprovals, pendingApproval]
+          });
 
-      // IMPORTANT: Create subscription BEFORE publishing request to avoid race condition
-      const responsePromise = waitForApprovalResponse(agent.eventBus, requestId, params.timeout || 30000, sessionId);
+          // Use existing session or create new one
+          const activeSessions = agent.eventBus.getActiveSessions();
+          const sessionId = activeSessions.length > 0 ? activeSessions[0] : agent.eventBus.createSession();
 
-      // Publish approval request event with requestId in payload
-      await agent.eventBus.publish({
-        type: 'approval_request',
-        source: 'agent',
-        sessionId,
-        payload: {
-          requestId, // Add requestId to payload so CLI can use it in response
-          actionType: params.actionType,
-          description: params.description,
-          details: params.details,
-          timeout: params.timeout
+          logger.info(`Approval request sent: ${requestId} - ${params.description}`);
+          logger.info(`Using sessionId: ${sessionId} for approval request`);
+
+          // Create subscription BEFORE publishing request to avoid race condition
+          const responsePromise = waitForApprovalResponse(agent.eventBus, requestId, params.timeout || 30000, sessionId);
+
+          // Publish approval request event
+          await agent.eventBus.publish({
+            type: 'approval_request',
+            source: 'agent',
+            sessionId,
+            payload: {
+              requestId,
+              actionType: params.actionType,
+              description: params.description,
+              details: params.details,
+              timeout: params.timeout
+            }
+          });
+
+          // Wait for approval response
+          const response = await responsePromise;
+          
+          // Update context with result
+          const updatedData = context.getData();
+          const approvalIndex = updatedData.pendingApprovals.findIndex((a: any) => a.id === requestId);
+          if (approvalIndex >= 0) {
+            updatedData.pendingApprovals[approvalIndex].status = 
+              response.decision === 'accept' ? 'approved' : 'rejected';
+          }
+
+          // Add to history
+          updatedData.approvalHistory.push({
+            id: requestId,
+            timestamp: Date.now(),
+            actionType: params.actionType,
+            description: params.description,
+            decision: response.decision,
+            response: response.response,
+            modification: response.modification
+          });
+
+          context.setData(updatedData);
+
+          return {
+            success: true,
+            message: `Approval request ${response.decision === 'accept' ? 'approved' : 'rejected'}`,
+            approved: response.decision === 'accept',
+            requestId,
+            decision: response.decision,
+            modification: response.modification
+          };
         }
-      });
 
-      // Wait for approval response
-      const response = await responsePromise;
-      
-      // Update context with result
-      const updatedData = context.getData();
-      const approvalIndex = updatedData.pendingApprovals.findIndex((a: any) => a.id === requestId);
-      if (approvalIndex >= 0) {
-        updatedData.pendingApprovals[approvalIndex].status = 
-          response.decision === 'accept' ? 'approved' : 'rejected';
+        case 'list_pending': {
+          const data = context.getData();
+          return {
+            success: true,
+            message: `Found ${data.pendingApprovals.length} pending approvals`,
+            pendingApprovals: data.pendingApprovals
+          };
+        }
+
+        default:
+          return { success: false, message: `Unknown command: ${params.command}` };
       }
-
-      // Add to history
-      updatedData.approvalHistory.push({
-        id: requestId,
-        timestamp: Date.now(),
-        actionType: params.actionType,
-        description: params.description,
-        decision: response.decision,
-        response: response.response,
-        modification: response.modification
-      });
-
-      context.setData(updatedData);
+    } catch (error) {
+      logger.error(`Interaction management error: ${error}`);
+      
+             // Update status to timeout/error for approval requests
+       if (params.command === 'request_approval') {
+         return { 
+           success: false, 
+           message: error instanceof Error ? error.message : String(error),
+           approved: false,
+           requestId: ''
+         };
+       }
 
       return {
-        approved: response.decision === 'accept',
-        requestId,
-        decision: response.decision,
-        modification: response.modification
-      };
-
-    } catch (error) {
-      logger.error(`Approval request failed: ${error}`);
-      
-      // Update status to timeout/error
-      const currentData = context.getData();
-      const approvalIndex = currentData.pendingApprovals.findIndex((a: any) => a.id === requestId);
-      if (approvalIndex >= 0) {
-        currentData.pendingApprovals[approvalIndex].status = 'timeout';
-        context.setData(currentData);
-      }
-
-      return { 
-        approved: false, 
-        requestId, 
-        error: error instanceof Error ? error.message : String(error)
+        success: false,
+        message: error instanceof Error ? error.message : String(error)
       };
     }
   }
@@ -222,41 +263,10 @@ async function waitForApprovalResponse(
   });
 }
 
-// List Pending Approvals Tool
-export const ListPendingApprovalsTool = createTool({
-  id: "list_pending_approvals",
-  name: "list_pending_approvals",
-  description: "List all pending approval requests",
-  inputSchema: z.object({}),
-  outputSchema: z.object({
-    pendingApprovals: z.array(z.object({
-      id: z.string(),
-      timestamp: z.number(),
-      actionType: z.string(),
-      description: z.string(),
-      status: z.string()
-    }))
-  }),
-  async: false,
-  execute: async (params, agent?: IAgent) => {
-    if (!agent) {
-      return { pendingApprovals: [] };
-    }
-
-    const context = agent.contextManager.findContextById(InteractiveContextId);
-    if (!context) {
-      return { pendingApprovals: [] };
-    }
-
-    const data = context.getData();
-    return { pendingApprovals: data.pendingApprovals };
-  }
-});
-
 // Create the Interactive Context
 export const InteractiveContext = ContextHelper.createContext({
   id: InteractiveContextId,
-  description: "Manages interactive communication between the agent and users, including approval requests, collaboration requests, and other user interaction flows. This context handles the coordination of permission-based actions and collaborative problem-solving.",
+  description: "Manages interactive communication between the agent and users, including approval requests and collaboration workflows. This context handles the coordination of permission-based actions.",
   dataSchema: InteractiveContextSchema,
   initialData: {
     pendingApprovals: [],
@@ -270,8 +280,11 @@ export const InteractiveContext = ContextHelper.createContext({
 --- Interactive Context ---
 
 User Interaction Management:
-• approval_request: Request user approval for actions requiring permission
-• list_pending_approvals: Check status of pending approval requests
+• interaction_management: Handle approval requests and check pending status
+
+Available Commands:
+- request_approval: Request user approval for risky actions
+- list_pending: Check status of pending approval requests
 
 Current Status:
 - Pending Approvals: ${pendingCount}
@@ -293,7 +306,7 @@ ${recentHistory
 ` : ''}
 
 Usage Guidelines:
-1. Always use approval_request before performing potentially risky operations
+1. Use interaction_management with command='request_approval' before risky operations
 2. Required for: file operations, command execution, git operations, network access
 3. Risk levels: low (simple reads), medium (file writes), high (system commands), critical (deletions)
 4. Provide clear descriptions and previews to help users make informed decisions
@@ -305,7 +318,7 @@ Remember: User approval is required for actions that could modify the system or 
   toolSetFn: () => ({
     name: "InteractiveTools",
     description: "Tools for managing user interactions, approvals, and collaborative workflows. Use this toolset when you need user permission or input for actions.",
-    tools: [ApprovalRequestTool, ListPendingApprovalsTool],
+    tools: [InteractionManagementTool],
     active: true,
     source: "local"
   })

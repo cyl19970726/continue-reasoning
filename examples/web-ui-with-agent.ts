@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { LogLevel } from '../src/core/utils/logger';
 import { LLMModel } from '../src/core/interfaces';
 import path from 'path';
+import { OPENAI_MODELS } from '@/core/models';
 
 async function startWebUIWithAgent() {
   console.log('=== Starting Web UI + Agent Integration (Event-Driven Architecture) ===\n');
@@ -134,7 +135,7 @@ async function startWebUIWithAgent() {
 
     // 6. Create Agent with Web UI integration
     const agentOptions = {
-      llmProvider: 'openai' as const,
+      model: OPENAI_MODELS.GPT_4O,
       enableParallelToolCalls: false,
       temperature: 0.7,
       maxTokens: 100000,

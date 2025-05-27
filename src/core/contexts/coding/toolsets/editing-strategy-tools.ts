@@ -15,7 +15,6 @@ const ApplyWholeFileEditParamsSchema = z.object({
 
 const ApplyWholeFileEditReturnsSchema = z.object({
   success: z.boolean().describe("Whether the file was successfully written."),
-  diff: z.string().optional().describe("A diff string representing the changes made."),
   message: z.string().optional().describe("An optional message about the operation."),
 });
 
@@ -28,7 +27,7 @@ export const ApplyWholeFileEditTool = createTool({
   async: true,
   execute: async (params, agent?: IAgent) => {
     // Get the coding context
-    const codingContext = agent?.contextManager.findContextById('coding_gemini');
+    const codingContext = agent?.contextManager.findContextById('coding-context');
     if (!codingContext) {
       throw new Error('Coding context not found');
     }
@@ -114,7 +113,6 @@ export const ApplyWholeFileEditTool = createTool({
       
       return {
         success: true,
-        diff: diffString,
         message: fileExists 
           ? `File ${params.path} updated successfully.` 
           : `File ${params.path} created successfully.`

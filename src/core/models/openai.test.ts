@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { OpenAIWrapper } from './openai';
 import { z } from 'zod';
 import dotenv from 'dotenv';
+import { OPENAI_MODELS } from '../models';
 
 dotenv.config();
 
@@ -27,17 +28,17 @@ describe('OpenAIWrapper', () => {
 
   // Use conditional testing to skip tests when no API key is available
   (hasApiKey ? it : it.skip)('should create a properly configured instance', () => {
-    const wrapper = new OpenAIWrapper('openai', false, 0.7, 1000);
+    const wrapper = new OpenAIWrapper(OPENAI_MODELS.GPT_4O, false, 0.7, 1000);
     
     expect(wrapper).toBeInstanceOf(OpenAIWrapper);
-    expect(wrapper.model).toBe('openai');
+    expect(wrapper.model).toBe(OPENAI_MODELS.GPT_4O);
     expect(wrapper.streaming).toBe(false);
     expect(wrapper.temperature).toBe(0.7);
     expect(wrapper.maxTokens).toBe(1000);
   });
 
   (hasApiKey ? it : it.skip)('should call OpenAI API and parse response', async () => {
-    const openaiModel = new OpenAIWrapper('openai', false, 0.7, 1000);
+    const openaiModel = new OpenAIWrapper(OPENAI_MODELS.GPT_4O, false, 0.7, 1000);
     
     const response = await openaiModel.call(
       "What's the weather like in Paris today?", 
@@ -73,7 +74,7 @@ describe('OpenAIWrapper', () => {
 
   // Testing the streaming API implementation
   (hasApiKey ? it : it.skip)('should support streaming with OpenAI API', async () => {
-    const openaiModel = new OpenAIWrapper('openai', true, 0.7, 1000);
+    const openaiModel = new OpenAIWrapper(OPENAI_MODELS.GPT_4O, true, 0.7, 1000);
     
     const response = await openaiModel.streamCall(
       "What's the weather like in Paris today?", 

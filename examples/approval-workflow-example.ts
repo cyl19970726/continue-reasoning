@@ -12,6 +12,7 @@ import { ClientContext } from '../src/core/contexts/client';
 import { SystemToolContext } from '../src/core/contexts/system';
 import { ExecuteToolsContext } from '../src/core/contexts/execute';
 import { InteractiveContext } from '../src/core/contexts/interaction';
+import { OPENAI_MODELS } from '@/core/models';
 
 // Mock client for demonstration
 class MockClient {
@@ -100,7 +101,7 @@ async function demonstrateApprovalWorkflow() {
     10, // maxSteps
     undefined, // logLevel
     {
-      llmProvider: 'openai',
+      model: OPENAI_MODELS.GPT_4O,
       enableParallelToolCalls: false,
       temperature: 0.7
     },

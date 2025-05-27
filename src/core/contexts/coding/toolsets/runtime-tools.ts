@@ -28,7 +28,7 @@ export const ExecuteShellCommandTool = createTool({
   async: true,
   execute: async (params, agent?: IAgent) => {
     // Get the coding context
-    const codingContext = agent?.contextManager.findContextById('coding_gemini');
+    const codingContext = agent?.contextManager.findContextById('coding-context');
     if (!codingContext) {
       throw new Error('Coding context not found');
     }

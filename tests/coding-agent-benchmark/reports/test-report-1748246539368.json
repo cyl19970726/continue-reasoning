@@ -1,0 +1,33 @@
+{
+  "totalTests": 3,
+  "passedTests": 1,
+  "failedTests": 2,
+  "scores": {
+    "level1": {
+      "passed": 1,
+      "total": 1,
+      "scores": [
+        91
+      ],
+      "timeSpent": 2
+    },
+    "level2": {
+      "passed": 0,
+      "total": 1,
+      "scores": [
+        74
+      ],
+      "timeSpent": 2
+    },
+    "level3": {
+      "passed": 0,
+      "total": 1,
+      "scores": [
+        54
+      ],
+      "timeSpent": 2
+    }
+  },
+  "startTime": 1748246533864,
+  "endTime": 1748246539368
+}

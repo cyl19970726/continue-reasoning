@@ -3,6 +3,8 @@ import { z } from "zod";
 import { ILLM, LLMModel, ToolCallDefinition, ToolCallParams } from "../interfaces";
 import dotenv from "dotenv";
 import { zodToJsonNostrict, zodToJsonStrict } from "../utils/jsonHelper";
+import { SupportedModel } from "../models";
+import { logger } from "../utils/logger";
 
 dotenv.config();
 
@@ -56,20 +58,18 @@ function convertToAnthropicTool(tool: ToolCallDefinition, strict: boolean = fals
 }
 
 export class AnthropicWrapper implements ILLM {
-    model: z.infer<typeof LLMModel>;
+    model: SupportedModel;
     streaming: boolean;
     parallelToolCall: boolean;
     temperature: number;
     maxTokens: number;
-    modelName: string;
 
-    constructor(model: z.infer<typeof LLMModel>, streaming: boolean, temperature: number, maxTokens: number) {
+    constructor(model: SupportedModel, streaming: boolean, temperature: number, maxTokens: number) {
         this.model = model;
         this.streaming = streaming;
         this.parallelToolCall = false;
         this.temperature = temperature;
         this.maxTokens = maxTokens;
-        this.modelName = DEFAULT_CLAUDE_MODEL;
     }
 
     setParallelToolCall(enabled: boolean): void {
@@ -85,11 +85,11 @@ export class AnthropicWrapper implements ILLM {
 
             const anthropicTools = tools.map(tool => convertToAnthropicTool(tool, false));
             
-            console.log(`Calling Anthropic API with ${tools.length} tools, model=${this.modelName}, parallel_tool_use=${this.parallelToolCall}`);
+            logger.info(`Calling Anthropic API with ${tools.length} tools, model=${this.model}, parallel_tool_use=${this.parallelToolCall}`);
 
             // TypeScript cast to allow using beta features
             const response = await anthropic.messages.create({
-                model: this.modelName, // Use the class property
+                model: this.model, // Use the class property
                 max_tokens: this.maxTokens,
                 temperature: this.temperature,
                 system: "You are a helpful assistant that provides accurate and useful responses.",
@@ -151,7 +151,7 @@ export class AnthropicWrapper implements ILLM {
 
             // TypeScript cast to allow using beta features and streaming
             const streamResponse = await anthropic.messages.create({
-                model: this.modelName, // Use the class property
+                model: this.model, // Use the class property
                 max_tokens: this.maxTokens,
                 temperature: this.temperature,
                 system: "You are a helpful assistant that provides accurate and useful responses.",

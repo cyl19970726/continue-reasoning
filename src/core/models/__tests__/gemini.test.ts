@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { GeminiWrapper } from '../gemini';
 import { ILLM, ToolCallDefinition } from '../../interfaces';
 import dotenv from 'dotenv';
+import { GOOGLE_MODELS } from '../../models';
 
 // Load environment variables
 dotenv.config();
@@ -17,7 +18,7 @@ describe('GeminiWrapper', () => {
 
   beforeEach(() => {
     // Create a test instance
-    geminiWrapper = new GeminiWrapper('google', true, 0.7, 1000);
+    geminiWrapper = new GeminiWrapper(GOOGLE_MODELS.GEMINI_2_5_FLASH_PREVIEW_05_20, true, 0.7, 1000);
     
     // Create some dummy tools for testing
     const TestParamSchema = z.object({
@@ -40,7 +41,7 @@ describe('GeminiWrapper', () => {
   });
 
   it('should initialize with correct defaults', () => {
-    expect(geminiWrapper.model).toBe('google');
+    expect(geminiWrapper.model).toBe(GOOGLE_MODELS.GEMINI_2_5_FLASH_PREVIEW_05_20);
     expect(geminiWrapper.streaming).toBe(true);
     expect(geminiWrapper.parallelToolCall).toBe(false);
     expect(geminiWrapper.temperature).toBe(0.7);

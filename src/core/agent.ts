@@ -15,18 +15,17 @@ import { WebSearchContext } from "./contexts/web-search";
 import { OpenAIWrapper } from "./models/openai";
 import { AnthropicWrapper } from "./models/anthropic";
 import { GeminiWrapper } from "./models/gemini";
+import { SupportedModel, getModelProvider, OPENAI_MODELS } from "./models";
 import path from "path";
-import fs from "fs";
-import { ProblemContext } from "./contexts/problem";
 import { LogLevel, Logger } from "./utils/logger";
 import { ToolSetContext } from "./contexts/toolset";
 import { logger } from "./utils/logger";
-import { createGeminiCodingContext } from "./contexts/coding";
+import { createCodingContext } from "./contexts/coding";
 import { IEventBus } from "./events/eventBus";
 
 dotenv.config();
 
-const CODING_CONTEXT = createGeminiCodingContext(process.cwd());
+const CODING_CONTEXT = createCodingContext(process.cwd());
 
 
 const SYSTEM_CONTEXTS = [
@@ -52,17 +51,15 @@ const DEFAULT_CONTEXTS = [
 ]
 
 const DEFAULT_AGENT_OPTIONS: AgentOptions = {
-    llmProvider: 'openai',
+    model: OPENAI_MODELS.GPT_4O,
     enableParallelToolCalls: false,
     temperature: 0.7,
     maxTokens: 100000,
     taskConcurency: 5,
 }
 
-export type LLMProvider = 'openai' | 'anthropic' | 'google';
-
 export interface AgentOptions {
-    llmProvider?: LLMProvider;
+    model?: SupportedModel; // 指定具体模型，默认使用 GPT-4o
     enableParallelToolCalls?: boolean;
     temperature?: number;
     maxTokens?: number;
@@ -84,7 +81,6 @@ export class BaseAgent implements IAgent {
     clients: IClient<any,any>[];
     llm: ILLM; 
     taskQueue: ITaskQueue;
-    llmProvider: LLMProvider;
     enableParallelToolCalls: boolean;
     toolSets: ToolSet[] = [];
     mcpConfigPath: string;
@@ -132,23 +128,29 @@ export class BaseAgent implements IAgent {
         this.executionMode = agentOptions.executionMode || 'manual'; // 设置执行模式，默认为manual
 
         // LLM configuration options
-        this.llmProvider = agentOptions.llmProvider || 'openai';
-        this.enableParallelToolCalls = agentOptions.enableParallelToolCalls ?? false;
         const temperature = agentOptions.temperature || 0.7;
         const maxTokens = agentOptions.maxTokens || 2048;
+        this.enableParallelToolCalls = agentOptions.enableParallelToolCalls ?? false;
         
-        // Initialize correct LLM based on configuration
-        if (this.llmProvider === 'openai') {
-            this.llm = new OpenAIWrapper('openai', false, temperature, maxTokens);
-            logger.info(`Using OpenAI model: ${this.llm.model}`);
-        } else if (this.llmProvider === 'anthropic') {
-            this.llm = new AnthropicWrapper('anthropic', false, temperature, maxTokens);
-            logger.info(`Using Anthropic model: ${this.llm.model}`);
-        } else if (this.llmProvider === 'google') {
-            this.llm = new GeminiWrapper('google', false, temperature, maxTokens);
-            logger.info(`Using Gemini model: ${this.llm.model}`);
+        // 简化的模型配置：直接使用模型
+        const selectedModel: SupportedModel = agentOptions.model || OPENAI_MODELS.GPT_4O;
+        const provider = getModelProvider(selectedModel);
+        
+        // Initialize correct LLM based on provider
+        if (provider === 'openai') {
+            this.llm = new OpenAIWrapper(selectedModel, false, temperature, maxTokens);
+            (this.llm as any).modelName = selectedModel;
+            logger.info(`Using OpenAI model: ${selectedModel}`);
+        } else if (provider === 'anthropic') {
+            this.llm = new AnthropicWrapper(selectedModel, false, temperature, maxTokens);
+            (this.llm as any).modelName = selectedModel;
+            logger.info(`Using Anthropic model: ${selectedModel}`);
+        } else if (provider === 'google') {
+            this.llm = new GeminiWrapper(selectedModel, false, temperature, maxTokens);
+            (this.llm as any).modelName = selectedModel;
+            logger.info(`Using Google model: ${selectedModel}`);
         } else {
-            throw new Error(`Unsupported LLM provider: ${this.llmProvider}`);
+            throw new Error(`Unsupported LLM provider: ${provider}`);
         }
         
         // Set LLM parallel tool calling
@@ -174,6 +176,7 @@ export class BaseAgent implements IAgent {
     async setup(): Promise<void>{
         // Register all contexts with the context manager
         this.contexts.forEach((context) => {
+            logger.info(`Registering context: ${context.id}`);
             this.contextManager.registerContext(asRAGEnabledContext(context));
         });
         
@@ -669,7 +672,7 @@ export class BaseAgent implements IAgent {
         }
         
         // 启动Agent处理
-        await this.start(10);
+        await this.start(this.maxSteps);
     }
 
     /**
@@ -686,7 +689,7 @@ export class BaseAgent implements IAgent {
         }
         
         // 启动Agent处理（如果需要）
-        await this.start(5);
+        await this.start(this.maxSteps);
     }
 
     /**

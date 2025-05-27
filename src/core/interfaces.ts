@@ -2,6 +2,7 @@ import { promises } from "dns";
 import { z } from "zod";
 import { render } from "./utils";
 import { IEventBus } from "./events/eventBus";
+import { SupportedModel } from "./models";
 
 // 从 agent.ts 导入类型定义
 export type LLMProvider = 'openai' | 'anthropic' | 'google';
@@ -541,7 +542,6 @@ export interface IAgent{
     
     // 工具和配置
     toolSets: ToolSet[];
-    llmProvider: LLMProvider;
     enableParallelToolCalls: boolean;
     mcpConfigPath: string;
     
@@ -617,7 +617,7 @@ export type ToolCallResult = z.infer<typeof ToolCallResultSchema>;
 export const LLMModel = z.enum(['openai', 'anthropic', 'google']);
 // the llm need to support the mainstream llm model like openai, anthropic, google, etc. and also support the streaming output 
 export interface ILLM{
-    model:  z.infer<typeof LLMModel>;
+    model: SupportedModel;
     streaming: boolean;
     parallelToolCall: boolean;
     temperature: number;

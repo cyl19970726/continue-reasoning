@@ -151,6 +151,54 @@ const RequestUserInputTool = createTool({
   }
 });
 
+
+// Agent Stop Tool
+const AgentStopInputSchema = z.object({
+  reason: z.string().optional().describe("Reason for stopping the agent (optional)")
+});
+
+const AgentStopOutputSchema = z.object({
+  success: z.boolean(),
+  message: z.string()
+});
+
+export const AgentStopTool = createTool({
+  id: "agent_stop",
+  name: "agent_stop",
+  description: "Stop the agent after completing current tasks. Use this when all planned work is finished or when you need to halt execution.",
+  inputSchema: AgentStopInputSchema,
+  outputSchema: AgentStopOutputSchema,
+  async: false,
+  execute: async (params, agent?: IAgent) => {
+    if (!agent) {
+      return { 
+        success: false, 
+        message: "Agent not available for stopping" 
+      };
+    }
+
+    try {
+      const reason = params.reason || "Task completion requested";
+      
+      logger.info(`Agent stop requested: ${reason}`);
+      
+      // Call the agent's stop method
+      agent.stop();
+      
+      return {
+        success: true,
+        message: `Agent stop initiated. Reason: ${reason}`
+      };
+    } catch (error) {
+      logger.error(`Failed to stop agent: ${error}`);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+});
+
 // 创建 UserInputContext 工厂函数
 export function createUserInputContext() {
   const baseContext = ContextHelper.createContext({
@@ -189,15 +237,12 @@ export function createUserInputContext() {
         prompt += '\n';
       }
       
-      prompt += '**Available Tools:**\n';
-      prompt += '- `reply_to_user`: Send a reply to the user with different reply types (text, markdown, structured)\n';
-      prompt += '- `request_user_input`: Request specific input from the user (passwords, configs, etc.)\n\n';
-      
       prompt += '**Guidelines:**\n';
       prompt += '- Use `reply_to_user` to respond to user messages and questions\n';
       prompt += '- Use `request_user_input` when you need specific information from the user\n';
       prompt += '- Always maintain conversation context and history\n';
       prompt += '- Choose appropriate replyType for replies (text, markdown, structured)\n';
+      prompt += '- Use `agent_stop` to stop the agent when tasks are completed or when you need to halt execution.\n';
       
       return prompt;
     },

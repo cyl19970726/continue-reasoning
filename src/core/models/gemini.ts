@@ -3,6 +3,8 @@ import { z } from "zod";
 import { ILLM, LLMModel, ToolCallDefinition, ToolCallParams } from "../interfaces";
 import dotenv from "dotenv";
 import { zodToJsonNostrict, zodToJsonStrict } from "../utils/jsonHelper";
+import { SupportedModel } from '../models';
+import { logger } from '../utils/logger';
 
 dotenv.config();
 
@@ -109,25 +111,23 @@ function convertPropertiesToGeminiFormat(properties: Record<string, any>): Recor
 }
 
 export class GeminiWrapper implements ILLM {
-    model: z.infer<typeof LLMModel>;
+    model: SupportedModel;
     streaming: boolean;
     parallelToolCall: boolean;
     temperature: number;
     maxTokens: number;
-    modelName: string;
     
-    constructor(model: z.infer<typeof LLMModel>, streaming: boolean, temperature: number, maxTokens: number) {
+    constructor(model: SupportedModel, streaming: boolean, temperature: number, maxTokens: number) {
         this.model = model;
         this.streaming = streaming;
         this.parallelToolCall = false;
         this.temperature = temperature;
         this.maxTokens = maxTokens;
-        this.modelName = GEMINI_MODEL;
     }
     
     setParallelToolCall(enabled: boolean): void {
         this.parallelToolCall = enabled;
-        console.log(`Parallel tool calls ${enabled ? 'enabled' : 'disabled'} for Gemini model`);
+        logger.info(`Parallel tool calls ${enabled ? 'enabled' : 'disabled'} for Gemini model`);
     }
     
     async call(messages: string, tools: ToolCallDefinition[]): Promise<{text: string, toolCalls: ToolCallParams[]}> {
@@ -136,7 +136,7 @@ export class GeminiWrapper implements ILLM {
                 apiKey: process.env.GEMINI_API_KEY,
             });
             
-            console.log(`Calling Gemini API with ${tools.length} tools, model=${this.modelName}, parallel_tool_use=${this.parallelToolCall}`);
+            logger.info(`Calling Gemini API with ${tools.length} tools, model=${this.model}, parallel_tool_use=${this.parallelToolCall}`);
             
             // Prepare function declarations from tools
             const functionDeclarations = tools.map(tool => convertToGeminiTool(tool, false));
@@ -148,7 +148,7 @@ export class GeminiWrapper implements ILLM {
             
             // Call the model
             const response = await genAI.models.generateContent({
-                model: this.modelName,
+                model: this.model,
                 contents: messages || "",
                 config: {
                     temperature: this.temperature,
@@ -184,7 +184,7 @@ export class GeminiWrapper implements ILLM {
                             parameters: functionCall.args || {},
                         });
                     } catch (e) {
-                        console.error(`Error processing Gemini function call:`, e);
+                        logger.error(`Error processing Gemini function call:`, e);
                     }
                 }
             }
@@ -194,7 +194,7 @@ export class GeminiWrapper implements ILLM {
                 toolCalls
             };
         } catch (error) {
-            console.error("Error in Gemini call method:", error);
+            logger.error("Error in Gemini call method:", error);
             return {
                 text: `Error calling Gemini API: ${error instanceof Error ? error.message : String(error)}`,
                 toolCalls: []
@@ -206,10 +206,10 @@ export class GeminiWrapper implements ILLM {
         try {
             // For streamCall, we'll still use the regular call method but inform the user
             // that actual streaming isn't available with the current API
-            console.log("Note: True streaming is not available with the @google/genai API. Using regular call instead.");
+            logger.info("Note: True streaming is not available with the @google/genai API. Using regular call instead.");
             return await this.call(messages, tools);
         } catch (error) {
-            console.error("Error in Gemini streamCall method:", error);
+            logger.error("Error in Gemini streamCall method:", error);
             return {
                 text: `Error calling Gemini streaming API: ${error instanceof Error ? error.message : String(error)}`,
                 toolCalls: []

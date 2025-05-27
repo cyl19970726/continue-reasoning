@@ -1,12 +1,12 @@
 /**
  * Simple test for the bash tool using the sandbox
  */
-import { createGeminiCodingContext } from './coding-context';
+import { createCodingContext } from './coding-context';
 import { BashCommandTool } from './toolsets/bash';
 
 async function testBashTool() {
   // Create a coding context with the current directory as workspace
-  const context = createGeminiCodingContext(process.cwd());
+  const context = createCodingContext(process.cwd());
   
   // Allow sandbox initialization to complete
   await new Promise(resolve => setTimeout(resolve, 1000));

@@ -1,0 +1,17 @@
+[2025-05-27T05:52:08.680Z] [INFO] ContextManager initialized: demo-context with prompt mode: standard
+[2025-05-27T05:52:08.680Z] [INFO] Setting log level to: INFO
+[2025-05-27T05:52:08.680Z] [INFO] Using OpenAI model: gpt-4.5-preview (category: text)
+[2025-05-27T05:52:08.680Z] [INFO] MCP config path: /Users/hhh0x/agent/hhh-agi/examples/config/mcp.json
+[2025-05-27T05:52:08.680Z] [INFO] Setting log level to: INFO
+[2025-05-27T05:52:08.680Z] [INFO] Using Anthropic model: claude-3-5-sonnet-20241022 (category: text)
+[2025-05-27T05:52:08.680Z] [INFO] MCP config path: /Users/hhh0x/agent/hhh-agi/examples/config/mcp.json
+[2025-05-27T05:52:08.680Z] [INFO] Setting log level to: INFO
+[2025-05-27T05:52:08.680Z] [INFO] Using Google model: gemini-2.5-flash-preview-05-20 (category: text)
+[2025-05-27T05:52:08.680Z] [INFO] MCP config path: /Users/hhh0x/agent/hhh-agi/examples/config/mcp.json
+[2025-05-27T05:52:08.680Z] [INFO] Setting log level to: INFO
+[2025-05-27T05:52:08.680Z] [INFO] Using OpenAI model: gpt-4o-audio-preview-2024-12-17 (category: audio)
+[2025-05-27T05:52:08.680Z] [INFO] MCP config path: /Users/hhh0x/agent/hhh-agi/examples/config/mcp.json
+[2025-05-27T05:52:08.680Z] [INFO] Setting log level to: INFO
+[2025-05-27T05:52:08.680Z] [WARN] Invalid model name: invalid-model-name. Using default model for provider: openai
+[2025-05-27T05:52:08.680Z] [INFO] Using OpenAI model: gpt-4o (category: text)
+[2025-05-27T05:52:08.680Z] [INFO] MCP config path: /Users/hhh0x/agent/hhh-agi/examples/config/mcp.json

@@ -6,138 +6,65 @@ import { v4 as uuidv4 } from 'uuid';
 
 export const PlanContextId = "plan-context";
 
-// Schema for plan items
-const PlanItemSchema = z.object({
+// Schema for plan steps
+const PlanStepSchema = z.object({
   id: z.string(),
   title: z.string(),
   description: z.string(),
-  status: z.enum(['pending', 'in_progress', 'completed', 'cancelled']),
-  priority: z.enum(['low', 'medium', 'high', 'critical']),
+  status: z.enum(['pending', 'in_progress', 'completed']),
+  toolsToCall: z.array(z.string()).optional().describe("Tools that will be called in this step"),
   createdAt: z.number(),
-  updatedAt: z.number(),
-  estimatedDuration: z.number().optional().describe("Estimated duration in minutes"),
-  actualDuration: z.number().optional().describe("Actual duration in minutes"),
-  dependencies: z.array(z.string()).optional().describe("IDs of dependent plan items"),
-  tags: z.array(z.string()).optional().describe("Tags for categorization")
+  updatedAt: z.number()
 });
 
 // Schema for the plan context data
 const PlanContextSchema = z.object({
-  currentPlan: z.array(PlanItemSchema).describe("Current active plan items"),
-  completedPlans: z.array(PlanItemSchema).describe("Completed plan items history"),
-  planMetadata: z.object({
-    totalItems: z.number(),
-    completedItems: z.number(),
-    inProgressItems: z.number(),
-    estimatedTotalDuration: z.number().optional(),
-    actualTotalDuration: z.number().optional(),
-    startTime: z.number().optional(),
-    endTime: z.number().optional()
-  })
-});
-
-// Create Plan Tool
-const CreatePlanInputSchema = z.object({
-  title: z.string().describe("Title of the plan item"),
-  description: z.string().describe("Detailed description of what needs to be done"),
-  priority: z.enum(['low', 'medium', 'high', 'critical']).optional().describe("Priority level (default: medium)"),
-  estimatedDuration: z.number().optional().describe("Estimated duration in minutes"),
-  dependencies: z.array(z.string()).optional().describe("IDs of plan items this depends on"),
-  tags: z.array(z.string()).optional().describe("Tags for categorization")
-});
-
-const CreatePlanOutputSchema = z.object({
-  success: z.boolean(),
   planId: z.string().optional(),
-  message: z.string().optional()
+  title: z.string().optional(),
+  description: z.string().optional(),
+  status: z.enum(['none', 'active', 'completed']).default('none'),
+  steps: z.array(PlanStepSchema).default([]),
+  currentStepIndex: z.number().default(0),
+  createdAt: z.number().optional(),
+  completedAt: z.number().optional()
 });
 
-export const CreatePlanTool = createTool({
-  id: "create_plan",
-  name: "create_plan",
-  description: "Create a new plan item to organize and track tasks. Use this to break down complex work into manageable steps.",
-  inputSchema: CreatePlanInputSchema,
-  outputSchema: CreatePlanOutputSchema,
-  async: false,
-  execute: async (params, agent?: IAgent) => {
-    if (!agent) {
-      return { success: false, message: "Agent not available" };
-    }
-
-    const context = agent.contextManager.findContextById(PlanContextId);
-    if (!context) {
-      return { success: false, message: "Plan context not found" };
-    }
-
-    try {
-      const planId = uuidv4();
-      const now = Date.now();
-      
-      // Handle default values
-      const priority = params.priority || "medium";
-      
-      const newPlanItem = {
-        id: planId,
-        title: params.title,
-        description: params.description,
-        status: 'pending' as const,
-        priority,
-        createdAt: now,
-        updatedAt: now,
-        estimatedDuration: params.estimatedDuration,
-        dependencies: params.dependencies || [],
-        tags: params.tags || []
-      };
-
-      const currentData = context.getData();
-      const updatedPlan = [...currentData.currentPlan, newPlanItem];
-      
-      context.setData({
-        ...currentData,
-        currentPlan: updatedPlan,
-        planMetadata: {
-          ...currentData.planMetadata,
-          totalItems: updatedPlan.length,
-          estimatedTotalDuration: updatedPlan.reduce((sum, item: z.infer<typeof PlanItemSchema>) => 
-            sum + (item.estimatedDuration || 0), 0)
-        }
-      });
-
-      logger.info(`Created new plan item: ${planId} - ${params.title}`);
-      
-      return {
-        success: true,
-        planId,
-        message: `Plan item "${params.title}" created successfully`
-      };
-    } catch (error) {
-      logger.error(`Failed to create plan item: ${error}`);
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : String(error)
-      };
-    }
-  }
+// Plan Management Tool - handles all plan operations
+const PlanManagementInputSchema = z.object({
+  command: z.enum(['create', 'update_step', 'complete_step', 'complete_plan']).describe("Plan operation to perform"),
+  
+  // For create command
+  title: z.string().optional().describe("Plan title (required for create)"),
+  description: z.string().optional().describe("Plan description (required for create)"),
+  steps: z.array(z.object({
+    title: z.string(),
+    description: z.string(),
+    toolsToCall: z.array(z.string()).optional()
+  })).optional().describe("Plan steps (required for create)"),
+  
+  // For update/complete step commands
+  stepId: z.string().optional().describe("Step ID to update (required for update_step/complete_step)"),
+  status: z.enum(['pending', 'in_progress', 'completed']).optional().describe("New step status (for update_step)")
 });
 
-// Update Plan Status Tool
-const UpdatePlanStatusInputSchema = z.object({
-  planId: z.string().describe("ID of the plan item to update"),
-  status: z.enum(['pending', 'in_progress', 'completed', 'cancelled']).describe("New status"),
-  actualDuration: z.number().optional().describe("Actual duration in minutes (for completed items)")
-});
-
-const UpdatePlanStatusOutputSchema = z.object({
+const PlanManagementOutputSchema = z.object({
   success: z.boolean(),
-  message: z.string().optional()
+  message: z.string(),
+  planId: z.string().optional(),
+  currentStep: z.object({
+    id: z.string(),
+    title: z.string(),
+    description: z.string(),
+    toolsToCall: z.array(z.string()).optional()
+  }).optional()
 });
 
-export const UpdatePlanStatusTool = createTool({
-  id: "update_plan_status",
-  name: "update_plan_status", 
-  description: "Update the status of an existing plan item. Use this to track progress and mark items as completed.",
-  inputSchema: UpdatePlanStatusInputSchema,
-  outputSchema: UpdatePlanStatusOutputSchema,
+export const PlanManagementTool = createTool({
+  id: "plan_management",
+  name: "plan_management",
+  description: "Manage the execution plan for complex tasks. Create plans, update step status, and track progress through the coding workflow.",
+  inputSchema: PlanManagementInputSchema,
+  outputSchema: PlanManagementOutputSchema,
   async: false,
   execute: async (params, agent?: IAgent) => {
     if (!agent) {
@@ -149,133 +76,189 @@ export const UpdatePlanStatusTool = createTool({
       return { success: false, message: "Plan context not found" };
     }
 
+    const currentData = context.getData();
+    const now = Date.now();
+
     try {
-      const currentData = context.getData();
-      const planIndex = currentData.currentPlan.findIndex((item: any) => item.id === params.planId);
-      
-      if (planIndex === -1) {
-        return { success: false, message: `Plan item with ID ${params.planId} not found` };
-      }
+      switch (params.command) {
+        case 'create': {
+          if (!params.title || !params.description || !params.steps) {
+            return { success: false, message: "Title, description, and steps are required for create command" };
+          }
 
-      const updatedPlan = [...currentData.currentPlan];
-      const planItem = { ...updatedPlan[planIndex] };
-      
-      planItem.status = params.status;
-      planItem.updatedAt = Date.now();
-      
-      if (params.actualDuration !== undefined) {
-        planItem.actualDuration = params.actualDuration;
-      }
-      
-      updatedPlan[planIndex] = planItem;
+          const planId = uuidv4();
+          const planSteps = params.steps.map((step, index) => ({
+            id: uuidv4(),
+            title: step.title,
+            description: step.description,
+            status: index === 0 ? 'pending' as const : 'pending' as const,
+            toolsToCall: step.toolsToCall || [],
+            createdAt: now,
+            updatedAt: now
+          }));
 
-      // If completed, move to completed plans
-      let completedPlans = [...currentData.completedPlans];
-      if (params.status === 'completed') {
-        completedPlans.push(planItem);
-        updatedPlan.splice(planIndex, 1);
-      }
+          const newPlan = {
+            planId,
+            title: params.title,
+            description: params.description,
+            status: 'active' as const,
+            steps: planSteps,
+            currentStepIndex: 0,
+            createdAt: now
+          };
 
-      // Update metadata
-      const inProgressItems = updatedPlan.filter(item => item.status === 'in_progress').length;
-      const completedItems = completedPlans.length;
-      
-      context.setData({
-        ...currentData,
-        currentPlan: updatedPlan,
-        completedPlans,
-        planMetadata: {
-          ...currentData.planMetadata,
-          totalItems: updatedPlan.length,
-          completedItems,
-          inProgressItems,
-          actualTotalDuration: completedPlans.reduce((sum, item: z.infer<typeof PlanItemSchema>) => 
-            sum + (item.actualDuration || 0), 0)
+          context.setData(newPlan);
+          logger.info(`Created new plan: ${planId} - ${params.title}`);
+
+          return {
+            success: true,
+            message: `Plan "${params.title}" created with ${planSteps.length} steps`,
+            planId,
+            currentStep: planSteps[0] ? {
+              id: planSteps[0].id,
+              title: planSteps[0].title,
+              description: planSteps[0].description,
+              toolsToCall: planSteps[0].toolsToCall
+            } : undefined
+          };
         }
-      });
 
-      logger.info(`Updated plan item ${params.planId} status to: ${params.status}`);
-      
-      return {
-        success: true,
-        message: `Plan item status updated to "${params.status}"`
-      };
+        case 'update_step': {
+          if (!params.stepId || !params.status) {
+            return { success: false, message: "Step ID and status are required for update_step command" };
+          }
+
+          if (currentData.status !== 'active') {
+            return { success: false, message: "No active plan to update" };
+          }
+
+          const stepIndex = currentData.steps.findIndex((step: z.infer<typeof PlanStepSchema>) => step.id === params.stepId);
+          if (stepIndex === -1) {
+            return { success: false, message: `Step with ID ${params.stepId} not found` };
+          }
+
+          const updatedSteps = [...currentData.steps];
+          updatedSteps[stepIndex] = {
+            ...updatedSteps[stepIndex],
+            status: params.status,
+            updatedAt: now
+          };
+
+          context.setData({
+            ...currentData,
+            steps: updatedSteps
+          });
+
+          logger.info(`Updated step ${params.stepId} status to: ${params.status}`);
+
+          return {
+            success: true,
+            message: `Step status updated to "${params.status}"`,
+            currentStep: {
+              id: updatedSteps[stepIndex].id,
+              title: updatedSteps[stepIndex].title,
+              description: updatedSteps[stepIndex].description,
+              toolsToCall: updatedSteps[stepIndex].toolsToCall
+            }
+          };
+        }
+
+        case 'complete_step': {
+          if (!params.stepId) {
+            return { success: false, message: "Step ID is required for complete_step command" };
+          }
+
+          if (currentData.status !== 'active') {
+            return { success: false, message: "No active plan to update" };
+          }
+
+          const stepIndex = currentData.steps.findIndex((step: z.infer<typeof PlanStepSchema>) => step.id === params.stepId);
+          if (stepIndex === -1) {
+            return { success: false, message: `Step with ID ${params.stepId} not found` };
+          }
+
+          const updatedSteps = [...currentData.steps];
+          updatedSteps[stepIndex] = {
+            ...updatedSteps[stepIndex],
+            status: 'completed',
+            updatedAt: now
+          };
+
+          // Move to next step if available
+          const nextStepIndex = stepIndex + 1;
+          let currentStepIndex = currentData.currentStepIndex;
+          
+          if (nextStepIndex < updatedSteps.length) {
+            currentStepIndex = nextStepIndex;
+            // Set next step to pending if it's not already in progress
+            if (updatedSteps[nextStepIndex].status === 'pending') {
+              updatedSteps[nextStepIndex] = {
+                ...updatedSteps[nextStepIndex],
+                status: 'pending',
+                updatedAt: now
+              };
+            }
+          }
+
+          context.setData({
+            ...currentData,
+            steps: updatedSteps,
+            currentStepIndex
+          });
+
+          logger.info(`Completed step ${params.stepId}`);
+
+          const nextStep = nextStepIndex < updatedSteps.length ? updatedSteps[nextStepIndex] : null;
+
+          return {
+            success: true,
+            message: nextStep ? 
+              `Step completed. Next step: "${nextStep.title}"` : 
+              "Step completed. All steps finished!",
+            currentStep: nextStep ? {
+              id: nextStep.id,
+              title: nextStep.title,
+              description: nextStep.description,
+              toolsToCall: nextStep.toolsToCall
+            } : undefined
+          };
+        }
+
+        case 'complete_plan': {
+          if (currentData.status !== 'active') {
+            return { success: false, message: "No active plan to complete" };
+          }
+
+          context.setData({
+            ...currentData,
+            status: 'completed',
+            completedAt: now
+          });
+
+          logger.info(`Completed plan: ${currentData.planId}`);
+
+          return {
+            success: true,
+            message: `Plan "${currentData.title}" completed successfully`
+          };
+        }
+
+        default:
+          return { success: false, message: `Unknown command: ${params.command}` };
+      }
     } catch (error) {
-      logger.error(`Failed to update plan status: ${error}`);
+      logger.error(`Plan management error: ${error}`);
       return {
         success: false,
         message: error instanceof Error ? error.message : String(error)
       };
     }
-  }
-});
-
-// List Plans Tool
-const ListPlansInputSchema = z.object({
-  includeCompleted: z.boolean().optional().describe("Whether to include completed plans (default: false)")
-});
-
-const ListPlansOutputSchema = z.object({
-  currentPlan: z.array(PlanItemSchema),
-  completedPlans: z.array(PlanItemSchema).optional(),
-  metadata: z.object({
-    totalItems: z.number(),
-    completedItems: z.number(),
-    inProgressItems: z.number(),
-    pendingItems: z.number()
-  })
-});
-
-export const ListPlansTool = createTool({
-  id: "list_plans",
-  name: "list_plans",
-  description: "List current plan items and optionally completed ones. Use this to review progress and plan status.",
-  inputSchema: ListPlansInputSchema,
-  outputSchema: ListPlansOutputSchema,
-  async: false,
-  execute: async (params, agent?: IAgent) => {
-    if (!agent) {
-      return { 
-        currentPlan: [], 
-        metadata: { totalItems: 0, completedItems: 0, inProgressItems: 0, pendingItems: 0 }
-      };
-    }
-
-    const context = agent.contextManager.findContextById(PlanContextId);
-    if (!context) {
-      return { 
-        currentPlan: [], 
-        metadata: { totalItems: 0, completedItems: 0, inProgressItems: 0, pendingItems: 0 }
-      };
-    }
-
-    const data = context.getData();
-    const includeCompleted = params.includeCompleted || false;
-    
-    const pendingItems = data.currentPlan.filter((item: any) => item.status === 'pending').length;
-    const inProgressItems = data.currentPlan.filter((item: any) => item.status === 'in_progress').length;
-    
-    const result: any = {
-      currentPlan: data.currentPlan,
-      metadata: {
-        totalItems: data.currentPlan.length,
-        completedItems: data.completedPlans.length,
-        inProgressItems,
-        pendingItems
-      }
-    };
-    
-    if (includeCompleted) {
-      result.completedPlans = data.completedPlans;
-    }
-    
-    return result;
   }
 });
 
 // Agent Stop Tool
 const AgentStopInputSchema = z.object({
-  reason: z.string().optional().describe("Reason for stopping the agent (optional)")
+  reason: z.string().describe("Reason for stopping the agent")
 });
 
 const AgentStopOutputSchema = z.object({
@@ -286,130 +269,118 @@ const AgentStopOutputSchema = z.object({
 export const AgentStopTool = createTool({
   id: "agent_stop",
   name: "agent_stop",
-  description: "Stop the agent after completing current tasks. Use this when all planned work is finished or when you need to halt execution.",
+  description: "Stop the agent execution when all tasks are completed or when user interaction is needed.",
   inputSchema: AgentStopInputSchema,
   outputSchema: AgentStopOutputSchema,
   async: false,
   execute: async (params, agent?: IAgent) => {
     if (!agent) {
-      return { 
-        success: false, 
-        message: "Agent not available for stopping" 
-      };
+      return { success: false, message: "Agent not available" };
     }
 
-    try {
-      const reason = params.reason || "Task completion requested";
-      
-      logger.info(`Agent stop requested: ${reason}`);
-      
-      // Call the agent's stop method
-      agent.stop();
-      
-      return {
-        success: true,
-        message: `Agent stop initiated. Reason: ${reason}`
-      };
-    } catch (error) {
-      logger.error(`Failed to stop agent: ${error}`);
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : String(error)
-      };
+    logger.info(`Agent stop requested: ${params.reason}`);
+    
+    // Signal the agent to stop
+    if (agent.stop) {
+      await agent.stop();
     }
+
+    return {
+      success: true,
+      message: `Agent stopped: ${params.reason}`
+    };
   }
 });
 
 // Create the Plan Context
 export const PlanContext = ContextHelper.createContext({
   id: PlanContextId,
-  description: "Manages planning and task organization for the agent. Tracks plan items, their status, dependencies, and provides tools for creating, updating, and monitoring progress. Also includes agent lifecycle management.",
+  description: "Manages execution planning for complex coding tasks. Follows the workflow: Accept Task → Generate Plan → Execute Plan → Update Progress → Complete Plan → Reply User → Agent Stop.",
   dataSchema: PlanContextSchema,
   initialData: {
-    currentPlan: [],
-    completedPlans: [],
-    planMetadata: {
-      totalItems: 0,
-      completedItems: 0,
-      inProgressItems: 0
-    }
+    status: 'none',
+    steps: [],
+    currentStepIndex: 0
   },
   renderPromptFn: (data: z.infer<typeof PlanContextSchema>) => {
-    const { currentPlan, completedPlans, planMetadata } = data;
-    const pendingItems = currentPlan.filter(item => item.status === 'pending');
-    const inProgressItems = currentPlan.filter(item => item.status === 'in_progress');
-    
     let prompt = `
---- Plan Management Context ---
+--- Coding Agent Plan Management ---
 
-Planning Tools:
-• create_plan: Create new plan items to organize tasks
-• update_plan_status: Update status of existing plan items
-• list_plans: View current and completed plan items
-• agent_stop: Stop the agent when tasks are completed
+WORKFLOW: Accept Task → Generate Plan → Execute Plan → Update Progress → Complete Plan → Reply User → Agent Stop
 
-Current Plan Status:
-- Total Active Items: ${currentPlan.length}
-- Pending: ${pendingItems.length}
-- In Progress: ${inProgressItems.length}
-- Completed: ${completedPlans.length}`;
+Available Tools:
+• plan_management: Create, update, and complete execution plans
+• agent_stop: Stop agent when all tasks are completed
 
-    if (planMetadata.estimatedTotalDuration) {
-      prompt += `\n- Estimated Total Duration: ${planMetadata.estimatedTotalDuration} minutes`;
-    }
-    
-    if (planMetadata.actualTotalDuration) {
-      prompt += `\n- Actual Duration (Completed): ${planMetadata.actualTotalDuration} minutes`;
-    }
+`;
 
-    if (pendingItems.length > 0) {
-      prompt += `\n\nPENDING ITEMS:`;
-             pendingItems.slice(0, 5).forEach((item: z.infer<typeof PlanItemSchema>) => {
-         prompt += `\n- [${item.priority.toUpperCase()}] ${item.title} (${item.id})`;
-         if (item.estimatedDuration) {
-           prompt += ` - Est: ${item.estimatedDuration}min`;
-         }
-       });
-      if (pendingItems.length > 5) {
-        prompt += `\n... and ${pendingItems.length - 5} more pending items`;
+    if (data.status === 'none') {
+      prompt += `
+Current Status: No active plan
+
+For complex tasks, create a plan with these steps:
+1. Analyze requirements
+2. Create/modify files using coding tools
+3. Test and validate changes
+4. Update plan progress
+5. Complete plan and reply to user
+
+Use plan_management with command='create' to start.
+`;
+    } else if (data.status === 'active') {
+      const currentStep = data.steps[data.currentStepIndex];
+      const completedSteps = data.steps.filter(step => step.status === 'completed').length;
+      
+      prompt += `
+Current Plan: "${data.title}"
+Description: ${data.description}
+Progress: ${completedSteps}/${data.steps.length} steps completed
+
+CURRENT STEP (${data.currentStepIndex + 1}/${data.steps.length}):
+Title: ${currentStep?.title || 'No current step'}
+Description: ${currentStep?.description || ''}`;
+
+      if (currentStep?.toolsToCall && currentStep.toolsToCall.length > 0) {
+        prompt += `
+Tools to call: ${currentStep.toolsToCall.join(', ')}`;
       }
-    }
 
-    if (inProgressItems.length > 0) {
-      prompt += `\n\nIN PROGRESS:`;
-      inProgressItems.forEach(item => {
-        prompt += `\n- [${item.priority.toUpperCase()}] ${item.title} (${item.id})`;
+      prompt += `
+
+ALL STEPS:`;
+      data.steps.forEach((step, index) => {
+        const status = step.status === 'completed' ? '✅' : 
+                      step.status === 'in_progress' ? '🔄' : '⏳';
+        const current = index === data.currentStepIndex ? ' ← CURRENT' : '';
+        prompt += `
+${index + 1}. ${status} ${step.title}${current}`;
       });
+
+      prompt += `
+
+NEXT ACTIONS:
+- Use plan_management with command='update_step' to mark current step as 'in_progress'
+- Execute the required coding tools for this step
+- Use plan_management with command='complete_step' when step is done
+- Use plan_management with command='complete_plan' when all steps are finished
+- Use agent_stop when plan is complete and user has been notified
+`;
+    } else if (data.status === 'completed') {
+      prompt += `
+Plan Status: COMPLETED ✅
+Plan: "${data.title}"
+All ${data.steps.length} steps completed.
+
+Use agent_stop to finish execution.
+`;
     }
-
-    if (completedPlans.length > 0) {
-      const recentCompleted = completedPlans.slice(-3);
-      prompt += `\n\nRECENT COMPLETIONS:`;
-      recentCompleted.forEach(item => {
-        prompt += `\n- ✅ ${item.title}`;
-        if (item.actualDuration) {
-          prompt += ` - ${item.actualDuration}min`;
-        }
-      });
-    }
-
-    prompt += `\n\nPlanning Guidelines:
-1. Break down complex tasks into smaller, manageable plan items
-2. Set realistic priorities and time estimates
-3. Update status as you progress through tasks
-4. Use dependencies to manage task order
-5. Use agent_stop when all planned work is complete
-6. Tag items for better organization and tracking
-
-Remember: Good planning leads to better execution and clearer progress tracking.
-    `;
 
     return prompt;
   },
   toolSetFn: () => ({
     name: "PlanTools",
-    description: "Tools for planning, task management, and agent lifecycle control. Use these tools to organize work, track progress, and manage agent execution.",
-    tools: [CreatePlanTool, UpdatePlanStatusTool, ListPlansTool, AgentStopTool],
+    description: "Tools for managing execution plans and agent lifecycle in the coding workflow.",
+    tools: [PlanManagementTool, AgentStopTool],
     active: true,
     source: "local"
   })

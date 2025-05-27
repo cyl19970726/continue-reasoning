@@ -74,7 +74,7 @@ async function createPlatformSandbox(): Promise<ISandbox> {
 /**
  * Create a Gemini Coding Context using ContextHelper.createRAGContext
  */
-export function createGeminiCodingContext(workspacePath: string, initialData?: Partial<CodingContextData>): ICodingContext {
+export function createCodingContext(workspacePath: string, initialData?: Partial<CodingContextData>): ICodingContext {
   if (!workspacePath) {
     throw new Error("Workspace path is required to create a CodingContext.");
   }
@@ -100,19 +100,18 @@ export function createGeminiCodingContext(workspacePath: string, initialData?: P
 
   const allTools: ITool<any, any, IAgent>[] = [
     ...FileSystemToolSet,
-    ...RuntimeToolSet,
     ...EditingStrategyToolSet,
     ...BashToolSet,
   ];
   
   // Create the base RAG context
   const baseContext = ContextHelper.createRAGContext({
-    id: 'coding_gemini',
+    id: 'coding-context',
     description: 'Manages state and tools for coding tasks, powered by Gemini models.',
     dataSchema: CodingContextDataSchema,
     initialData: parsedInitialData,
     renderPromptFn: (data: CodingContextData) => {
-      let prompt = `You are a coding assistant operating in the workspace: ${data.current_workspace}.\n`;
+      let prompt = `operating in the workspace: ${data.current_workspace}.\n`;
       prompt += `The current default editing strategy is: ${data.selected_editing_strategy}.\n`;
       prompt += `You have access to a sandbox with type: ${sandbox.type}.\n`;
 
@@ -135,15 +134,14 @@ export function createGeminiCodingContext(workspacePath: string, initialData?: P
         }
       }
       
-      prompt += "\nAvailable toolset: GeminiCodingAgentTools - Core tools for the Gemini Coding Agent, including file system, runtime, and editing tools.\n";
       return prompt;
     },
     toolSetFn: () => ({
-      name: 'GeminiCodingAgentTools',
-      description: 'Core tools for the Gemini Coding Agent, including file system, runtime, and editing tools.',
+      name: 'CodingAgentTools',
+      description: 'Core tools for the Coding Agent, including file system, runtime, and editing tools.',
       tools: allTools,
       active: true,
-      source: 'coding-gemini-context',
+      source: 'local',
     }),
     handleToolCall: (toolCallResult: ToolCallResult) => {
       console.log(`CodingContext.onToolCall: Tool ${toolCallResult.name} (ID: ${toolCallResult.call_id}) executed.`);
@@ -171,4 +169,4 @@ export function createGeminiCodingContext(workspacePath: string, initialData?: P
 }
 
 // Export a default instance factory function for backward compatibility
-export const CodingContext = createGeminiCodingContext; 
+export const CodingContext = createCodingContext; 

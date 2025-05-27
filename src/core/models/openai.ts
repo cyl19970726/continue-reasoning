@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ILLM, LLMModel, ToolCallDefinition, ToolCallParams } from "../interfaces";
 import dotenv from "dotenv";
 import { zodToJsonNostrict, zodToJsonStrict } from "../utils/jsonHelper";
+import { SupportedModel } from "../models";
 
 dotenv.config();
 
@@ -52,13 +53,13 @@ function convertToOpenaiTool(tool: ToolCallDefinition, strict: boolean = false):
 }
 
 export class OpenAIWrapper implements ILLM {
-    model: z.infer<typeof LLMModel>;
+    model: SupportedModel;
     streaming: boolean;
     parallelToolCall: boolean;
     temperature: number;
     maxTokens: number;
 
-    constructor(model: z.infer<typeof LLMModel>, streaming: boolean = false, temperature: number = 0.7, maxTokens: number = 100000, parallelToolCall: boolean = false) {
+    constructor(model: SupportedModel, streaming: boolean = false, temperature: number = 0.7, maxTokens: number = 100000, parallelToolCall: boolean = false) {
     
         this.model = model;
         this.streaming = streaming;
@@ -80,7 +81,7 @@ export class OpenAIWrapper implements ILLM {
         const openaiTools = tools.map(tool => convertToOpenaiTool(tool, false));
 
         const response = await openai.responses.create({
-            model: "gpt-4.1",
+            model: this.model,
             input: messages,
             tools: openaiTools,
             store: true,
@@ -115,7 +116,7 @@ export class OpenAIWrapper implements ILLM {
             
             // Start streaming response
             const stream = await openai.responses.create({
-                model: "gpt-4.1",
+                model: this.model,
                 input: messages,
                 tools: openaiTools,
                 stream: true,

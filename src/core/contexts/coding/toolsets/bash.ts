@@ -25,9 +25,9 @@ export const BashCommandTool = createTool({
   description: 'Executes a bash command using the configured runtime and its sandbox, with specific execution options.',
   inputSchema: BashCommandParamsSchema,
   outputSchema: BashCommandReturnsSchema,
-  async: true,
+  async: false,
   execute: async (params, agent?: IAgent) => {
-    const codingContext = agent?.contextManager.findContextById('coding_gemini');
+    const codingContext = agent?.contextManager.findContextById('coding-context');
     if (!codingContext) {
       throw new Error('Coding context not found');
     }

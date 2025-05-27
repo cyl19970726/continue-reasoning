@@ -1,0 +1,42 @@
+[2025-05-27T07:30:03.164Z] [INFO] EventBus started
+[2025-05-27T07:30:03.165Z] [INFO] ContextManager initialized: cli-context-manager with prompt mode: minimal
+[2025-05-27T07:30:03.165Z] [INFO] Setting log level to: INFO
+[2025-05-27T07:30:03.165Z] [INFO] Using OpenAI model: gpt-4o
+[2025-05-27T07:30:03.165Z] [INFO] MCP config path: /Users/hhh0x/agent/hhh-agi/tests/coding-agent-benchmark/test-workspace/config/mcp.json
+[2025-05-27T07:30:03.165Z] [INFO] 开始安装所有Context的MCP服务器，共5个Context
+[2025-05-27T07:30:03.165Z] [INFO] 所有Context MCP服务器安装完成: 成功=0, 失败=0, 跳过=5
+[2025-05-27T07:30:03.165Z] [INFO] MCP服务器安装结果: 总数=5, 成功=0, 失败=0, 跳过=5
+[2025-05-27T07:30:03.165Z] [INFO] Agent cli-agent registered with InteractionHub
+[2025-05-27T07:30:03.166Z] [INFO] InteractiveLayer registered with InteractionHub
+[2025-05-27T07:30:03.166Z] [INFO] Starting InteractionHub...
+[2025-05-27T07:30:03.166Z] [INFO] InteractiveLayer started successfully
+[2025-05-27T07:30:03.166Z] [INFO] 开始安装所有Context的MCP服务器，共10个Context
+[2025-05-27T07:30:03.166Z] [INFO] 所有Context MCP服务器安装完成: 成功=0, 失败=0, 跳过=10
+[2025-05-27T07:30:03.166Z] [INFO] MCP服务器安装结果: 总数=10, 成功=0, 失败=0, 跳过=10
+[2025-05-27T07:30:03.166Z] [INFO] Agent cli-agent setup completed
+[2025-05-27T07:30:03.166Z] [INFO] Event routing setup completed
+[2025-05-27T07:30:03.166Z] [INFO] InteractionHub started successfully
+[2025-05-27T07:30:03.167Z] [INFO] Agent handling user message: "Create a new project with the following structure: test-project/ ├── src/ │ ├── components/ │ ├── utils/ │ └── tests/ ├── docs/ ├── config/ └── README.md Then create these files: 1. src/utils/helpers.js with formatDate and capitalize functions 2. config/app.json with project configuration 3. README.md with project description Please complete this task step by step." (type: question)
+[2025-05-27T07:30:03.167Z] [INFO] Processed user message: "Create a new project with the following structure: test-project/ ├── src/ │ ├── components/ │ ├── utils/ │ └── tests/ ├── docs/ ├── config/ └── README.md Then create these files: 1. src/utils/helpers.js with formatDate and capitalize functions 2. config/app.json with project configuration 3. README.md with project description Please complete this task step by step." (type: question)
+[2025-05-27T07:30:03.167Z] [INFO] Agent handling user message: "Create a new project with the following structure: test-project/ ├── src/ │ ├── components/ │ ├── utils/ │ └── tests/ ├── docs/ ├── config/ └── README.md Then create these files: 1. src/utils/helpers.js with formatDate and capitalize functions 2. config/app.json with project configuration 3. README.md with project description Please complete this task step by step." (type: question)
+[2025-05-27T07:30:03.167Z] [INFO] Processed user message: "Create a new project with the following structure: test-project/ ├── src/ │ ├── components/ │ ├── utils/ │ └── tests/ ├── docs/ ├── config/ └── README.md Then create these files: 1. src/utils/helpers.js with formatDate and capitalize functions 2. config/app.json with project configuration 3. README.md with project description Please complete this task step by step." (type: question)
+[2025-05-27T07:30:03.167Z] [INFO] Routing user_message to 1 agents
+[2025-05-27T07:30:03.167Z] [INFO] Agent state changed: idle -> running (User requested start)
+[2025-05-27T07:30:03.167Z] [INFO] Agent state changed: running -> running (User requested start)
+[2025-05-27T07:30:03.167Z] [INFO] ==========Agent Starting: Max Steps 30 ==========
+[2025-05-27T07:30:03.167Z] [INFO] ==========Agent Starting: Max Steps 30 ==========
+[2025-05-27T07:30:03.169Z] [INFO] ==========Agent Current Step: 0 ==========
+[2025-05-27T07:30:03.169Z] [INFO] ==========Agent Current Step: 0 ==========
+[2025-05-27T07:30:03.169Z] [INFO] Header size: ~22 tokens (86 chars)
+[2025-05-27T07:30:03.170Z] [INFO] === Prompt Size Analysis ===
+[2025-05-27T07:30:03.170Z] [INFO] Header: ~22 tokens (86 chars)
+[2025-05-27T07:30:03.170Z] [INFO] Contexts total: ~3286 tokens
+[2025-05-27T07:30:03.170Z] [INFO] Grand total: ~3308 tokens (13226 chars)
+[2025-05-27T07:30:03.170Z] [INFO] === Top Context Sizes ===
+[2025-05-27T07:30:03.170Z] [INFO] 1. tool-call-context: ~2420 tokens (73%) - 1ms
+[2025-05-27T07:30:03.170Z] [INFO] 2. interactive-context: ~297 tokens (9%) - 1ms
+[2025-05-27T07:30:03.170Z] [INFO] 3. plan-context: ~268 tokens (8%) - 1ms
+[2025-05-27T07:30:03.170Z] [INFO] 4. user-input-context: ~166 tokens (5%) - 1ms
+[2025-05-27T07:30:03.170Z] [INFO] 5. coding_gemini: ~135 tokens (4%) - 1ms
+[2025-05-27T07:30:03.170Z] [WARN] Large contexts (>1000 tokens): tool-call-context(2420)
+[2025-05-27T07:30:04.296Z] [INFO] Stopping InteractionHub...

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { AnthropicWrapper } from './anthropic';
 import { z } from 'zod';
 import dotenv from 'dotenv';
+import { ANTHROPIC_MODELS } from '../models';
 
 dotenv.config();
 
@@ -30,7 +31,7 @@ async function testAnthropicWithTools() {
   }
 
   // Create the Anthropic wrapper
-  const anthropicModel = new AnthropicWrapper('anthropic', false, 0.7, 1000);
+  const anthropicModel = new AnthropicWrapper(ANTHROPIC_MODELS.CLAUDE_3_5_HAIKU_LATEST, false, 0.7, 1000);
 
   // Define a tool for Claude to use
   const weatherTool = {
@@ -111,17 +112,17 @@ describe('AnthropicWrapper', () => {
 
   // Use conditional testing to skip tests when no API key is available
   (hasApiKey ? it : it.skip)('should create a properly configured instance', () => {
-    const wrapper = new AnthropicWrapper('anthropic', false, 0.7, 1000);
+    const wrapper = new AnthropicWrapper(ANTHROPIC_MODELS.CLAUDE_3_5_HAIKU_LATEST, false, 0.7, 1000);
     
     expect(wrapper).toBeInstanceOf(AnthropicWrapper);
-    expect(wrapper.model).toBe('anthropic');
+    expect(wrapper.model).toBe(ANTHROPIC_MODELS.CLAUDE_3_5_HAIKU_LATEST);
     expect(wrapper.streaming).toBe(false);
     expect(wrapper.temperature).toBe(0.7);
     expect(wrapper.maxTokens).toBe(1000);
   });
 
   (hasApiKey ? it : it.skip)('should call Claude API and parse response', async () => {
-    const anthropicModel = new AnthropicWrapper('anthropic', false, 0.7, 1000);
+    const anthropicModel = new AnthropicWrapper(ANTHROPIC_MODELS.CLAUDE_3_5_HAIKU_LATEST, false, 0.7, 1000);
     
     const response = await anthropicModel.call(
       "What's the weather like in Paris today?", 

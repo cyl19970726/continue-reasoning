@@ -11,14 +11,22 @@ export class ContextManager implements IContextManager {
     description: string;
     data: any;
     contexts: IRAGEnabledContext<any>[];
+    promptOptimization: {
+        mode: 'minimal' | 'standard' | 'detailed';
+        maxTokens?: number;
+    };
 
-    constructor(id: string, name: string, description: string, data: any) {
+    constructor(id: string, name: string, description: string, data: any, promptOptimization?: {
+        mode: 'minimal' | 'standard' | 'detailed';
+        maxTokens?: number;
+    }) {
         this.id = id;
         this.name = name;
         this.description = description;
         this.data = data;
         this.contexts = [];
-        logger.info(`ContextManager initialized: ${id}`);
+        this.promptOptimization = promptOptimization || { mode: 'standard' };
+        logger.info(`ContextManager initialized: ${id} with prompt mode: ${this.promptOptimization.mode}`);
     }
 
     registerContext<T extends z.ZodObject<any>>(context: IRAGEnabledContext<T>): void {
@@ -31,10 +39,34 @@ export class ContextManager implements IContextManager {
     }
 
     async renderPrompt(): Promise<string> {
-        logger.debug(`Starting prompt rendering for ${this.contexts.length} contexts`);
+        logger.debug(`Starting prompt rendering for ${this.contexts.length} contexts in ${this.promptOptimization.mode} mode`);
         
-        // 1. System introduction and agent identity
-        const header = `
+        // 根据优化模式选择不同的头部
+        const header = this.promptOptimization.mode === 'minimal' ? `
+# HHH-AGI
+Advanced AI agent. Read contexts, use tools, call stop-response when done.
+` : this.promptOptimization.mode === 'standard' ? `
+# HHH-AGI System
+
+## Identity
+Advanced AI agent for coding and task coordination.
+
+## Context Rules
+- Read ALL contexts before responding
+- Use appropriate tools for each task
+- Coordinate information across contexts
+- Follow context-specific rules
+
+## Execution Flow
+1. ANALYZE: Check user request
+2. DECIDE: Simple response or multi-step task?
+3. EXECUTE: Use tools as needed
+4. FINISH: Call stop-response when complete
+
+## Key Scenarios
+- Simple Q&A → Answer → stop-response
+- Complex task → Plan → Execute → Update → stop-response when done
+` : `
 # HHH-AGI System Prompt
 
 ## Agent Identity
@@ -79,7 +111,13 @@ This prompt is organized as a collection of context blocks, each containing spec
         // Log the header
         logger.debug("System prompt header:", header);
 
-        // 2. Compile and format all contexts
+        // 计算 header 的 token 大小
+        const headerTokens = Math.round(header.length / 4);
+        logger.info(`Header size: ~${headerTokens} tokens (${header.length} chars)`);
+
+        // 2. Compile and format all contexts with detailed size tracking
+        const contextSizeMap = new Map<string, { chars: number, tokens: number, renderTime: number }>();
+        
         const contextsPromises = this.contexts.map(
             async (context) => {
                 const contextName = context.id;
@@ -91,22 +129,42 @@ This prompt is organized as a collection of context blocks, each containing spec
                     const content = await context.renderPrompt();
                     const renderTime = Date.now() - startTime;
                     
-                    // Log the context content for debugging
-                    logger.debug(`Rendered context ${contextName} in ${renderTime}ms`);
-                    // Convert content to string if it's a String object
-                    logger.logPrompt(contextName, String(content));
+                    // Calculate size metrics
+                    const contentStr = String(content);
+                    const chars = contentStr.length;
+                    const tokens = Math.round(chars / 4); // 粗略估算
                     
-                    // Create a clearly formatted context block
-                    return `<context name="${contextName}">
+                    // Store size information
+                    contextSizeMap.set(contextName, { chars, tokens, renderTime });
+                    
+                    // Log the context content for debugging
+                    logger.debug(`Rendered context ${contextName} in ${renderTime}ms: ~${tokens} tokens (${chars} chars)`);
+                    logger.logPrompt(contextName, contentStr);
+                    
+                    // 根据优化模式选择不同的格式
+                    if (this.promptOptimization.mode === 'minimal') {
+                        return `<${contextName}>\n${content}\n</${contextName}>`;
+                    } else {
+                        return `<context name="${contextName}">
 /* ${contextName} - ${contextDesc} */
 ${content}
 </context>`;
+                    }
                 } catch (error) {
                     logger.error(`Error rendering context ${contextName}:`, error);
-                    return `<context name="${contextName}">
+                    const errorContent = `<context name="${contextName}">
 /* ${contextName} - ERROR RENDERING CONTEXT */
 ${error instanceof Error ? error.message : `${error}`}
 </context>`;
+                    
+                    // Record error context size
+                    contextSizeMap.set(contextName, { 
+                        chars: errorContent.length, 
+                        tokens: Math.round(errorContent.length / 4), 
+                        renderTime: 0 
+                    });
+                    
+                    return errorContent;
                 }
             }
         );
@@ -114,28 +172,62 @@ ${error instanceof Error ? error.message : `${error}`}
         // Wait for all contexts to render
         const prompts = await Promise.all(contextsPromises);
         
-        // Calculate total size of contexts for debugging
-        let totalSize = header.length;
-        const contextSizes = prompts.map(p => p.length);
-        totalSize += contextSizes.reduce((a, b) => a + b, 0);
+        // 详细的大小分析
+        let totalContextTokens = 0;
+        const contextSizes = Array.from(contextSizeMap.entries()).map(([name, metrics]) => {
+            totalContextTokens += metrics.tokens;
+            return { name, ...metrics };
+        });
         
-        // Log size information (helpful for debugging token issues)
-        logger.info(`Total prompt size: ~${Math.round(totalSize / 4)} tokens (${totalSize} chars)`);
+        // 按 token 大小排序，找出最大的 contexts
+        contextSizes.sort((a, b) => b.tokens - a.tokens);
         
-        const largeContexts = this.contexts.filter((_, i) => contextSizes[i] > 2000);
+        // 计算总大小
+        const totalTokens = headerTokens + totalContextTokens;
+        const totalChars = header.length + contextSizes.reduce((sum, ctx) => sum + ctx.chars, 0);
+        
+        // 详细的大小报告
+        logger.info(`=== Prompt Size Analysis ===`);
+        logger.info(`Header: ~${headerTokens} tokens (${header.length} chars)`);
+        logger.info(`Contexts total: ~${totalContextTokens} tokens`);
+        logger.info(`Grand total: ~${totalTokens} tokens (${totalChars} chars)`);
+        
+        // 显示最大的 contexts
+        logger.info(`=== Top Context Sizes ===`);
+        contextSizes.slice(0, 5).forEach((ctx, index) => {
+            const percentage = Math.round((ctx.tokens / totalTokens) * 100);
+            logger.info(`${index + 1}. ${ctx.name}: ~${ctx.tokens} tokens (${percentage}%) - ${ctx.renderTime}ms`);
+        });
+        
+        // 警告大型 contexts
+        const largeContexts = contextSizes.filter(ctx => ctx.tokens > 1000);
         if (largeContexts.length > 0) {
-            logger.warn(`Large contexts detected: ${largeContexts.map(c => c.id).join(', ')}`);
+            logger.warn(`Large contexts (>1000 tokens): ${largeContexts.map(c => `${c.name}(${c.tokens})`).join(', ')}`);
+        }
+        
+        // 检查是否超过 token 限制
+        if (this.promptOptimization.maxTokens && totalTokens > this.promptOptimization.maxTokens) {
+            logger.error(`Prompt size (${totalTokens}) exceeds limit (${this.promptOptimization.maxTokens})`);
+            
+            // 建议优化措施
+            logger.warn(`Optimization suggestions:`);
+            largeContexts.forEach(ctx => {
+                logger.warn(`- Consider optimizing ${ctx.name} (currently ${ctx.tokens} tokens)`);
+            });
         }
         
         // 3. Combine header and contexts with clear separation
-        const fullPrompt = header + "\n\n## Context Blocks\n\n" + prompts.join("\n\n");
+        const contextSection = this.promptOptimization.mode === 'minimal' ? 
+            prompts.join("\n\n") : 
+            "\n\n## Context Blocks\n\n" + prompts.join("\n\n");
+        const fullPrompt = header + contextSection;
 
         // Add a reminder at the end about stopping properly
-        const footer = `
-## IMPORTANT REMINDER
-1. Check if user request is complete and fully addressed
-2. If yes, and no further clarification or processing is needed, call the stop-response tool
-3. Avoid unnecessary continuation of the conversation if the current exchange is complete
+        const footer = this.promptOptimization.mode === 'minimal' ? 
+            "\nCall stop-response when done." :
+            `
+## REMINDER
+Check if request is complete → Call stop-response if done
 `;
 
         const completePrompt = fullPrompt + "\n\n" + footer;

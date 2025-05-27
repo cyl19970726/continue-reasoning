@@ -32,7 +32,6 @@ const memoryManager = new MapMemoryManager("1", "test", "test");
 
 // 配置选项
 let agentOptions: AgentOptions = {
-    llmProvider: 'openai',
     enableParallelToolCalls: false,
     temperature: 0.7,
     maxTokens: 100000,
