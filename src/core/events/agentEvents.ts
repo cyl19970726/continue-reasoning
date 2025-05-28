@@ -80,6 +80,82 @@ export interface AgentReplyEvent extends BaseEvent {
   };
 }
 
+// Plan 相关事件
+export interface PlanCreatedEvent extends BaseEvent {
+  type: 'plan_created';
+  payload: {
+    planId: string;
+    title: string;
+    description: string;
+    totalSteps: number;
+    steps: Array<{
+      id: string;
+      title: string;
+      description: string;
+      toolsToCall?: string[];
+    }>;
+  };
+}
+
+export interface PlanStepStartedEvent extends BaseEvent {
+  type: 'plan_step_started';
+  payload: {
+    planId: string;
+    stepId: string;
+    stepIndex: number;
+    stepTitle: string;
+    stepDescription: string;
+    toolsToCall?: string[];
+  };
+}
+
+export interface PlanStepCompletedEvent extends BaseEvent {
+  type: 'plan_step_completed';
+  payload: {
+    planId: string;
+    stepId: string;
+    stepIndex: number;
+    stepTitle: string;
+    completedAt: number;
+    nextStepId?: string;
+    nextStepTitle?: string;
+  };
+}
+
+export interface PlanProgressUpdateEvent extends BaseEvent {
+  type: 'plan_progress_update';
+  payload: {
+    planId: string;
+    currentStepIndex: number;
+    totalSteps: number;
+    completedSteps: number;
+    progress: number; // 0-100
+    currentStepTitle?: string;
+  };
+}
+
+export interface PlanCompletedEvent extends BaseEvent {
+  type: 'plan_completed';
+  payload: {
+    planId: string;
+    title: string;
+    totalSteps: number;
+    completedAt: number;
+    executionTime: number; // 毫秒
+  };
+}
+
+export interface PlanErrorEvent extends BaseEvent {
+  type: 'plan_error';
+  payload: {
+    planId: string;
+    stepId?: string;
+    stepTitle?: string;
+    error: string;
+    recoverable: boolean;
+  };
+}
+
 // Agent内部事件联合类型
 export type AgentInternalEvent = 
   | AgentStepEvent
@@ -87,4 +163,10 @@ export type AgentInternalEvent =
   | AgentStateChangeEvent
   | ContextUpdateEvent
   | TaskQueueEvent
-  | AgentReplyEvent; 
+  | AgentReplyEvent
+  | PlanCreatedEvent
+  | PlanStepStartedEvent
+  | PlanStepCompletedEvent
+  | PlanProgressUpdateEvent
+  | PlanCompletedEvent
+  | PlanErrorEvent; 

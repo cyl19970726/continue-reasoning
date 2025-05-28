@@ -383,15 +383,13 @@ export class BaseAgent implements IAgent {
         // Check if the context has the required methods
         const typedToolCallContext = toolCallContext as any;
         
-        if (!typedToolCallContext.setToolDefinitions || 
-            !typedToolCallContext.setToolCalls || 
+        if (!typedToolCallContext.setToolCalls || 
             !typedToolCallContext.setToolCallResult) {
             logger.error(`ToolCallContext (${ToolCallContextId}) is missing required methods.`);
             return;
         }
         
-        // Set the tool definitions
-        typedToolCallContext.setToolDefinitions(toolCallsDefinition);
+        // 不再需要设置 tool definitions，因为工具定义已经通过 llm.call 传递
 
         // format the prompt using the context and the memory
         const contextPrompt = await this.contextManager.renderPrompt();
@@ -412,12 +410,18 @@ export class BaseAgent implements IAgent {
                                    await this.llm.call(prompt, toolCallsDefinition);
 
         typedToolCallContext.setToolCalls(toolCalls);
+        
         // push the toolcalls into the taskqueue 
         for (const toolCall of toolCalls){
             const tool = allTools.find(t => t.name === toolCall.name);
             if (!tool) {
                 logger.error(`Tool ${toolCall.name} not found`); 
                 continue; 
+            }
+            
+            // 更新工具调用的 async 标志
+            if (typedToolCallContext.updateToolCallAsync) {
+                typedToolCallContext.updateToolCallAsync(toolCall.call_id, tool.async);
             }
 
             if (!tool.async) {

@@ -479,15 +479,23 @@ export interface IClient<InputSchema extends z.ZodObject<any>,OutputSchema exten
     // if the llm response include the output handlers, wrap the output handers as the task and put it into taskqueue
     output:{
         paramsSchema: OutputSchema;
-        responseTool?: ITool<InputSchema,OutputSchema,IAgent>;
+        responseTool?: ITool<InputSchema, any, IAgent>;
         dealResponseResult?: (response: z.infer<OutputSchema>, context: AnyContext) => void;// after calling the tool to generate the output, we also need to put the output in the Context or at the Memory 
     }
 }
 
 
 
+// 标准化的工具执行结果基础格式
+export const BaseToolResultSchema = z.object({
+    success: z.boolean().describe("Whether the tool execution was successful"),
+    error: z.string().optional().describe("Error message if execution failed")
+}).describe("Base tool execution result format with success/error fields");
+
+export type BaseToolResult = z.infer<typeof BaseToolResultSchema>;
+
 // our tool design to support create a new agent and invoke this agent and also intergate the mcp-client 
-export interface ITool<Args extends z.AnyZodObject, Result extends z.AnyZodObject, Agent extends IAgent>{
+export interface ITool<Args extends z.AnyZodObject, Result extends z.ZodType<BaseToolResult & Record<string, any>>, Agent extends IAgent>{
     id?: string;
     callId?: string;
     type: string;
@@ -498,7 +506,7 @@ export interface ITool<Args extends z.AnyZodObject, Result extends z.AnyZodObjec
     execute: (params: z.infer<Args>, agent?: Agent) => Promise<z.infer<Result>> | z.infer<Result>;
     toCallParams: () => ToolCallDefinition;
 }
-export type AnyTool = ITool<any,any,any>;
+export type AnyTool = ITool<any, any, any>;
 
 /**
  * ToolSet.description best practices:

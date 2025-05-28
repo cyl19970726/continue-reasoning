@@ -242,14 +242,13 @@ export function createContextSearchTool<
 }
 
 /**
- * Factory function to simplify tool creation
+ * Factory function to simplify tool creation with standardized result format
  * @param options Tool configuration options
  * @returns Tool object conforming to ITool interface
  */
 export function createTool<
   InputSchema extends z.ZodObject<any>,
-  // Keep constraint ZodObject, but make optional later
-  OutputSchema extends z.ZodObject<any> = z.ZodObject<any> // Provide a default empty object schema type
+  OutputSchema extends z.ZodType<{ success: boolean; error?: string } & Record<string, any>>
 >(options: {
   id?: string;
   name: string;
@@ -269,9 +268,10 @@ export function createTool<
     name, 
     description, 
     inputSchema, 
-    // Default to an empty object schema instance. 
-    // Casting needed because TS can't perfectly infer the default satisfies the generic here.
-    outputSchema = z.object({}) as OutputSchema, 
+    outputSchema = z.object({
+      success: z.boolean(),
+      error: z.string().optional()
+    }) as unknown as OutputSchema,
     async, 
     execute 
   } = options;
@@ -291,7 +291,7 @@ export function createTool<
       paramSchema: inputSchema,
       async,
       strict: true, 
-      resultSchema: outputSchema, // Use the (potentially defaulted) outputSchema
+      resultSchema: outputSchema,
       resultDescription: `Result from ${name} tool`
     })
   };

@@ -39,10 +39,15 @@ class AgentTestRunner {
         stdio: ['pipe', 'pipe', 'pipe']
       });
 
-      // Send instructions to agent as a single message
-      // Replace newlines with spaces to avoid message splitting
-      const singleLineInstructions = instructions.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-      agentProcess.stdin.write(singleLineInstructions + '\n');
+      // Send instructions to agent using multi-line input mode
+      // Start multi-line mode
+      agentProcess.stdin.write('###\n');
+      
+      // Send the actual instructions (preserving formatting)
+      agentProcess.stdin.write(instructions + '\n');
+      
+      // End multi-line mode
+      agentProcess.stdin.write('###\n');
 
       // Collect output
       agentProcess.stdout.on('data', (data) => {
@@ -137,6 +142,8 @@ class AgentTestRunner {
         return this.evaluateFileOperations(workspacePath);
       } else if (testName === 'bug-fixing') {
         return this.evaluateBugFixing(workspacePath);
+      } else if (testName === 'cli-task-manager') {
+        return this.evaluateCliTaskManager(workspacePath);
       } else if (testName === 'todo-app') {
         return this.evaluateTodoApp(workspacePath);
       } else if (testName === 'code-analysis') {
@@ -255,6 +262,171 @@ class AgentTestRunner {
     return evaluation;
   }
 
+  evaluateCliTaskManager(workspacePath) {
+    const evaluation = {
+      success: false,
+      score: 0,
+      details: {},
+      issues: []
+    };
+
+    let score = 0;
+    const maxScore = 100;
+
+    // Check project structure (20 points)
+    const requiredDirs = ['task-cli', 'task-cli/data', 'task-cli/utils'];
+    const requiredFiles = [
+      'task-cli/index.js',
+      'task-cli/taskManager.js',
+      'task-cli/utils/fileUtils.js',
+      'task-cli/README.md'
+    ];
+
+    let dirsCreated = 0;
+    for (const dir of requiredDirs) {
+      const dirPath = path.join(workspacePath, dir);
+      if (fs.existsSync(dirPath)) {
+        dirsCreated++;
+      } else {
+        evaluation.issues.push(`Missing directory: ${dir}`);
+      }
+    }
+
+    let filesCreated = 0;
+    for (const file of requiredFiles) {
+      const filePath = path.join(workspacePath, file);
+      if (fs.existsSync(filePath)) {
+        filesCreated++;
+      } else {
+        evaluation.issues.push(`Missing file: ${file}`);
+      }
+    }
+
+    score += (dirsCreated / requiredDirs.length) * 10;
+    score += (filesCreated / requiredFiles.length) * 10;
+
+    // Check core functionality (40 points)
+    try {
+      const indexPath = path.join(workspacePath, 'task-cli/index.js');
+      const taskManagerPath = path.join(workspacePath, 'task-cli/taskManager.js');
+      const fileUtilsPath = path.join(workspacePath, 'task-cli/utils/fileUtils.js');
+
+      if (fs.existsSync(indexPath)) {
+        const indexContent = fs.readFileSync(indexPath, 'utf8');
+        if (indexContent.includes('process.argv') && 
+            (indexContent.includes('add') || indexContent.includes('list') || indexContent.includes('done'))) {
+          score += 15;
+        } else {
+          evaluation.issues.push('index.js missing command line argument handling');
+        }
+      }
+
+      if (fs.existsSync(taskManagerPath)) {
+        const taskManagerContent = fs.readFileSync(taskManagerPath, 'utf8');
+        if (taskManagerContent.includes('add') && 
+            taskManagerContent.includes('list') && 
+            taskManagerContent.includes('done')) {
+          score += 15;
+        } else {
+          evaluation.issues.push('taskManager.js missing required functions');
+        }
+      }
+
+      if (fs.existsSync(fileUtilsPath)) {
+        const fileUtilsContent = fs.readFileSync(fileUtilsPath, 'utf8');
+        if (fileUtilsContent.includes('readJSON') && fileUtilsContent.includes('writeJSON')) {
+          score += 10;
+        } else {
+          evaluation.issues.push('fileUtils.js missing readJSON/writeJSON functions');
+        }
+      }
+    } catch (error) {
+      evaluation.issues.push(`File content check failed: ${error.message}`);
+    }
+
+    // Check data persistence (20 points)
+    const dataPath = path.join(workspacePath, 'task-cli/data');
+    if (fs.existsSync(dataPath)) {
+      score += 10;
+      
+      // Check if tasks.json can be created/exists
+      const tasksJsonPath = path.join(dataPath, 'tasks.json');
+      if (fs.existsSync(tasksJsonPath)) {
+        try {
+          const tasksContent = fs.readFileSync(tasksJsonPath, 'utf8');
+          JSON.parse(tasksContent); // Validate JSON
+          score += 10;
+        } catch {
+          evaluation.issues.push('tasks.json is not valid JSON');
+        }
+      } else {
+        // Data directory exists but no tasks.json yet - still partial credit
+        score += 5;
+      }
+    } else {
+      evaluation.issues.push('data directory not created');
+    }
+
+    // Check error handling (10 points)
+    try {
+      const indexPath = path.join(workspacePath, 'task-cli/index.js');
+      if (fs.existsSync(indexPath)) {
+        const indexContent = fs.readFileSync(indexPath, 'utf8');
+        if (indexContent.includes('try') || indexContent.includes('catch') || 
+            indexContent.includes('error') || indexContent.includes('Error')) {
+          score += 10;
+        } else {
+          evaluation.issues.push('Missing error handling in index.js');
+        }
+      }
+    } catch (error) {
+      evaluation.issues.push(`Error handling check failed: ${error.message}`);
+    }
+
+    // Check code quality (10 points)
+    try {
+      const readmePath = path.join(workspacePath, 'task-cli/README.md');
+      if (fs.existsSync(readmePath)) {
+        const readmeContent = fs.readFileSync(readmePath, 'utf8');
+        if (readmeContent.includes('node index.js') && 
+            (readmeContent.includes('add') || readmeContent.includes('list') || readmeContent.includes('done'))) {
+          score += 5;
+        } else {
+          evaluation.issues.push('README.md missing usage instructions');
+        }
+      }
+
+      // Check for module exports/requires
+      const taskManagerPath = path.join(workspacePath, 'task-cli/taskManager.js');
+      if (fs.existsSync(taskManagerPath)) {
+        const content = fs.readFileSync(taskManagerPath, 'utf8');
+        if (content.includes('module.exports') || content.includes('exports')) {
+          score += 5;
+        } else {
+          evaluation.issues.push('Missing module exports in taskManager.js');
+        }
+      }
+    } catch (error) {
+      evaluation.issues.push(`Code quality check failed: ${error.message}`);
+    }
+
+    evaluation.score = Math.round(score);
+    evaluation.success = score >= 80;
+    evaluation.details = {
+      dirsCreated,
+      filesCreated,
+      totalDirs: requiredDirs.length,
+      totalFiles: requiredFiles.length,
+      structureScore: Math.round((dirsCreated / requiredDirs.length + filesCreated / requiredFiles.length) * 10),
+      functionalityScore: Math.round(score * 0.4),
+      dataScore: Math.round(score * 0.2),
+      errorHandlingScore: Math.round(score * 0.1),
+      qualityScore: Math.round(score * 0.1)
+    };
+
+    return evaluation;
+  }
+
   evaluateTodoApp(workspacePath) {
     // Evaluate todo app implementation
     const evaluation = {
@@ -367,6 +539,57 @@ function calculateTotal(items) {
 
 Find the bug and provide the corrected version.`,
       60
+    );
+
+    // Test 3: CLI Task Manager
+    await this.runTest(
+      'cli-task-manager',
+      `请使用 JavaScript (Node.js) 创建一个简单的 CLI 应用程序 task-cli，用于管理待办任务。
+
+项目结构：
+task-cli/
+├── index.js
+├── taskManager.js
+├── data/
+│   └── tasks.json
+├── utils/
+│   └── fileUtils.js
+└── README.md
+
+功能需求：
+
+1. index.js: 提供命令行入口，可执行以下命令：
+   - node index.js add "任务内容"
+   - node index.js list
+   - node index.js done <任务ID>
+
+2. taskManager.js：
+   - 实现添加任务、列出任务、标记完成任务的逻辑
+   - 所有任务应保存在 data/tasks.json 文件中
+   - 任务对象应包含：id、content、completed、createdAt
+
+3. fileUtils.js：
+   - 封装读写 JSON 文件的通用函数（readJSON, writeJSON）
+   - 处理文件不存在的情况
+   - 提供错误处理
+
+4. README.md：
+   - 简要说明如何运行该 CLI 工具
+   - 各个命令的用法说明
+
+示例行为：
+$ node index.js add "Buy milk"
+✅ Added task: Buy milk
+
+$ node index.js list
+📝 Tasks:
+[1] Buy milk - ❌
+
+$ node index.js done 1
+🎉 Task [1] marked as done.
+
+请实现这个完整的 CLI 任务管理器。`,
+      180
     );
 
     this.generateSummary();

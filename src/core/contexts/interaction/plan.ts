@@ -110,6 +110,27 @@ export const PlanManagementTool = createTool({
           context.setData(newPlan);
           logger.info(`Created new plan: ${planId} - ${params.title}`);
 
+          // 发布 plan_created 事件
+          if (agent?.eventBus) {
+            await agent.eventBus.publish({
+              type: 'plan_created',
+              source: 'agent',
+              sessionId: agent.eventBus.getActiveSessions()[0] || 'default',
+              payload: {
+                planId,
+                title: params.title,
+                description: params.description,
+                totalSteps: planSteps.length,
+                steps: planSteps.map(step => ({
+                  id: step.id,
+                  title: step.title,
+                  description: step.description,
+                  toolsToCall: step.toolsToCall
+                }))
+              }
+            });
+          }
+
           return {
             success: true,
             message: `Plan "${params.title}" created with ${planSteps.length} steps`,
@@ -150,6 +171,43 @@ export const PlanManagementTool = createTool({
           });
 
           logger.info(`Updated step ${params.stepId} status to: ${params.status}`);
+
+          // 发布 plan_step_started 事件（如果状态变为 in_progress）
+          if (params.status === 'in_progress' && agent?.eventBus) {
+            await agent.eventBus.publish({
+              type: 'plan_step_started',
+              source: 'agent',
+              sessionId: agent.eventBus.getActiveSessions()[0] || 'default',
+              payload: {
+                planId: currentData.planId!,
+                stepId: params.stepId,
+                stepIndex,
+                stepTitle: updatedSteps[stepIndex].title,
+                stepDescription: updatedSteps[stepIndex].description,
+                toolsToCall: updatedSteps[stepIndex].toolsToCall
+              }
+            });
+          }
+
+          // 发布 plan_progress_update 事件
+          if (agent?.eventBus) {
+            const completedSteps = updatedSteps.filter(step => step.status === 'completed').length;
+            const progress = Math.round((completedSteps / updatedSteps.length) * 100);
+            
+            await agent.eventBus.publish({
+              type: 'plan_progress_update',
+              source: 'agent',
+              sessionId: agent.eventBus.getActiveSessions()[0] || 'default',
+              payload: {
+                planId: currentData.planId!,
+                currentStepIndex: stepIndex,
+                totalSteps: updatedSteps.length,
+                completedSteps,
+                progress,
+                currentStepTitle: updatedSteps[stepIndex].title
+              }
+            });
+          }
 
           return {
             success: true,
@@ -210,6 +268,44 @@ export const PlanManagementTool = createTool({
 
           const nextStep = nextStepIndex < updatedSteps.length ? updatedSteps[nextStepIndex] : null;
 
+          // 发布 plan_step_completed 事件
+          if (agent?.eventBus) {
+            await agent.eventBus.publish({
+              type: 'plan_step_completed',
+              source: 'agent',
+              sessionId: agent.eventBus.getActiveSessions()[0] || 'default',
+              payload: {
+                planId: currentData.planId!,
+                stepId: params.stepId,
+                stepIndex,
+                stepTitle: updatedSteps[stepIndex].title,
+                completedAt: now,
+                nextStepId: nextStep?.id,
+                nextStepTitle: nextStep?.title
+              }
+            });
+          }
+
+          // 发布 plan_progress_update 事件
+          if (agent?.eventBus) {
+            const completedSteps = updatedSteps.filter(step => step.status === 'completed').length;
+            const progress = Math.round((completedSteps / updatedSteps.length) * 100);
+            
+            await agent.eventBus.publish({
+              type: 'plan_progress_update',
+              source: 'agent',
+              sessionId: agent.eventBus.getActiveSessions()[0] || 'default',
+              payload: {
+                planId: currentData.planId!,
+                currentStepIndex: nextStepIndex < updatedSteps.length ? nextStepIndex : stepIndex,
+                totalSteps: updatedSteps.length,
+                completedSteps,
+                progress,
+                currentStepTitle: nextStep?.title
+              }
+            });
+          }
+
           return {
             success: true,
             message: nextStep ? 
@@ -237,6 +333,24 @@ export const PlanManagementTool = createTool({
 
           logger.info(`Completed plan: ${currentData.planId}`);
 
+          // 发布 plan_completed 事件
+          if (agent?.eventBus) {
+            const executionTime = now - (currentData.createdAt || now);
+            
+            await agent.eventBus.publish({
+              type: 'plan_completed',
+              source: 'agent',
+              sessionId: agent.eventBus.getActiveSessions()[0] || 'default',
+              payload: {
+                planId: currentData.planId!,
+                title: currentData.title!,
+                totalSteps: currentData.steps.length,
+                completedAt: now,
+                executionTime
+              }
+            });
+          }
+
           return {
             success: true,
             message: `Plan "${currentData.title}" completed successfully`
@@ -248,6 +362,23 @@ export const PlanManagementTool = createTool({
       }
     } catch (error) {
       logger.error(`Plan management error: ${error}`);
+      
+      // 发布 plan_error 事件
+      if (agent?.eventBus && currentData.planId) {
+        await agent.eventBus.publish({
+          type: 'plan_error',
+          source: 'agent',
+          sessionId: agent.eventBus.getActiveSessions()[0] || 'default',
+          payload: {
+            planId: currentData.planId,
+            stepId: params.command === 'update_step' || params.command === 'complete_step' ? params.stepId : undefined,
+            stepTitle: params.stepId ? currentData.steps.find((s: z.infer<typeof PlanStepSchema>) => s.id === params.stepId)?.title : undefined,
+            error: error instanceof Error ? error.message : String(error),
+            recoverable: true
+          }
+        });
+      }
+      
       return {
         success: false,
         message: error instanceof Error ? error.message : String(error)

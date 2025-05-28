@@ -388,5 +388,5 @@ export function createEvent<T extends AllEventMessages>(
     payload,
     source,
     sessionId: sessionId || 'default'
-  } as Omit<T, 'id' | 'timestamp'>;
+  } as unknown as Omit<T, 'id' | 'timestamp'>;
 } 

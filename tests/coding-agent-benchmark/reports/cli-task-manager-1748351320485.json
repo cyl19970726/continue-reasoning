@@ -1,0 +1,54 @@
+{
+  "testName": "cli-task-manager",
+  "timestamp": "2025-05-27T13:08:40.485Z",
+  "finalScore": {
+    "success": false,
+    "score": 0,
+    "issues": [
+      "Missing directory: task-cli",
+      "Missing directory: task-cli/data",
+      "Missing directory: task-cli/utils",
+      "Missing file: task-cli/index.js",
+      "Missing file: task-cli/taskManager.js",
+      "Missing file: task-cli/utils/fileUtils.js",
+      "Missing file: task-cli/README.md",
+      "Cannot test functionality: index.js not found"
+    ],
+    "details": {
+      "verification": {
+        "dirsCreated": 0,
+        "filesCreated": 0,
+        "totalDirs": 3,
+        "totalFiles": 4
+      },
+      "functionality": {},
+      "verificationScore": 0,
+      "functionalityScore": 0
+    }
+  },
+  "verificationResult": {
+    "score": 0,
+    "issues": [
+      "Missing directory: task-cli",
+      "Missing directory: task-cli/data",
+      "Missing directory: task-cli/utils",
+      "Missing file: task-cli/index.js",
+      "Missing file: task-cli/taskManager.js",
+      "Missing file: task-cli/utils/fileUtils.js",
+      "Missing file: task-cli/README.md"
+    ],
+    "details": {
+      "dirsCreated": 0,
+      "filesCreated": 0,
+      "totalDirs": 3,
+      "totalFiles": 4
+    }
+  },
+  "functionalityResult": {
+    "score": 0,
+    "issues": [
+      "Cannot test functionality: index.js not found"
+    ],
+    "details": {}
+  }
+}

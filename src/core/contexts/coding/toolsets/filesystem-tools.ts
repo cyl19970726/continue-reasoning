@@ -12,12 +12,14 @@ const ReadFileParamsSchema = z.object({
 });
 
 const ReadFileReturnsSchema = z.object({
+  success: z.boolean().describe("Whether the read operation was successful."),
+  error: z.string().optional().describe("An error message if the read operation failed."),
   content: z.string().describe("The content of the file segment read."),
   lines_read: z.number().int().describe("The number of lines read."),
 });
 
 export const ReadFileTool = createTool({
-  id: 'read_file_gemini', 
+  id: 'read_file', 
   name: 'ReadFile',
   description: 'Reads content from a specified file or a segment of it.',
   inputSchema: ReadFileParamsSchema,
@@ -25,7 +27,7 @@ export const ReadFileTool = createTool({
   async: true,
   execute: async (params, agent?: IAgent) => {
     // Get the coding context
-    const codingContext = agent?.contextManager.findContextById('coding_gemini');
+    const codingContext = agent?.contextManager.findContextById('coding-context');
     if (!codingContext) {
       throw new Error('Coding context not found');
     }
@@ -65,12 +67,17 @@ export const ReadFileTool = createTool({
       });
       
       return {
+        success: true,
         content,
         lines_read: linesRead
       };
     } catch (error: any) {
-      console.error(`ReadFileTool error: ${error}`);
-      throw new Error(`Failed to read file ${params.path}: ${error.message}`);
+      return {
+        success: false,
+        error: error.message,
+        content: '',
+        lines_read: 0
+      };
     }
   },
 });
@@ -92,7 +99,7 @@ const WriteFileReturnsSchema = z.object({
 });
 
 export const WriteFileTool = createTool({
-  id: 'write_file_gemini', 
+  id: 'write_file', 
   name: 'WriteFile',
   description: 'Writes content to a specified file.',
   inputSchema: WriteFileParamsSchema,
@@ -100,7 +107,7 @@ export const WriteFileTool = createTool({
   async: true,
   execute: async (params, agent?: IAgent) => {
     // Get the coding context
-    const codingContext = agent?.contextManager.findContextById('coding_gemini');
+    const codingContext = agent?.contextManager.findContextById('coding-context');
     if (!codingContext) {
       throw new Error('Coding context not found');
     }
@@ -170,7 +177,7 @@ export const ListDirectoryTool = createTool({
     async: true,
     execute: async (params, agent?: IAgent) => {
       // Get the coding context
-      const codingContext = agent?.contextManager.findContextById('coding_gemini');
+      const codingContext = agent?.contextManager.findContextById('coding-context');
       if (!codingContext) {
         throw new Error('Coding context not found');
       }
@@ -228,7 +235,7 @@ export const GetFileStatusTool = createTool({
     async: true,
     execute: async (params, agent?: IAgent) => {
       // Get the coding context
-      const codingContext = agent?.contextManager.findContextById('coding_gemini');
+      const codingContext = agent?.contextManager.findContextById('coding-context');
       if (!codingContext) {
         throw new Error('Coding context not found');
       }
@@ -277,7 +284,7 @@ export const DeleteFileTool = createTool({
     async: true,
     execute: async (params, agent?: IAgent) => {
       // Get the coding context
-      const codingContext = agent?.contextManager.findContextById('coding_gemini');
+      const codingContext = agent?.contextManager.findContextById('coding-context');
       if (!codingContext) {
         throw new Error('Coding context not found');
       }
@@ -321,7 +328,7 @@ export const CreateDirectoryTool = createTool({
     async: true,
     execute: async (params, agent?: IAgent) => {
       // Get the coding context
-      const codingContext = agent?.contextManager.findContextById('coding_gemini');
+      const codingContext = agent?.contextManager.findContextById('coding-context');
       if (!codingContext) {
         throw new Error('Coding context not found');
       }

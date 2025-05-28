@@ -220,7 +220,7 @@ export function createUserInputContext() {
       
       if (conversationHistory.length > 0) {
         prompt += '**Recent Conversation History:**\n';
-        const recentHistory = conversationHistory.slice(-5); // 最近5条
+        const recentHistory = conversationHistory.slice(-20); // 最近20条
         recentHistory.forEach(entry => {
           const time = new Date(entry.timestamp).toLocaleTimeString();
           prompt += `- [${time}] ${entry.source}: ${entry.content}\n`;

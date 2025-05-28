@@ -1,166 +1,216 @@
-# Coding Agent Performance Testing Framework
+# HHH-AGI Coding Agent Benchmark
+
+A streamlined benchmark suite for testing the HHH-AGI coding agent's performance on real coding tasks.
 
 ## Overview
 
-This framework provides a comprehensive set of tests to evaluate the coding agent's performance across different scenarios, from basic file operations to complex software development tasks.
+This benchmark evaluates the coding agent across three difficulty levels:
+- **Level 1**: Basic file operations and simple tasks
+- **Level 2**: Code understanding, analysis, and refactoring  
+- **Level 3**: Feature implementation and integration
 
-## Test Categories
+## Quick Start
 
-### 1. Basic Operations (Level 1)
-**Purpose**: Test fundamental file and code operations
-**Success Criteria**: 90%+ accuracy, <30s completion time
+### Prerequisites
+- Node.js 16+
+- HHH-AGI project setup
 
-- **File Operations**
-  - Create, read, update, delete files
-  - Directory navigation and management
-  - File permission handling
-  
-- **Code Reading**
-  - Parse and understand code structure
-  - Extract functions, classes, imports
-  - Identify code patterns and dependencies
+### Installation
+```bash
+cd tests/coding-agent-benchmark
+npm install
+npm run setup
+```
 
-- **Simple Edits**
-  - Fix syntax errors
-  - Add/remove imports
-  - Rename variables/functions
-  - Add simple comments
+### Running Tests
 
-### 2. Code Understanding (Level 2)
-**Purpose**: Test code comprehension and analysis
-**Success Criteria**: 80%+ accuracy, <60s completion time
+#### Basic Usage
+```bash
+# Run Level 1 tests (basic operations)
+npm run test:level1
 
-- **Code Analysis**
-  - Explain code functionality
-  - Identify bugs and issues
-  - Suggest improvements
-  - Generate documentation
+# Run Level 2 tests (code understanding)
+npm run test:level2
 
-- **Refactoring**
-  - Extract functions/methods
-  - Simplify complex logic
-  - Apply design patterns
-  - Optimize performance
+# Run Level 3 tests (feature implementation)
+npm run test:level3
 
-### 3. Feature Implementation (Level 3)
-**Purpose**: Test ability to implement new features
-**Success Criteria**: 70%+ accuracy, <300s completion time
+# Run legacy basic test suite
+npm run test:basic
+```
 
-- **Small Features**
-  - Add new functions/methods
-  - Implement simple algorithms
-  - Create utility classes
-  - Add configuration options
+#### Advanced Usage
+```bash
+# Run with specific model configuration
+node run-optimized-test.js development level1-basic-operations
 
-- **Integration Tasks**
-  - Connect APIs
-  - Add database operations
-  - Implement authentication
-  - Add logging/monitoring
+# Run with different model profiles
+node run-optimized-test.js testing level2-code-understanding
+node run-optimized-test.js budget level1-basic-operations
 
-### 4. Complex Projects (Level 4)
-**Purpose**: Test end-to-end development capabilities
-**Success Criteria**: 60%+ accuracy, <600s completion time
+# Test multi-line input functionality
+npm run test:multiline
 
-- **Full Applications**
-  - Build complete web apps
-  - Create CLI tools
-  - Implement microservices
-  - Design system architecture
+# Test CLI task manager implementation
+npm run test:cli-task-manager
 
-## Test Repositories
+# Show help
+npm test
+```
 
-### Beginner Level
-1. **simple-calculator** - Basic arithmetic operations
-2. **todo-list** - CRUD operations with local storage
-3. **file-organizer** - File system manipulation
-4. **weather-app** - API integration basics
+## Test Levels
 
-### Intermediate Level
-1. **blog-engine** - Full-stack web application
-2. **chat-application** - Real-time communication
-3. **e-commerce-api** - RESTful API with database
-4. **task-scheduler** - Background job processing
+### Level 1: Basic Operations
+**Time Limit**: 30-60 seconds per test
+**Success Criteria**: 90%+ accuracy
 
-### Advanced Level
-1. **distributed-system** - Microservices architecture
-2. **ml-pipeline** - Data processing and machine learning
-3. **game-engine** - Complex algorithms and optimization
-4. **compiler** - Language processing and code generation
+Tests basic file and directory operations:
+- Create project structure with multiple directories
+- Generate configuration files with specific content
+- Perform file operations (create, read, update)
+- Handle file permissions and validation
+- Build complete CLI applications with command-line argument parsing
+- Implement data persistence with JSON files
+
+### Level 2: Code Understanding  
+**Time Limit**: 60-180 seconds per test
+**Success Criteria**: 80%+ accuracy
+
+Tests code analysis and improvement:
+- Identify and fix bugs in React components
+- Refactor legacy JavaScript to modern ES6+
+- Analyze code patterns and suggest improvements
+- Generate documentation and explanations
+
+### Level 3: Feature Implementation
+**Time Limit**: 240-300 seconds per test  
+**Success Criteria**: 70%+ accuracy
+
+Tests full feature development:
+- Build complete Todo application (backend + frontend)
+- Implement API integration with error handling
+- Create React components with proper state management
+- Handle real-world development scenarios
+
+## Model Configurations
+
+The benchmark supports multiple model profiles defined in `test-config.json`:
+
+- **development**: High-performance models for development testing
+- **testing**: Balanced models for regular testing
+- **budget**: Cost-effective models for frequent testing
+
+Each profile includes:
+- Model selection and provider
+- Rate limiting and retry logic
+- Temperature and token limits
+- Timeout configurations
+
+## Test Structure
+
+```
+tests/coding-agent-benchmark/
+├── run-agent-test.js          # Main test runner
+├── run-optimized-test.js      # Optimized runner with model configs
+├── test-multiline.js          # Multi-line input functionality test
+├── test-cli-task-manager.js   # CLI task manager comprehensive test
+├── test-config.json           # Model and test configurations
+├── level1-basic-operations/   # Level 1 test definitions
+│   ├── test-file-operations.md
+│   └── test-cli-task-manager.md
+├── level2-code-understanding/ # Level 2 test definitions  
+├── level3-feature-implementation/ # Level 3 test definitions
+├── test-workspace/            # Temporary workspace for tests
+└── reports/                   # Test results and reports
+```
 
 ## Evaluation Metrics
 
-### Functional Metrics
+### Automated Scoring
 - **Correctness**: Does the code work as intended?
 - **Completeness**: Are all requirements implemented?
-- **Quality**: Is the code well-structured and maintainable?
-- **Performance**: Does the code meet performance requirements?
+- **File Structure**: Are directories and files created correctly?
+- **Content Quality**: Does the content meet specifications?
 
-### Process Metrics
-- **Time to Completion**: How long does each task take?
-- **Planning Quality**: How well does the agent plan the work?
-- **Error Recovery**: How well does the agent handle errors?
-- **Tool Usage**: How effectively does the agent use available tools?
+### Performance Metrics
+- **Execution Time**: Time to complete each test
+- **Success Rate**: Percentage of tests passed
+- **Error Recovery**: How well the agent handles failures
+- **Tool Usage**: Effectiveness of tool utilization
 
-### Code Quality Metrics
-- **Readability**: Is the code easy to understand?
-- **Maintainability**: Is the code easy to modify?
-- **Testability**: Is the code easy to test?
-- **Documentation**: Is the code well-documented?
+## Results and Reporting
 
-## Running Tests
+Test results are automatically saved to the `reports/` directory with:
+- Individual test scores and timing
+- Detailed evaluation feedback
+- Error logs and debugging information
+- Summary statistics across all tests
 
-### Quick Start
-```bash
-# Run basic operations tests
-npm run test:basic
+Example output:
+```
+📊 Test Summary
+==================================================
+Total Tests: 3
+Passed: 2
+Failed: 1
+Average Score: 78.3%
+Total Time: 145s
 
-# Run all tests
-npm run test:all
-
-# Run specific test category
-npm run test:level2
-
-# Run with detailed reporting
-npm run test:detailed
+📋 Individual Results:
+PASS file-operations: 95% (45s)
+PASS bug-fixing: 85% (60s)
+FAIL todo-app: 55% (40s)
 ```
 
-### Custom Test Scenarios
+## Multi-line Input Support
+
+The CLI agent now supports multi-line input for complex instructions:
+
+### Using Multi-line Mode
 ```bash
-# Test specific repository
-npm run test:repo simple-calculator
-
-# Test with time limits
-npm run test:timed 300
-
-# Test with specific agent configuration
-npm run test:config production
+# In the CLI, type ### to start multi-line mode
+###
+Your complex multi-line instruction here
+with proper formatting and structure
+###
 ```
 
-## Test Results Analysis
+### File Input
+```bash
+# Load file content directly
+/file path/to/your/instruction-file.md
+```
 
-### Automated Scoring
-- Code compilation/execution success
-- Test case pass rate
-- Performance benchmarks
-- Code quality metrics
+### Benefits
+- **Preserve formatting**: Code blocks, lists, and structure are maintained
+- **Complex instructions**: Send detailed requirements without line breaks being lost
+- **File loading**: Load test scenarios or instructions from files
+- **Better testing**: Write comprehensive test cases with proper formatting
 
-### Manual Review
-- Code review checklist
-- Architecture assessment
-- Best practices compliance
-- Innovation and creativity
+## Troubleshooting
 
-## Continuous Improvement
+### Common Issues
 
-### Performance Tracking
-- Track metrics over time
-- Identify improvement areas
-- Compare different configurations
-- Benchmark against human developers
+**Agent timeout**: Increase time limits in test configuration
+**Rate limiting**: Adjust `rateLimitDelay` in model config
+**Workspace errors**: Run `npm run clean && npm run setup`
+**Missing dependencies**: Ensure HHH-AGI is properly installed
+**Multi-line issues**: Ensure you use `###` delimiter correctly
 
-### Test Evolution
-- Add new test scenarios
-- Update existing tests
-- Incorporate real-world challenges
-- Community-contributed tests 
+### Debug Mode
+Add debug logging by setting environment variables:
+```bash
+LOG_LEVEL=debug npm run test:level1
+```
+
+## Contributing
+
+To add new tests:
+1. Create test definition files in appropriate level directory
+2. Add evaluation logic to `run-agent-test.js`
+3. Update test configurations as needed
+4. Test with multiple model profiles
+
+## License
+
+MIT License - see main project for details. 

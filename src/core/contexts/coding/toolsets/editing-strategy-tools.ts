@@ -15,7 +15,9 @@ const ApplyWholeFileEditParamsSchema = z.object({
 
 const ApplyWholeFileEditReturnsSchema = z.object({
   success: z.boolean().describe("Whether the file was successfully written."),
+  error: z.string().optional().describe("An error message if the file write failed."),
   message: z.string().optional().describe("An optional message about the operation."),
+  diff: z.string().optional().describe("The diff showing changes made to the file."),
 });
 
 export const ApplyWholeFileEditTool = createTool({
@@ -115,12 +117,14 @@ export const ApplyWholeFileEditTool = createTool({
         success: true,
         message: fileExists 
           ? `File ${params.path} updated successfully.` 
-          : `File ${params.path} created successfully.`
+          : `File ${params.path} created successfully.`,
+        diff: diffString
       };
     } catch (error: any) {
       console.error(`ApplyWholeFileEditTool error: ${error.message || error}`);
       return {
         success: false,
+        error: error.message || 'Unknown error',
         message: `Failed to write to file ${params.path}: ${error.message || 'Unknown error'}`
       };
     }

@@ -3,6 +3,7 @@ import { createTool } from '../../../utils';
 import { IAgent } from '../../../interfaces';
 import { ShellExecutionResult, ExecutionOptions } from '../sandbox';
 import { IRuntime } from '../runtime/interface';
+import { logger } from '@/core/utils/logger';
 
 const BashCommandParamsSchema = z.object({
   command: z.string().describe("The bash command to execute."),
@@ -16,7 +17,8 @@ const BashCommandReturnsSchema = z.object({
   stdout: z.string().describe("The standard output of the command."),
   stderr: z.string().describe("The standard error output of the command."),
   exit_code: z.number().nullable().describe("The exit code of the command. Null if the process was killed or did not exit normally."),
-  error_message: z.string().optional().describe("An error message if the command execution failed (e.g., timeout, killed by signal).")
+  error: z.string().optional().describe("An error message if the command execution failed (e.g., timeout, killed by signal)."),
+  success: z.boolean().describe("Whether the command execution was successful.")
 });
 
 export const BashCommandTool = createTool({
@@ -38,7 +40,7 @@ export const BashCommandTool = createTool({
     }
 
     // Log the sandbox type being used by the runtime for debugging
-    console.log(`BashCommandTool: Using runtime (${runtime.type}) with sandbox of type: ${runtime.sandbox.type}`);
+    logger.debug(`BashCommandTool: Using runtime (${runtime.type}) with sandbox of type: ${runtime.sandbox.type}`);
 
     const workspacePath = codingContext.getData()?.current_workspace || process.cwd();
     
@@ -55,7 +57,7 @@ export const BashCommandTool = createTool({
       // or that the IRuntime implementation will correctly pass them to its ISandbox.
     };
     
-    console.log(`BashCommandTool: Executing command "${params.command}" in ${executionOptions.cwd} via runtime.`);
+    logger.debug(`BashCommandTool: Executing command "${params.command}" in ${executionOptions.cwd} via runtime.`);
     
     const result = await runtime.execute(params.command, executionOptions);
 
@@ -63,7 +65,8 @@ export const BashCommandTool = createTool({
       stdout: result.stdout,
       stderr: result.stderr,
       exit_code: result.exitCode,
-      error_message: result.error?.message,
+      error: result.error?.message,
+      success: result.exitCode === 0,
     };
   },
 });

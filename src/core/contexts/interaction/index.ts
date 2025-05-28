@@ -4,4 +4,3 @@
 export { InteractiveContext, InteractiveContextId, InteractionManagementTool } from './interactive';
 export { UserInputContext } from './userInput';
 export { PlanContext, PlanContextId, PlanManagementTool, AgentStopTool } from './plan';
-export { CoordinationContext, CoordinationContextId, SyncCodingProgressTool, RequestFileOpApprovalTool, ConsolidatePromptsTool } from './coordination'; 

@@ -152,9 +152,13 @@ export const CreatePlanTool = createTool({
     Note: Create Plan is intended for resolving complex tasks. Avoid using it for simple, single-step actions.
     `,
     inputSchema: CreatePlanInputSchema,
-    outputSchema: PlanContextSchema,
+    resultSchema: z.object({
+        success: z.boolean(),
+        error: z.string().optional(),
+        plan: PlanContextSchema.optional()
+    }),
     async: false,
-    execute: async (params: z.infer<typeof CreatePlanInputSchema>, agent?: IAgent): Promise<z.infer<typeof PlanContextSchema>> => {
+    execute: async (params: z.infer<typeof CreatePlanInputSchema>, agent?: IAgent) => {
         const context = ContextHelper.findContext<typeof PlanContextSchema>(agent!, PLAN_CONTEXT_ID);
         if (!context) {
              throw new Error(`Context ${PLAN_CONTEXT_ID} not found.`);
@@ -175,7 +179,10 @@ export const CreatePlanTool = createTool({
 
         ContextHelper.updateContextData(context, updatePayload);
 
-        return context.getData();
+        return {
+            success: true,
+            plan: context.getData()
+        };
     },
 });
 

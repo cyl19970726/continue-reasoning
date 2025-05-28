@@ -4,7 +4,7 @@ import { z } from "zod";
 import readline from "readline";
 import { IMemoryManager } from "../interfaces";
 import { createTool, ContextHelper,render } from '../utils';
-import { logger } from "../agent";
+import { logger } from "../utils/logger";
 import { SystemToolNames } from "./index";
 
 // 先声明工具名称常量
