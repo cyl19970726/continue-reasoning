@@ -30,6 +30,19 @@ export interface FileEditResult {
   message?: string;
   /** 应用的更改计数（例如匹配的块数） */
   changesApplied?: number;
+  /** 受影响的文件列表 */
+  affectedFiles?: string[];
+  /** 保存的diff文件路径 */
+  savedDiffPath?: string;
+  /** 是否为多文件操作 */
+  isMultiFile?: boolean;
+  /** 多文件操作的详细结果 */
+  multiFileResults?: Array<{
+    filePath: string;
+    success: boolean;
+    message?: string;
+    changesApplied?: number;
+  }>;
 }
 
 /**
@@ -106,11 +119,52 @@ export interface IRuntime {
   ): Promise<FileEditResult>;
   
   /**
-   * Apply a unified diff
+   * Apply a unified diff (supports both single and multi-file diffs)
+   * The file paths are automatically extracted from the diff content
    */
   applyUnifiedDiff(
-    filePath: string,
-    diffContent: string
+    diffContent: string,
+    options?: { 
+      baseDir?: string; 
+      saveDiffPath?: string;
+      dryRun?: boolean;
+    }
+  ): Promise<FileEditResult>;
+  
+  /**
+   * Apply a unified diff from a file
+   */
+  applyUnifiedDiffFromFile(
+    diffFilePath: string,
+    options?: { 
+      baseDir?: string; 
+      saveDiffPath?: string;
+      dryRun?: boolean;
+    }
+  ): Promise<FileEditResult>;
+  
+  /**
+   * Reverse apply a unified diff (undo changes)
+   */
+  reverseApplyUnifiedDiff(
+    diffContent: string,
+    options?: { 
+      baseDir?: string; 
+      saveDiffPath?: string;
+      dryRun?: boolean;
+    }
+  ): Promise<FileEditResult>;
+  
+  /**
+   * Reverse apply a unified diff from a file
+   */
+  reverseApplyUnifiedDiffFromFile(
+    diffFilePath: string,
+    options?: { 
+      baseDir?: string; 
+      saveDiffPath?: string;
+      dryRun?: boolean;
+    }
   ): Promise<FileEditResult>;
   
   /**
@@ -119,6 +173,15 @@ export interface IRuntime {
   generateDiff(
     oldContent: string, 
     newContent: string, 
+    options?: { oldPath?: string; newPath?: string }
+  ): Promise<string>;
+  
+  /**
+   * Compare two files and generate a unified diff
+   */
+  compareFiles(
+    oldFilePath: string,
+    newFilePath: string,
     options?: { oldPath?: string; newPath?: string }
   ): Promise<string>;
   

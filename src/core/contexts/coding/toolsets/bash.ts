@@ -17,8 +17,8 @@ const BashCommandReturnsSchema = z.object({
   stdout: z.string().describe("The standard output of the command."),
   stderr: z.string().describe("The standard error output of the command."),
   exit_code: z.number().nullable().describe("The exit code of the command. Null if the process was killed or did not exit normally."),
-  error: z.string().optional().describe("An error message if the command execution failed (e.g., timeout, killed by signal)."),
-  success: z.boolean().describe("Whether the command execution was successful.")
+  success: z.boolean().describe("Whether the command execution was successful."),
+  message: z.string().optional().describe("An message about the command execution success or error")
 });
 
 export const BashCommandTool = createTool({
@@ -65,7 +65,7 @@ export const BashCommandTool = createTool({
       stdout: result.stdout,
       stderr: result.stderr,
       exit_code: result.exitCode,
-      error: result.error?.message,
+      message: result.error?.message,
       success: result.exitCode === 0,
     };
   },

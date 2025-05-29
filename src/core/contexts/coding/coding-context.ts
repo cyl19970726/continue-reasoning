@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { IContext, ITool, IAgent, ToolCallResult, ToolSet as ToolSetInterface, IRAGEnabledContext } from '../../interfaces';
-import { FileSystemToolSet, RuntimeToolSet, EditingStrategyToolSet, BashToolSet } from './toolsets';
+import { EditingStrategyToolSet, BashToolSet, EditingStrategyToolExamples } from './toolsets';
 import { IRuntime } from './runtime/interface';
 import { NodeJsSandboxedRuntime } from './runtime/impl/node-runtime';
 import { ISandbox } from './sandbox';
@@ -99,7 +99,6 @@ export function createCodingContext(workspacePath: string, initialData?: Partial
   });
 
   const allTools: ITool<any, any, IAgent>[] = [
-    ...FileSystemToolSet,
     ...EditingStrategyToolSet,
     ...BashToolSet,
   ];
@@ -111,28 +110,99 @@ export function createCodingContext(workspacePath: string, initialData?: Partial
     dataSchema: CodingContextDataSchema,
     initialData: parsedInitialData,
     renderPromptFn: (data: CodingContextData) => {
-      let prompt = `operating in the workspace: ${data.current_workspace}.\n`;
-      prompt += `The current default editing strategy is: ${data.selected_editing_strategy}.\n`;
-      prompt += `You have access to a sandbox with type: ${sandbox.type}.\n`;
+      let prompt = `You are operating in the workspace: ${data.current_workspace}.\n`;
+      prompt += `Current default editing strategy: ${data.selected_editing_strategy}.\n`;
+      prompt += `Sandbox type: ${sandbox.type}.\n\n`;
 
+      // Core guidance for code development
+      prompt += `## 🔧 CODE DEVELOPMENT APPROACH\n\n`;
+      prompt += `For code development and modification, use the specialized editing strategy tools below.\n`;
+      prompt += `For simple file reading or system information, you can use bash commands directly.\n\n`;
+
+      prompt += `## 📝 PRIMARY EDITING TOOLS (Choose the right tool for each task)\n\n`;
+      
+      prompt += `### 🥇 ApplyWholeFileEditTool - PRIMARY FILE CREATION\n`;
+      prompt += `• **Use for**: Creating new files, complete file replacement\n`;
+      prompt += `• **Best for**: New components, modules, config files, initial implementations\n`;
+      prompt += `• **Auto-features**: Directory creation, comprehensive diff generation\n\n`;
+      
+      prompt += `### 🎯 ApplyEditBlockTool - TARGETED CODE MODIFICATION\n`;
+      prompt += `• **Use for**: Replacing exact code blocks in existing files\n`;
+      prompt += `• **Best for**: Function updates, refactoring specific methods, targeted fixes\n`;
+      prompt += `• **Requirement**: Know the exact code to replace\n\n`;
+      
+      prompt += `### 📍 ApplyRangedEditTool - PRECISE LINE EDITING\n`;
+      prompt += `• **Use for**: Line-based modifications with known line numbers\n`;
+      prompt += `• **Best for**: Configuration files, known-position edits, appending content\n`;
+      prompt += `• **Requirement**: Know specific line numbers or use -1 for append\n\n`;
+      
+      prompt += `### ⚙️ ApplyUnifiedDiffTool - COMPLEX OPERATIONS\n`;
+      prompt += `• **Use for**: Multi-file changes, applying existing diffs\n`;
+      prompt += `• **Best for**: Large refactoring, coordinated multi-file updates\n`;
+      prompt += `• **Features**: Supports both single and multi-file diffs\n\n`;
+      
+      prompt += `### 🔄 ReverseDiffTool - ROLLBACK & RECOVERY\n`;
+      prompt += `• **Use for**: Undoing changes, error recovery, A/B testing\n`;
+      prompt += `• **Best for**: Emergency rollbacks, feature toggling\n`;
+      prompt += `• **Features**: Selective file filtering, dry-run support\n\n`;
+
+      prompt += `### 🗑️ DeleteTool - FILE & DIRECTORY REMOVAL\n`;
+      prompt += `• **Files**: Always generates deletion diff\n`;
+      prompt += `• **Empty directories**: No diff generated\n`;
+      prompt += `• **Non-empty directories**: Multi-file diff for all contained files (requires recursive=true)\n\n`;
+
+      prompt += `### 📁 CreateDirectoryTool - STRUCTURE SETUP\n`;
+      prompt += `• **Use for**: Creating project structure\n`;
+      prompt += `• **Note**: No diff generated (directories are metadata, not content)\n\n`;
+
+      // Current workspace state
       if (data.open_files && Object.keys(data.open_files).length > 0) {
-        prompt += "\nFiles currently in focus (or recently read):\n";
-        for (const [path, meta] of Object.entries(data.open_files)) {
-          prompt += `- ${path}`;
+        prompt += `## 📂 CURRENT WORKSPACE STATE\n\n`;
+        prompt += `**Files in focus:**\n`;
+        for (const [filePath, meta] of Object.entries(data.open_files)) {
+          prompt += `• ${filePath}`;
           if (meta.last_read_content) {
-            prompt += ` (preview available)\n`;
+            const lineCount = meta.last_read_content.split('\n').length;
+            prompt += ` (${lineCount} lines available for context)\n`;
           } else {
-            prompt += `\n`;
+            prompt += ` (metadata only)\n`;
           }
         }
+        prompt += `\n`;
       }
 
       if (data.active_diffs && Object.keys(data.active_diffs).length > 0) {
-        prompt += "\nRecent changes (active diffs):\n";
-        for (const [path, diff] of Object.entries(data.active_diffs)) {
-          prompt += `Diff for ${path}:\n\`\`\`diff\n${diff}\n\`\`\`\n`;
+        prompt += `**Recent changes (active diffs):**\n`;
+        for (const [filePath, diff] of Object.entries(data.active_diffs)) {
+          const changeCount = (diff.match(/^[+-]/gm) || []).length;
+          prompt += `• ${filePath}: ${changeCount} line changes\n`;
+          // Only show diff details for small changes to avoid overwhelming the prompt
+          if (changeCount <= 10) {
+            prompt += `\`\`\`diff\n${diff}\n\`\`\`\n`;
+          } else {
+            prompt += `  (Large diff - ${changeCount} lines changed)\n`;
+          }
         }
+        prompt += `\n`;
       }
+
+      // Best practices reminder
+      prompt += `## 🎯 DEVELOPMENT BEST PRACTICES\n\n`;
+      prompt += `1. **File Creation**: Always use ApplyWholeFileEditTool for new files\n`;
+      prompt += `2. **Code Changes**: Use ApplyEditBlockTool for targeted modifications\n`;
+      prompt += `3. **Configuration**: Use ApplyRangedEditTool for config file updates\n`;
+      prompt += `4. **Complex Refactoring**: Use ApplyUnifiedDiffTool for multi-file operations\n`;
+      prompt += `5. **Safety First**: Use dry-run mode for complex operations\n`;
+      prompt += `6. **Change Tracking**: All edit operations automatically generate diffs\n`;
+      prompt += `7. **Reading Files**: Use bash commands (cat, head, tail) for simple file reading\n`;
+      prompt += `8. **System Info**: Use bash commands for directory listing, file stats, etc.\n\n`;
+
+      prompt += `## 💡 QUICK DECISION GUIDE\n\n`;
+      prompt += `**Creating a new file?** → ApplyWholeFileEditTool\n`;
+      prompt += `**Modifying existing code?** → ApplyEditBlockTool (if you know exact code) or ApplyRangedEditTool (if you know lines)\n`;
+      prompt += `**Multiple files at once?** → ApplyUnifiedDiffTool\n`;
+      prompt += `**Need to undo changes?** → ReverseDiffTool\n`;
+      prompt += `**Just reading/checking files?** → Use bash commands (cat, ls, grep, etc.)\n\n`;
       
       return prompt;
     },

@@ -7,6 +7,13 @@ import {
 } from '../interface';
 import { ISandbox, ShellExecutionResult, ExecutionOptions } from '../../sandbox';
 import { NoSandbox } from '../../sandbox/no-sandbox';
+import {
+  generateUnifiedDiff,
+  parseMultiFileDiff,
+  validateDiffFormat,
+  analyzePatchResult,
+  extractFilePathFromDiff
+} from '../diff';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as os from 'os';
@@ -454,29 +461,53 @@ export class NodeJsRuntime implements IRuntime {
     } catch (error: any) {
       console.error('NodeJsRuntime.generateDiff error:', error);
       
-      // Create a basic diff if the diff command fails
-      try {
-        const oldLines = oldContent.split('\n');
-        const newLines = newContent.split('\n');
-        
-        // Simple diff format for fallback
-        const oldPath = options?.oldPath || 'a/file';
-        const newPath = options?.newPath || 'b/file';
-        let diff = `--- ${oldPath}\n+++ ${newPath}\n@@ -1,${oldLines.length} +1,${newLines.length} @@\n`;
-        
-        // Add lines with prefixes
-        for (const line of oldLines) {
-          diff += `-${line}\n`;
-        }
-        for (const line of newLines) {
-          diff += `+${line}\n`;
-        }
-        
-        return diff;
-      } catch (e) {
-        return `--- ${options?.oldPath || 'a/file'}\n+++ ${options?.newPath || 'b/file'}\n@@ -1,1 +1,1 @@\n- [Error generating diff]\n+ [Error generating diff]`;
+      // Use the imported generateUnifiedDiff as fallback
+      return generateUnifiedDiff(oldContent, newContent, options);
+    }
+  }
+
+  /**
+   * Compare two files and generate a unified diff
+   */
+  async compareFiles(
+    oldFilePath: string,
+    newFilePath: string,
+    options?: { oldPath?: string; newPath?: string }
+  ): Promise<string> {
+    // If one or both files don't exist, create a diff showing the difference
+    let oldContent = '';
+    let newContent = '';
+    let oldPath = options?.oldPath || `/dev/null`;
+    let newPath = options?.newPath || `/dev/null`;
+    
+    try {
+      oldContent = await this.readFile(oldFilePath);
+      oldPath = options?.oldPath || `a/${path.basename(oldFilePath)}`;
+    } catch (e: any) {
+      // Check if it's a "file not found" error
+      if (e.message && e.message.includes('ENOENT')) {
+        oldPath = '/dev/null';
+        oldContent = '';
+      } else {
+        throw e; // Re-throw if it's not a "file not found" error
       }
     }
+    
+    try {
+      newContent = await this.readFile(newFilePath);
+      newPath = options?.newPath || `b/${path.basename(newFilePath)}`;
+    } catch (e: any) {
+      // Check if it's a "file not found" error
+      if (e.message && e.message.includes('ENOENT')) {
+        newPath = '/dev/null';
+        newContent = '';
+      } else {
+        throw e; // Re-throw if it's not a "file not found" error
+      }
+    }
+    
+    // Generate diff even if one file doesn't exist
+    return await this.generateDiff(oldContent, newContent, { oldPath, newPath });
   }
 
   /**
@@ -659,7 +690,128 @@ export class NodeJsRuntime implements IRuntime {
     }
   }
 
+  /**
+   * Apply a unified diff (supports both single and multi-file diffs)
+   * The file paths are automatically extracted from the diff content
+   */
   async applyUnifiedDiff(
+    diffContent: string,
+    options?: { 
+      baseDir?: string; 
+      saveDiffPath?: string;
+      dryRun?: boolean;
+    }
+  ): Promise<FileEditResult> {
+    const baseDir = options?.baseDir || process.cwd();
+    const dryRun = options?.dryRun || false;
+    const saveDiffPath = options?.saveDiffPath;
+    
+    // Parse the diff to extract file information
+    const fileDiffs = parseMultiFileDiff(diffContent);
+    
+    if (fileDiffs.length === 0) {
+      return {
+        success: false,
+        message: 'No valid file diffs found in the provided diff content',
+        changesApplied: 0,
+        affectedFiles: [],
+        isMultiFile: false
+      };
+    }
+    
+    const isMultiFile = fileDiffs.length > 1;
+    const affectedFiles: string[] = [];
+    const multiFileResults: FileEditResult['multiFileResults'] = [];
+    let totalChangesApplied = 0;
+    let overallSuccess = true;
+    let savedDiffPathResult: string | undefined;
+    
+    // Save diff to specified path if requested
+    if (saveDiffPath) {
+      try {
+        const diffDir = path.dirname(saveDiffPath);
+        await fs.mkdir(diffDir, { recursive: true });
+        await fs.writeFile(saveDiffPath, diffContent, 'utf-8');
+        savedDiffPathResult = saveDiffPath;
+      } catch (error: any) {
+        console.error(`Failed to save diff to ${saveDiffPath}:`, error);
+        // Continue with the operation even if saving fails
+      }
+    }
+    
+    // Process each file diff
+    for (const fileDiff of fileDiffs) {
+      try {
+        // Determine the target file path
+        let targetPath = extractFilePathFromDiff(fileDiff.oldPath, fileDiff.newPath);
+        
+        // Make path absolute relative to baseDir
+        const absolutePath = path.isAbsolute(targetPath) 
+          ? targetPath 
+          : path.join(baseDir, targetPath);
+        
+        affectedFiles.push(absolutePath);
+        
+        if (dryRun) {
+          // In dry run mode, just validate the diff without applying
+          multiFileResults?.push({
+            filePath: absolutePath,
+            success: true,
+            message: `[DRY RUN] Would apply diff to ${absolutePath}`,
+            changesApplied: 1
+          });
+          totalChangesApplied++;
+        } else {
+          // Apply the diff to this specific file using the legacy method
+          const result = await this.applyUnifiedDiffLegacy(absolutePath, fileDiff.diffContent);
+          
+          multiFileResults?.push({
+            filePath: absolutePath,
+            success: result.success,
+            message: result.message,
+            changesApplied: result.changesApplied || 0
+          });
+          
+          if (result.success) {
+            totalChangesApplied += result.changesApplied || 0;
+          } else {
+            overallSuccess = false;
+          }
+        }
+      } catch (error: any) {
+        const errorMessage = `Error processing file diff: ${error.message}`;
+        
+        multiFileResults?.push({
+          filePath: fileDiff.newPath || fileDiff.oldPath,
+          success: false,
+          message: errorMessage,
+          changesApplied: 0
+        });
+        
+        overallSuccess = false;
+      }
+    }
+    
+    const message = dryRun 
+      ? `[DRY RUN] Would process ${fileDiffs.length} files: ${totalChangesApplied} changes would be applied`
+      : `Processed ${fileDiffs.length} files: ${totalChangesApplied} changes applied, ${overallSuccess ? 'all successful' : 'some failed'}`;
+    
+    return {
+      success: overallSuccess,
+      message,
+      diff: diffContent,
+      changesApplied: totalChangesApplied,
+      affectedFiles,
+      savedDiffPath: savedDiffPathResult,
+      isMultiFile,
+      multiFileResults: isMultiFile ? multiFileResults : undefined
+    };
+  }
+  
+  /**
+   * Legacy method for applying diff to a single file (for backward compatibility)
+   */
+  private async applyUnifiedDiffLegacy(
     filePath: string,
     diffContent: string
   ): Promise<FileEditResult> {
@@ -690,14 +842,28 @@ export class NodeJsRuntime implements IRuntime {
       // 2. Write patch content to a temporary file
       await fs.writeFile(patchFilePath, diffContent, 'utf-8');
 
-      // 3. Construct and execute the patch command
+      // 3. Validate diff format before applying
+      const diffValidation = validateDiffFormat(diffContent);
+      if (!diffValidation.isValid) {
+        return {
+          success: false,
+          message: `Invalid diff format for ${filePath}: ${diffValidation.errors.join('; ')}`,
+          diff: diffContent,
+          changesApplied: 0
+        };
+      }
+
+      // 4. Construct and execute the patch command
       // The `-N` flag helps to ignore patches that have already been applied.
       // The `-r -` tells patch to ignore reject files (prevents .rej files from being created)
       const patchCommand = `patch -u -N -r - -o "${outputFilePath}" "${originalFilePath}" "${patchFilePath}"`;
       
       const result = await this.sandbox.executeSecurely(patchCommand, { cwd: tempDir });
 
-      if (result.exitCode === 0 || result.exitCode === 1) { // Exit code 1 can mean successful patch with fuzz
+      // 5. Analyze patch result with detailed error information
+      const patchAnalysis = analyzePatchResult(result.exitCode, result.stdout, result.stderr, diffContent, filePath);
+      
+      if (patchAnalysis.success) {
         // If patch command creates an empty output file when the patch deletes the whole file, handle this.
         let newContent = '';
         try {
@@ -720,13 +886,24 @@ export class NodeJsRuntime implements IRuntime {
           }
         }
 
+        // Check if this is a file deletion case (empty output content + deletion diff)
+        if (newContent === '' && diffContent.includes('+++ /dev/null')) {
+          // This is a file deletion - remove the original file
+          if (fileExisted) {
+            await fs.unlink(filePath);
+          }
+          return { 
+            success: true, 
+            message: `File ${filePath} patched successfully (deleted).`, 
+            diff: diffContent, 
+            changesApplied: 1 
+          };
+        }
+
         const targetDir = path.dirname(filePath);
         await fs.mkdir(targetDir, { recursive: true });
         await fs.writeFile(filePath, newContent, 'utf-8');
         
-        // It's useful to return the applied diff or confirm changes
-        // For simplicity, we return the input diffContent. A more robust solution
-        // might generate a diff between oldContent and newContent if different.
         return { 
           success: true, 
           message: `File ${filePath} patched successfully. Exit code: ${result.exitCode}. Stdout: ${result.stdout} Stderr: ${result.stderr}`, 
@@ -736,17 +913,163 @@ export class NodeJsRuntime implements IRuntime {
       } else {
         return { 
           success: false, 
-          message: `Failed to apply patch to ${filePath}. Exit code: ${result.exitCode}. Stderr: ${result.stderr}. Stdout: ${result.stdout}`,
-          diff: diffContent 
+          message: patchAnalysis.detailedError,
+          diff: diffContent,
+          changesApplied: 0
         };
       }
     } catch (error: any) {
       return { success: false, message: `Error applying diff to ${filePath}: ${error.message}`, diff: diffContent };
     } finally {
-      // 4. Clean up temporary files and directory
+      // 6. Clean up temporary files and directory
       await fs.rm(tempDir, { recursive: true, force: true }).catch(err => {
         console.error(`Failed to remove temporary directory ${tempDir}:`, err);
       });
+    }
+  }
+
+  /**
+   * Check if this runtime is available
+   */
+  async isAvailable(): Promise<boolean> {
+    return true; // Node.js runtime is always available
+  }
+
+  /**
+   * Apply a unified diff from a file
+   */
+  async applyUnifiedDiffFromFile(
+    diffFilePath: string,
+    options?: { 
+      baseDir?: string; 
+      saveDiffPath?: string;
+      dryRun?: boolean;
+    }
+  ): Promise<FileEditResult> {
+    try {
+      const diffContent = await fs.readFile(diffFilePath, 'utf-8');
+      return this.applyUnifiedDiff(diffContent, options);
+    } catch (error: any) {
+      return {
+        success: false,
+        message: `Error reading diff file ${diffFilePath}: ${error.message}`,
+        changesApplied: 0,
+        affectedFiles: [],
+        isMultiFile: false
+      };
+    }
+  }
+  
+  /**
+   * Reverse apply a unified diff (undo changes)
+   */
+  async reverseApplyUnifiedDiff(
+    diffContent: string,
+    options?: { 
+      baseDir?: string; 
+      saveDiffPath?: string;
+      dryRun?: boolean;
+    }
+  ): Promise<FileEditResult> {
+    const baseDir = options?.baseDir || process.cwd();
+    const dryRun = options?.dryRun || false;
+    const saveDiffPath = options?.saveDiffPath;
+    
+    // Create a temporary file for the reverse patch
+    const tempDiffFile = path.join(os.tmpdir(), `reverse-diff-${Date.now()}.patch`);
+    
+    try {
+      await fs.writeFile(tempDiffFile, diffContent, 'utf-8');
+      
+      // Use git apply --reverse to reverse the patch
+      const result = await this.sandbox.executeSecurely(
+        `git apply --reverse "${tempDiffFile}"`,
+        { cwd: baseDir }
+      );
+      
+      if (result.exitCode === 0) {
+        let savedDiffPathResult: string | undefined;
+        
+        // Save diff to specified path if requested
+        if (saveDiffPath) {
+          try {
+            const diffDir = path.dirname(saveDiffPath);
+            await fs.mkdir(diffDir, { recursive: true });
+            await fs.writeFile(saveDiffPath, diffContent, 'utf-8');
+            savedDiffPathResult = saveDiffPath;
+          } catch (error: any) {
+            console.error(`Failed to save diff to ${saveDiffPath}:`, error);
+            // Continue with the operation even if saving fails
+          }
+        }
+        
+        // Parse affected files from diff
+        const fileDiffs = parseMultiFileDiff(diffContent);
+        const affectedFiles = fileDiffs.map(fd => {
+          const targetPath = fd.oldPath !== '/dev/null' ? fd.oldPath : fd.newPath;
+          return path.isAbsolute(targetPath) ? targetPath : path.join(baseDir, targetPath.replace(/^[ab]\//, ''));
+        });
+        
+        return {
+          success: true,
+          message: dryRun 
+            ? `[DRY RUN] Would reverse apply diff affecting ${fileDiffs.length} files`
+            : `Successfully reverse applied diff affecting ${fileDiffs.length} files`,
+          diff: diffContent,
+          changesApplied: fileDiffs.length,
+          affectedFiles,
+          savedDiffPath: savedDiffPathResult,
+          isMultiFile: fileDiffs.length > 1
+        };
+      } else {
+        return {
+          success: false,
+          message: `Failed to reverse apply diff. Exit code: ${result.exitCode}. Stderr: ${result.stderr}`,
+          diff: diffContent,
+          changesApplied: 0,
+          affectedFiles: [],
+          isMultiFile: false
+        };
+      }
+    } catch (error: any) {
+      return {
+        success: false,
+        message: `Error reverse applying diff: ${error.message}`,
+        diff: diffContent,
+        changesApplied: 0,
+        affectedFiles: [],
+        isMultiFile: false
+      };
+    } finally {
+      // Clean up temporary file
+      await fs.unlink(tempDiffFile).catch(err => {
+        console.error(`Failed to remove temporary diff file ${tempDiffFile}:`, err);
+      });
+    }
+  }
+  
+  /**
+   * Reverse apply a unified diff from a file
+   */
+  async reverseApplyUnifiedDiffFromFile(
+    diffFilePath: string,
+    options?: { 
+      baseDir?: string; 
+      saveDiffPath?: string;
+      dryRun?: boolean;
+    }
+  ): Promise<FileEditResult> {
+    try {
+      const diffContent = await fs.readFile(diffFilePath, 'utf-8');
+      return this.reverseApplyUnifiedDiff(diffContent, options);
+    } catch (error: any) {
+      return {
+        success: false,
+        message: `Error reading diff file ${diffFilePath}: ${error.message}`,
+        changesApplied: 0,
+        affectedFiles: [],
+        isMultiFile: false
+      };
     }
   }
 
@@ -761,13 +1084,6 @@ export class NodeJsRuntime implements IRuntime {
     resultData?: any;
   }> {
     throw new Error('Method not implemented.');
-  }
-
-  /**
-   * Check if this runtime is available
-   */
-  async isAvailable(): Promise<boolean> {
-    return true; // Node.js runtime is always available
   }
 }
 
@@ -833,6 +1149,14 @@ export class NodeJsSandboxedRuntime implements IRuntime {
     return this.runtime.generateDiff(oldContent, newContent, options);
   }
   
+  async compareFiles(
+    oldFilePath: string,
+    newFilePath: string,
+    options?: { oldPath?: string; newPath?: string }
+  ): Promise<string> {
+    return this.runtime.compareFiles(oldFilePath, newFilePath, options);
+  }
+  
   async execute(
     command: string,
     options?: ExecutionOptions
@@ -860,10 +1184,47 @@ export class NodeJsSandboxedRuntime implements IRuntime {
   }
   
   async applyUnifiedDiff(
-    filePath: string,
-    diffContent: string
+    diffContent: string,
+    options?: { 
+      baseDir?: string; 
+      saveDiffPath?: string;
+      dryRun?: boolean;
+    }
   ): Promise<FileEditResult> {
-    return this.runtime.applyUnifiedDiff(filePath, diffContent);
+    return this.runtime.applyUnifiedDiff(diffContent, options);
+  }
+  
+  async applyUnifiedDiffFromFile(
+    diffFilePath: string,
+    options?: { 
+      baseDir?: string; 
+      saveDiffPath?: string;
+      dryRun?: boolean;
+    }
+  ): Promise<FileEditResult> {
+    return this.runtime.applyUnifiedDiffFromFile(diffFilePath, options);
+  }
+  
+  async reverseApplyUnifiedDiff(
+    diffContent: string,
+    options?: { 
+      baseDir?: string; 
+      saveDiffPath?: string;
+      dryRun?: boolean;
+    }
+  ): Promise<FileEditResult> {
+    return this.runtime.reverseApplyUnifiedDiff(diffContent, options);
+  }
+  
+  async reverseApplyUnifiedDiffFromFile(
+    diffFilePath: string,
+    options?: { 
+      baseDir?: string; 
+      saveDiffPath?: string;
+      dryRun?: boolean;
+    }
+  ): Promise<FileEditResult> {
+    return this.runtime.reverseApplyUnifiedDiffFromFile(diffFilePath, options);
   }
   
   async executeCode(

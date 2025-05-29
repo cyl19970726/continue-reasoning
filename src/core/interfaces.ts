@@ -489,7 +489,7 @@ export interface IClient<InputSchema extends z.ZodObject<any>,OutputSchema exten
 // 标准化的工具执行结果基础格式
 export const BaseToolResultSchema = z.object({
     success: z.boolean().describe("Whether the tool execution was successful"),
-    error: z.string().optional().describe("Error message if execution failed")
+    message: z.string().optional().describe("Message about the tool execution success or error")
 }).describe("Base tool execution result format with success/error fields");
 
 export type BaseToolResult = z.infer<typeof BaseToolResultSchema>;

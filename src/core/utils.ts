@@ -191,7 +191,7 @@ export function createContextSearchTool<
     outputSchema: z.object({
       success: z.boolean(),
       items: z.array(z.any()),
-      error: z.string().optional()
+      message: z.string().optional()
     }),
     async: true,
     execute: async (params, agent) => {
@@ -234,7 +234,7 @@ export function createContextSearchTool<
         return {
           success: false,
           items: [],
-          error: error instanceof Error ? error.message : String(error)
+          message: error instanceof Error ? error.message : String(error)
         };
       }
     }

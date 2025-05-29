@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "start-cli-coding-agent": "tsx examples/cli-with-agent.ts",
     "start-agent": "tsx src/core/start.ts",
     "start-agent:debug": "tsx src/core/start.ts --log-level debug",
     "start-agent:info": "tsx src/core/start.ts --log-level info",

@@ -1,6 +1,19 @@
 // src/core/contexts/coding/toolsets/index.ts
-export * from './filesystem-tools';
-export * from './runtime-tools';
-export * from './editing-strategy-tools';
-export * from './bash';
-// Add other toolset exports here later (e.g., editing-strategy-tools) 
+
+// Main editing strategy tools (includes enhanced file operations with diff support)
+export { 
+  ReadFileTool,
+  ApplyWholeFileEditTool,
+  ApplyEditBlockTool,
+  ApplyRangedEditTool,
+  ApplyUnifiedDiffTool,
+  ReverseDiffTool,
+  DeleteTool,
+  CreateDirectoryTool,
+  CompareFilesTool,
+  EditingStrategyToolSet,
+  EditingStrategyToolExamples
+} from './editing-strategy-tools';
+
+// Re-export bash tools for system operations and simple file reading
+export { BashToolSet } from './bash'; 

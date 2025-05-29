@@ -1,6 +1,6 @@
 # Gemini Coding Agent: Core Components & Tooling
 
-This document outlines the core components within the `src/core/contexts/coding` directory, focusing on the `CodingContext`, `IRuntime`, `ISandbox`, and the various toolsets that enable the Gemini Coding Agent to understand and modify code.
+This document outlines the core components within the `src/core/contexts/coding` directory, focusing on the `CodingContext`, `IRuntime`, `ISandbox`, and the streamlined toolsets that enable the Gemini Coding Agent to understand and modify code.
 
 ## Architecture Overview
 
@@ -9,7 +9,7 @@ The Gemini Coding Agent relies on a few key abstractions:
 1.  **`CodingContext` (`coding-context.ts`)**:
     *   Manages the overall state for a coding task (current workspace, open files, active diffs, selected editing strategy).
     *   Provides access to the `IRuntime` and `ISandbox` instances.
-    *   Supplies the `GeminiCodingAgentTools` toolset to the LLM.
+    *   Supplies a streamlined toolset to the LLM, focused on code development workflow.
 
 2.  **`IRuntime` (`runtime/interface.ts`)**:
     *   Defines a comprehensive interface for an execution environment.
@@ -18,7 +18,7 @@ The Gemini Coding Agent relies on a few key abstractions:
         *   Advanced code editing strategies (`applyEditBlock`, `applyRangedEdit`, `applyUnifiedDiff`).
         *   Listing directories (`listDirectory`), getting file status (`getFileStatus`).
         *   Deleting files (`deleteFile`), creating directories (`createDirectory`).
-        *   Generating diffs (`generateDiff`).
+        *   Generating diffs (`generateDiff`, `reverseDiff`).
         *   Executing arbitrary shell commands (`execute`).
         *   Executing code snippets in various languages (`executeCode` - currently stubbed).
     *   The primary implementation is `NodeJsRuntime` (`runtime/impl/node-runtime.ts`), which uses Node.js's `fs` module for file operations and can use an `ISandbox` for its `execute` and `executeCode` methods.
@@ -31,124 +31,102 @@ The Gemini Coding Agent relies on a few key abstractions:
 
 ## Toolsets (`toolsets/`)
 
-The `CodingContext` provides a unified toolset (`GeminiCodingAgentTools`) composed of several specialized toolsets:
+The `CodingContext` provides a streamlined toolset composed of two specialized toolsets:
 
-### 1. `GeminiFileSystemToolSet` (`toolsets/filesystem-tools.ts`)
+### 1. `EditingStrategyToolSet` (`toolsets/editing-strategy-tools.ts`)
 
-These tools interact with the `IRuntime` to perform common file system operations.
+**PRIMARY TOOLSET for code development and file operations.** These tools leverage the specialized editing methods of the `IRuntime` to apply changes to files in various ways. All editing tools return a `FileEditResult` containing a `diff` of the changes for change tracking.
 
-*   **`ReadFile`**: Reads a whole file or a specific line range.
-    *   LLM Usage: "Read `src/utils/parser.ts` from line 10 to 20."
-    *   Example Call: `ReadFile({ path: "src/utils/parser.ts", start_line: 10, end_line: 20 })`
-*   **`WriteFile`**: Writes content to a file. Can overwrite, append, or create. Returns a diff if overwriting/creating.
-    *   LLM Usage: "Create a new file `config.json` with the content: `{\\"theme\\": \\"dark\\"}`"
-    *   Example Call: `WriteFile({ path: "config.json", content: "{\\"theme\\": \\"dark\\"}", mode: "create_or_overwrite" })`
-*   **`ListDirectory`**: Lists files and subdirectories.
-    *   LLM Usage: "List all files in the `src/components` directory."
-    *   Example Call: `ListDirectory({ path: "src/components" })`
-*   **`GetFileStatus`**: Gets metadata like size, type, modification time.
-    *   LLM Usage: "What is the size of `README.md`?"
-    *   Example Call: `GetFileStatus({ path: "README.md" })`
-*   **`DeleteFile`**: Deletes a file.
-    *   LLM Usage: "Delete the temporary file `temp_output.txt`."
-    *   Example Call: `DeleteFile({ path: "temp_output.txt" })`
-*   **`CreateDirectory`**: Creates a new directory.
-    *   LLM Usage: "Create a new folder named `assets/images`."
-    *   Example Call: `CreateDirectory({ path: "assets/images", recursive: true })`
+*   **`ApplyWholeFileEditTool`** - **PRIMARY FILE CREATION TOOL**:
+    *   **Use for**: Creating new files, complete file replacement, initial implementations
+    *   **Features**: Automatic directory creation, comprehensive diff generation
+    *   **LLM Usage**: "Create a new React component `Button.tsx` with the following content: [component code]"
+    *   **Example Call**: `ApplyWholeFileEditTool({ path: "src/components/Button.tsx", content: "export const Button = () => <button>Click</button>;" })`
 
-### 2. `GeminiEditingStrategyToolSet` (`toolsets/editing-strategy-tools.ts`)
+*   **`ApplyEditBlockTool`** - **TARGETED CODE MODIFICATION**:
+    *   **Use for**: Replacing exact code blocks in existing files, function updates, targeted refactoring
+    *   **Features**: Exact pattern matching for reliable code replacement
+    *   **LLM Usage**: "In `utils.ts`, replace the `parseData` function with an improved version"
+    *   **Example Call**: `ApplyEditBlockTool({ path: "utils.ts", searchBlock: "function parseData(data) { return data; }", replaceBlock: "function parseData(data) { return JSON.parse(data); }" })`
 
-These tools leverage the specialized editing methods of the `IRuntime` to apply changes to files in various ways. All these tools return a `FileEditResult` containing a `diff` of the changes.
+*   **`ApplyRangedEditTool`** - **PRECISE LINE EDITING**:
+    *   **Use for**: Line-based modifications with known line numbers, configuration files, appending content
+    *   **Features**: Supports line ranges, append mode (-1, -1), insertion
+    *   **LLM Usage**: "In `config.json`, replace lines 5-7 with new configuration"
+    *   **Example Call**: `ApplyRangedEditTool({ path: "config.json", content: "  \"newSetting\": true", startLine: 5, endLine: 7 })`
 
-*   **`ApplyWholeFileEdit`**:
-    *   **Description**: Overwrites an entire file with new content or creates a new file.
-    *   **Underlying `IRuntime` method**: Primarily uses `IRuntime.writeFile()` with `mode: 'create_or_overwrite'`. The diff is generated by `writeFile` itself or by calling `IRuntime.generateDiff()`.
-    *   **LLM Usage**: "Replace the entire content of `main.py` with the following: [new python code]"
-    *   **Example Call**: `ApplyWholeFileEdit({ path: "main.py", content: "print('Hello, World!')" })`
-    *   **Cooperation**: Useful for full rewrites or creating new files. The `ReadFileTool` can be used first to understand the current content if only minor changes to a large file are intended (in which case, other strategies might be better).
+*   **`ApplyUnifiedDiffTool`** - **COMPLEX OPERATIONS**:
+    *   **Use for**: Multi-file changes, applying existing diffs, large refactoring operations
+    *   **Features**: Supports both single and multi-file diffs, dry-run mode
+    *   **LLM Usage**: "Apply this refactoring diff across multiple files"
+    *   **Example Call**: `ApplyUnifiedDiffTool({ diffContent: "--- a/file1.js...", options: { dryRun: false } })`
 
-*   **`ApplyRangedEditTool` (To be added to `GeminiEditingStrategyToolSet` once fully tested/implemented based on `IRuntime.applyRangedEdit`)**:
-    *   **Description**: Modifies a specific range of lines in a file or appends to it.
-    *   **Underlying `IRuntime` method**: `IRuntime.applyRangedEdit(filePath, contentToApply, startLine, endLine)`
-    *   **LLM Usage (Conceptual - tool not yet in toolset array)**:
-        *   "In `utils.ts`, replace lines 15 to 20 with the following code: [new typescript code]"
-        *   "Append these two lines to `requirements.txt`: [new dependencies]"
-    *   **Example Call (Conceptual)**: `ApplyRangedEditTool({ path: "utils.ts", content_to_apply: "const newVar = 10;", start_line: 15, end_line: 15 })`
-    *   **Cooperation**: Ideal for targeted changes when the LLM knows the exact lines to modify or wants to append. It\'s more precise than `ApplyWholeFileEdit` for localized changes. The `ReadFileTool` can provide context for identifying line numbers.
+*   **`ReverseDiffTool`** - **ROLLBACK & RECOVERY**:
+    *   **Use for**: Undoing changes, error recovery, feature toggling, A/B testing
+    *   **Features**: Complete diff reversal, selective file filtering, dry-run support
+    *   **LLM Usage**: "Undo the last batch of changes to the authentication module"
+    *   **Example Call**: `ReverseDiffTool({ diffContent: "[previous diff]", options: { includeFiles: ["auth.js"] } })`
 
-*   **`ApplyEditBlockTool` (To be added to `GeminiEditingStrategyToolSet` once fully tested/implemented based on `IRuntime.applyEditBlock`)**:
-    *   **Description**: Searches for a specific block of code (`search_block`) and replaces its first occurrence with `replace_block`. (Current implementation focuses on exact match).
-    *   **Underlying `IRuntime` method**: `IRuntime.applyEditBlock(filePath, searchBlock, replaceBlock, options)`
-    *   **LLM Usage (Conceptual - tool not yet in toolset array)**: "In `styles.css`, find the block defining `.main-container` and replace it with: [new CSS block]"
-    *   **Example Call (Conceptual)**: `ApplyEditBlockTool({ path: "styles.css", search_block: ".main-container { color: red; }", replace_block: ".main-container { color: blue; }" })`
-    *   **Cooperation**: Good when the LLM can identify a unique block of existing code to modify. `ReadFileTool` helps the LLM find suitable `search_block`s. Less prone to line number errors than ranged edits if the file structure is dynamic but content blocks are stable.
+*   **Supporting Tools**:
+    *   **`ReadFileTool`**: Enhanced file reading with context tracking and diff support
+    *   **`DeleteTool`**: File and directory deletion with automatic diff generation for tracking
+    *   **`CreateDirectoryTool`**: Directory creation (no diff generated as directories are metadata)
+    *   **`CompareFilesTool`**: Generate diffs between files for analysis
 
-*   **`ApplyUnifiedDiffTool` (To be added to `GeminiEditingStrategyToolSet` once fully tested/implemented based on `IRuntime.applyUnifiedDiff`)**:
-    *   **Description**: Applies a standard unified diff patch to a file.
-    *   **Underlying `IRuntime` method**: `IRuntime.applyUnifiedDiff(filePath, diffContent)`
-    *   **LLM Usage (Conceptual - tool not yet in toolset array)**: "Apply the following diff to `config.py`: [unified diff string]"
-    *   **Example Call (Conceptual)**: `ApplyUnifiedDiffTool({ path: "config.py", diff_content: "--- a/config.py\\n+++ b/config.py\\n@@ -1,2 +1,2 @@\\n-DEBUG = True\\n+DEBUG = False\\n # more settings..." })`
-    *   **Cooperation**: Powerful for complex changes if the LLM can reliably generate correct diffs. Can be combined with `ReadFileTool` for the LLM to generate a diff against the current content.
+### 2. `BashToolSet` (`toolsets/bash.ts`)
 
-### 3. `GeminiRuntimeToolSet` (`toolsets/runtime-tools.ts`)
+**For system operations and simple file reading.** Use bash commands for non-code-development tasks.
 
-These tools provide access to the execution capabilities of the `IRuntime`.
+*   **`BashCommandTool`**: Direct execution of bash commands with sandboxing
+    *   **Use for**: Reading files (`cat`, `head`, `tail`), listing directories (`ls`, `find`), project operations (`npm install`, `npm test`, `npm run build`), system information
+    *   **Features**: Configurable timeouts, network control, writable path restrictions
+    *   **LLM Usage**: "Run the test suite to check if the changes work correctly"
+    *   **Example Call**: `BashCommandTool({ command: "npm test", timeout_ms: 60000 })`
 
-*   **`ExecuteShellCommand`**: Executes a shell command using `IRuntime.execute()`. The runtime decides how to execute this (e.g., via its internal sandbox).
-    *   LLM Usage: "Run `npm install` in the current workspace."
-    *   Example Call: `ExecuteShellCommand({ command: "npm install" })`
-    *   Cooperation: Used for build commands, running scripts, or any general terminal operation. Works in conjunction with file system tools (e.g., write a script then execute it).
+## Tool Selection Guidelines
 
-*   **`ExecuteCodeTool` (Future)**: Will execute code snippets (e.g., Python, JavaScript) using `IRuntime.executeCode()`.
+### When to Use Bash Tools:
+- Simple file reading: `cat README.md`, `head -20 large-file.txt`
+- Directory exploration: `ls -la src/`, `find . -name "*.ts"`
+- Project operations: `npm install`, `npm test`, `yarn build`
+- System information: `pwd`, `whoami`, `df -h`
 
-### 4. `GeminiBashToolSet` (`toolsets/bash.ts`)
+### When to Use Editing Strategy Tools:
+- **Any code development or file modification**
+- Creating new files or components
+- Modifying existing code
+- Refactoring operations
+- Configuration file updates
+- Change tracking and rollback scenarios
 
-This toolset is for direct, sandboxed execution of bash commands when fine-grained control is needed by the LLM itself.
+## Development Workflow
 
-*   **`BashCommand`**: Executes a bash command using `ISandbox.executeSecurely()`. Allows specifying `cwd`, `timeout`, `writable_paths`, and `allow_network`.
-    *   LLM Usage: "Run the command `echo \\'test\\' > /tmp/test_output.txt` with network disabled and a timeout of 5 seconds, ensuring `/tmp` is writable."
-    *   Example Call: `BashCommand({ command: "echo \'test\' > /tmp/test_output.txt", writable_paths: ["/tmp"], allow_network: false, timeout_ms: 5000 })`
-    *   Cooperation: Useful when the LLM needs to perform specific, isolated operations with precise control over the execution environment, distinct from the general `ExecuteShellCommand`.
+1.  **Understand Context**: Use `BashCommandTool` for simple file reading (`cat config.js`) or `ReadFileTool` for tracked reading
+2.  **Choose Editing Strategy**: 
+    *   New file → `ApplyWholeFileEditTool`
+    *   Known code block → `ApplyEditBlockTool` 
+    *   Known line numbers → `ApplyRangedEditTool`
+    *   Complex multi-file → `ApplyUnifiedDiffTool`
+3.  **Execute and Track**: All editing tools generate diffs automatically for change tracking
+4.  **Project Operations**: Use `BashCommandTool` for builds, tests, dependency management
 
-## Development Workflow with Editing Tools
+**Example Scenario: Adding a new API endpoint**
 
-1.  **Understand Context**: The agent (LLM) uses `ReadFileTool` to load the content of files it needs to modify or understand. `ListDirectoryTool` and `GetFileStatusTool` help explore the workspace.
-2.  **Choose a Strategy**: Based on the task and file content, the LLM decides on an editing strategy:
-    *   Small, precise change at known lines: `ApplyRangedEditTool`.
-    *   Replacing a known, unique block of code: `ApplyEditBlockTool`.
-    *   Full rewrite or new file: `ApplyWholeFileEditTool` (or `WriteFileTool` directly).
-    *   Complex, multi-part change (if LLM can generate a diff): `ApplyUnifiedDiffTool`.
-3.  **Formulate the Tool Call**: The LLM constructs the parameters for the chosen editing tool.
-    *   For `ApplyRangedEditTool`, it specifies the file path, the new content for the range, and the start/end lines.
-    *   For `ApplyEditBlockTool`, it provides the file path, the exact `search_block` to find, and the `replace_block`.
-    *   For `ApplyUnifiedDiffTool`, it provides the path and the `diff_content`.
-4.  **Execute and Observe**: The tool is executed. The `IRuntime` implementation performs the edit.
-5.  **Review Diff**: ALL editing strategy tools (and `WriteFileTool` in overwrite modes) return a `FileEditResult` containing a `diff` field. The `CodingContext` stores these in `active_diffs`, and the `renderPrompt()` method makes these visible to the LLM for subsequent turns. This allows the LLM to:
-    *   Verify the change was applied as expected.
-    *   Understand the precise modifications made.
-    *   Use the diff as context for further operations or explanations to the user.
-6.  **Iterate**: If the change wasn\'t correct, the LLM can try a different strategy, adjust parameters, or use `ReadFileTool` again to see the current state before attempting another edit.
+1.  **LLM**: "I need to add a new API endpoint for user authentication"
+2.  **Read existing code**: `BashCommandTool({ command: "cat src/api/routes.js" })` (simple read)
+3.  **Create new endpoint file**: `ApplyWholeFileEditTool({ path: "src/api/auth.js", content: "[new auth endpoint code]" })`
+4.  **Update main routes**: `ApplyEditBlockTool({ path: "src/api/routes.js", searchBlock: "// API routes", replaceBlock: "// API routes\napp.use('/auth', require('./auth'));" })`
+5.  **Test the changes**: `BashCommandTool({ command: "npm test" })`
+6.  **If issues, rollback**: `ReverseDiffTool({ diffContent: "[previous changes]" })`
 
-**Example Scenario: Renaming a variable in a function**
-
-1.  **LLM**: "I need to rename the variable `oldCount` to `newCount` in the function `calculateMetrics` in `analyzer.py`."
-2.  **Agent**: Calls `ReadFileTool({ path: "analyzer.py" })`.
-3.  **LLM (receives content)**: Identifies the `calculateMetrics` function.
-    *   *Option A (Ranged Edit)*: "The variable `oldCount` is on line 45. I will replace line 45."
-        *   Calls `ApplyRangedEditTool({ path: "analyzer.py", content_to_apply: "    newCount = data.length;", start_line: 45, end_line: 45 })`
-    *   *Option B (Edit Block)*: "I will find the line `    oldCount = data.length;` and replace it."
-        *   Calls `ApplyEditBlockTool({ path: "analyzer.py", search_block: "    oldCount = data.length;", replace_block: "    newCount = data.length;" })`
-4.  **Agent (receives `FileEditResult` with a diff)**: Updates `CodingContext.active_diffs`.
-5.  **LLM (in next prompt, sees the diff)**: "The variable rename was successful. The diff shows `oldCount` changed to `newCount`."
-
-This iterative process, supported by various editing tools and the feedback via diffs, allows the agent to perform complex coding tasks more reliably.
+This streamlined approach separates concerns: bash for system operations, editing strategy tools for code development.
 
 ## Testing (Vitest)
 
 * The coding agent codebase is fully covered by a **Vitest** suite located under `src/core/contexts/coding/tests` and `tests/` at the workspace root.
 * Core-module functions such as `os.platform` are treated as non-configurable; tests avoid hard mocks and rely on conditional execution or wrapper helpers.
 * The macOS `SeatbeltSandbox` tests execute against the real `/usr/bin/sandbox-exec` binary when present, verifying profile creation/cleanup.  Heavy mocks are used only for negative paths (e.g. binary missing, permission denied).
-* Tool-level tests (`FilesystemTools`, `EditingStrategyTools`, etc.) instantiate lightweight mocks for `IRuntime`, `IAgent`, and `CodingContext` to validate public contracts without touching the filesystem.
+* Tool-level tests (`EditingStrategyTools`, `BashTools`, etc.) instantiate lightweight mocks for `IRuntime`, `IAgent`, and `CodingContext` to validate public contracts without touching the filesystem.
 * Run the whole suite with:
 
 ```bash

@@ -50,7 +50,7 @@ async function main() {
     30, // maxSteps
     LogLevel.INFO,
     {
-      model: OPENAI_MODELS.GPT_4O,
+      model: OPENAI_MODELS.GPT_4O_MINI,
       enableParallelToolCalls: false,
       temperature: 0.7,
       maxTokens: 200000,
@@ -59,9 +59,9 @@ async function main() {
     },
     [
       PlanContext, 
+      codingContext, 
       UserInputContext, 
       InteractiveContext, 
-      codingContext, 
       ToolCallContext,
     ], // 添加所有 interaction 和 coding contexts
     eventBus // 传递 EventBus
@@ -94,6 +94,8 @@ async function main() {
   console.log(chalk.cyan('\n📋 Available Commands:'));
   console.log(chalk.white('  /help - Show help'));
   console.log(chalk.white('  /mode [auto|manual|supervised] - Switch execution mode'));
+  console.log(chalk.white('  /multiline - Start multi-line input mode'));
+  console.log(chalk.white('  /file <path> - Load and send file content'));
   console.log(chalk.white('  /history - Show command history'));
   console.log(chalk.white('  /clear - Clear screen'));
   console.log(chalk.white('  /events - Show active events'));
@@ -105,6 +107,19 @@ async function main() {
   console.log(chalk.gray('  - In MANUAL mode: Agent requests approval for risky actions'));
   console.log(chalk.gray('  - In SUPERVISED mode: Agent provides detailed explanations'));
   console.log(chalk.gray('  - Type your requests naturally, the agent will understand'));
+  console.log(chalk.gray('  - Use /file <path> to load file content directly'));
+  
+  console.log(chalk.yellow('\n📝 Multi-line Input Guide:'));
+  console.log(chalk.gray('  1. Type ### and press Enter to start multi-line mode'));
+  console.log(chalk.gray('  2. Type your message with line breaks (Enter creates new lines)'));
+  console.log(chalk.gray('  3. Type ### and press Enter to finish and send the message'));
+  console.log(chalk.gray('  Example:'));
+  console.log(chalk.cyan('    ### ← Start multi-line mode'));
+  console.log(chalk.cyan('    Create a React component with:'));
+  console.log(chalk.cyan('    - useState for state management'));
+  console.log(chalk.cyan('    - useEffect for side effects'));
+  console.log(chalk.cyan('    - TypeScript interfaces'));
+  console.log(chalk.cyan('    ### ← End multi-line mode and send'));
 
   console.log(chalk.green('\n🎯 Available Capabilities:'));
   console.log(chalk.white('  📝 Planning: Create and manage task plans'));
