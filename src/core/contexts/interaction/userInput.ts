@@ -36,6 +36,7 @@ const ReplyToUserTool = createTool({
     }).optional().describe('Additional metadata for the response')
   }),
   outputSchema: z.object({
+    success: z.boolean(),
     sent: z.boolean(),
     messageId: z.string()
   }),
@@ -80,77 +81,12 @@ const ReplyToUserTool = createTool({
     }
     
     return {
+      success: true,
       sent: true,
       messageId
     };
   }
 });
-
-// 请求用户输入工具（用于Agent主动请求特定信息）
-const RequestUserInputTool = createTool({
-  name: 'request_user_input',
-  description: 'Request specific input from the user (e.g., password, configuration)',
-  inputSchema: z.object({
-    prompt: z.string().describe('The prompt to show to the user'),
-    inputType: z.enum(['text', 'choice', 'file_path', 'confirmation', 'password', 'config']).describe('Type of input expected'),
-    options: z.array(z.string()).optional().describe('Options for choice type input'),
-    validation: z.object({
-      required: z.boolean(),
-      pattern: z.string().optional(),
-      minLength: z.number().optional(),
-      maxLength: z.number().optional()
-    }).optional().describe('Validation rules for the input'),
-    sensitive: z.boolean().optional().describe('Whether this is sensitive information'),
-    timeout: z.number().optional().describe('Timeout in milliseconds')
-  }),
-  outputSchema: z.object({
-    requestId: z.string(),
-    sent: z.boolean()
-  }),
-  async: false,
-  execute: async (params, agent) => {
-    const requestId = `input_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    logger.info(`Requesting user input: "${params.prompt}" (${requestId})`);
-    
-    // 通过EventBus发送输入请求事件
-    if (agent?.eventBus) {
-      await agent.eventBus.publish({
-        type: 'input_request',
-        source: 'agent',
-        sessionId: agent.eventBus.getActiveSessions()[0] || 'default',
-        payload: {
-          requestId,
-          ...params
-        }
-      });
-    }
-    
-    // 更新上下文中的待处理请求
-    const context = agent?.contextManager.findContextById('user-input-context');
-    if (context && 'setData' in context && 'getData' in context) {
-      const currentData = (context as any).getData();
-      (context as any).setData({
-        ...currentData,
-        pendingRequests: [
-          ...currentData.pendingRequests,
-          {
-            requestId,
-            type: 'input',
-            prompt: params.prompt,
-            timestamp: Date.now()
-          }
-        ]
-      });
-    }
-    
-    return {
-      requestId,
-      sent: true
-    };
-  }
-});
-
 
 // Agent Stop Tool
 const AgentStopInputSchema = z.object({
@@ -239,7 +175,6 @@ export function createUserInputContext() {
       
       prompt += '**Guidelines:**\n';
       prompt += '- Use `reply_to_user` to respond to user messages and questions\n';
-      prompt += '- Use `request_user_input` when you need specific information from the user\n';
       prompt += '- Always maintain conversation context and history\n';
       prompt += '- Choose appropriate replyType for replies (text, markdown, structured)\n';
       prompt += '- Use `agent_stop` to stop the agent when tasks are completed or when you need to halt execution.\n';
@@ -249,7 +184,7 @@ export function createUserInputContext() {
     toolSetFn: () => ({
       name: 'UserInputTools',
       description: 'Tools for handling user input and sending replies',
-      tools: [ReplyToUserTool, RequestUserInputTool],
+      tools: [ReplyToUserTool, AgentStopTool],
       active: true,
       source: 'local' as const
     }),
@@ -257,8 +192,6 @@ export function createUserInputContext() {
       // 处理工具调用结果
       if (toolCallResult.name === 'reply_to_user') {
         logger.debug('User reply sent successfully');
-      } else if (toolCallResult.name === 'request_user_input') {
-        logger.debug('User input request sent successfully');
       }
     }
   });

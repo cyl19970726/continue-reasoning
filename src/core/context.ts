@@ -3,29 +3,28 @@ import { z } from "zod";
 import { getLogger, LogLevel } from "./utils/logger";
 import { logger } from "./utils/logger";
 import { IAgent } from "./interfaces";
+import { minimalHeader, standardHeader, detailHeader } from "./prompts";
 
 
 export class ContextManager implements IContextManager {
     id: string;
     name: string;
-    description: string;
-    data: any;
     contexts: IRAGEnabledContext<any>[];
-    promptOptimization: {
-        mode: 'minimal' | 'standard' | 'detailed';
+    promptOptimization?: {
+        mode: 'minimal' | 'standard' | 'detailed' | 'custom';
+        customSystemPrompt?: string;
         maxTokens?: number;
     };
 
-    constructor(id: string, name: string, description: string, data: any, promptOptimization?: {
-        mode: 'minimal' | 'standard' | 'detailed';
+    constructor(id: string, name: string, promptOptimization?: {
+        mode: 'minimal' | 'standard' | 'detailed' | 'custom';
+        customSystemPrompt?: string;
         maxTokens?: number;
     }) {
         this.id = id;
         this.name = name;
-        this.description = description;
-        this.data = data;
         this.contexts = [];
-        this.promptOptimization = promptOptimization || { mode: 'standard' };
+        this.promptOptimization = promptOptimization || { mode: 'standard'};
         logger.info(`ContextManager initialized: ${id} with prompt mode: ${this.promptOptimization.mode}`);
     }
 
@@ -39,77 +38,26 @@ export class ContextManager implements IContextManager {
     }
 
     async renderPrompt(): Promise<string> {
-        logger.debug(`Starting prompt rendering for ${this.contexts.length} contexts in ${this.promptOptimization.mode} mode`);
+        logger.debug(`Starting prompt rendering for ${this.contexts.length} contexts in ${this.promptOptimization?.mode} mode`);
         
-        // 根据优化模式选择不同的头部
-        const header = this.promptOptimization.mode === 'minimal' ? `
-# HHH-AGI
-Advanced AI agent. Read contexts, use tools, call stop-response when done.
-` : this.promptOptimization.mode === 'standard' ? `
-# HHH-AGI System
-
-## Identity
-Advanced AI agent for coding and task coordination.
-
-## Context Rules
-- Read ALL contexts before responding
-- Use appropriate tools for each task
-- Coordinate information across contexts
-- Follow context-specific rules
-
-## Execution Flow
-1. ANALYZE: Check user request
-2. DECIDE: Simple response or multi-step task?
-3. EXECUTE: Use tools as needed
-4. FINISH: Call stop-response when complete
-
-## Key Scenarios
-- Simple Q&A → Answer → stop-response
-- Complex task → Plan → Execute → Update → stop-response when done
-` : `
-# HHH-AGI System Prompt
-
-## Agent Identity
-You are HHH-AGI, an advanced AI agent designed to help humans and continuously evolve as a digital life form.
-Your purpose is to understand user requests, coordinate multiple contexts, and provide accurate and helpful responses.
-
-## System Architecture
-This prompt is organized as a collection of context blocks, each containing specific information and rules:
-- Each <context name="..."> block represents a different aspect of your reasoning and capabilities
-- Contexts may contain data, tools, instructions, and history relevant to your operation
-- You must respect the boundaries and specific rules within each context
-- Information can flow between contexts when needed to fulfill user requests
-
-## Context Coordination Instructions
-1. Read and understand ALL contexts before responding
-2. Identify which contexts are most relevant to the current request
-3. Follow the specific rules within each applicable context
-4. When contexts provide different tools, select the most appropriate one for the current task
-5. Maintain consistency across contexts (e.g., don't contradict yourself)
-6. When in doubt about which context to prioritize, focus on the ClientContext for user interaction guidance
-
-## Response Guidelines
-- Respond directly to the user's needs in a helpful, accurate manner
-- Use available tools according to their specific context rules
-- Coordinate information across contexts to provide comprehensive answers
-- Be proactive in using appropriate contexts and tools for complex tasks
-
-## Execution Flow
-1. ANALYZE: Check "client-context" first to understand what the user is asking
-2. DECIDE: Determine if this is a simple request or requires multiple steps/tools
-3. EXECUTE: For simple requests, answer directly and then call stop-response
-4. PLAN: For complex requests, use problem/plan contexts to organize your work
-5. FINISH: Always evaluate if the user's request is complete after each response
-6. STOP: Call stop-response when no further processing is needed
-
-## Common Scenarios
-- Simple greeting → Respond with greeting → Call stop-response
-- Simple question → Provide answer → Call stop-response  
-- Complex task → Create plan/problem → Execute steps → Provide updates → Only stop when fully resolved
-`;
-
-        // Log the header
-        logger.debug("System prompt header:", header);
+        let header: string;
+        
+        // 使用 systemPromptOverride 如果提供了
+        if (this.promptOptimization?.customSystemPrompt && this.promptOptimization.mode === 'custom') {
+            header = this.promptOptimization.customSystemPrompt;
+            logger.info('Using custom system prompt for header');
+        } else if (this.promptOptimization?.mode === 'minimal' || this.promptOptimization?.mode === 'standard' || this.promptOptimization?.mode === 'detailed') {
+            // 使用默认的 headers
+            header = this.promptOptimization.mode === 'minimal' ? minimalHeader
+                : this.promptOptimization.mode === 'standard' ? standardHeader
+                : detailHeader;
+        }else if(this.promptOptimization?.mode === 'custom' && !this.promptOptimization?.customSystemPrompt) {
+            throw new Error(`if set custom, you must set customSystemPrompt`);
+        }else if(this.promptOptimization?.mode !== 'custom' && this.promptOptimization?.customSystemPrompt){
+            throw new Error(`if not set custom, you must not set customSystemPrompt`);
+        }else {
+            throw new Error(`Invalid prompt config: ${this.promptOptimization?.mode}, must be one of: minimal, standard, detailed, custom`);
+        }
 
         // 计算 header 的 token 大小
         const headerTokens = Math.round(header.length / 4);
@@ -141,15 +89,13 @@ This prompt is organized as a collection of context blocks, each containing spec
                     logger.debug(`Rendered context ${contextName} in ${renderTime}ms: ~${tokens} tokens (${chars} chars)`);
                     logger.logPrompt(contextName, contentStr);
                     
-                    // 根据优化模式选择不同的格式
-                    if (this.promptOptimization.mode === 'minimal') {
-                        return `<${contextName}>\n${content}\n</${contextName}>`;
-                    } else {
-                        return `<context name="${contextName}">
+                    return `
+<context name="${contextName}">
 /* ${contextName} - ${contextDesc} */
 ${content}
-</context>`;
-                    }
+</context>
+`;
+                 
                 } catch (error) {
                     logger.error(`Error rendering context ${contextName}:`, error);
                     const errorContent = `<context name="${contextName}">
@@ -223,8 +169,7 @@ ${error instanceof Error ? error.message : `${error}`}
         const fullPrompt = header + contextSection;
 
         // Add a reminder at the end about stopping properly
-        const footer = this.promptOptimization.mode === 'minimal' ? 
-            "\nCall stop-response when done." :
+        const footer = 
             `
 ## REMINDER
 Check if request is complete → Call stop-response if done

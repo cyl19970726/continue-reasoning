@@ -23,13 +23,6 @@ if (logLevelIndex !== -1 && logLevelIndex < args.length - 1) {
     }
 }
 
-const contextManager = new ContextManager("1", "test", "test", z.object({}));
-const memoryManager = new MapMemoryManager("1", "test", "test");
-
-// Initialize LLM
-// const llm = new GeminiWrapper(LLMModel.Enum.google, true, 0.7, 1000);
-// const llm = new OpenAIWrapper(LLMModel.Enum.openai, true, 0.7, 1000);
-
 // 配置选项
 let agentOptions: AgentOptions = {
     enableParallelToolCalls: false,
@@ -38,6 +31,13 @@ let agentOptions: AgentOptions = {
     taskConcurency: 5,
     mcpConfigPath: path.join(process.cwd(), 'config', 'mcp.json')
 }
+
+const contextManager = new ContextManager("1", "test", "test", z.object({}), undefined, agentOptions.systemPromptOverride);
+const memoryManager = new MapMemoryManager("1", "test", "test");
+
+// Initialize LLM
+// const llm = new GeminiWrapper(LLMModel.Enum.google, true, 0.7, 1000);
+// const llm = new OpenAIWrapper(LLMModel.Enum.openai, true, 0.7, 1000);
 
 // Initialize clients
 const clients = [new CliClient()];

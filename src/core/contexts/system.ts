@@ -58,6 +58,7 @@ export const StopResponseTool = createTool({
     Do not call this tool if there are active plans or unfinished tasks that need to be completed.`,
     inputSchema: z.object({}),
     outputSchema: z.object({
+        success: z.boolean(),
         result: z.string().describe("The result of the stop tool"),
     }),
     async: false,
@@ -68,6 +69,7 @@ export const StopResponseTool = createTool({
         logger.info("StopResponseTool executed - stopping agent");
         agent.stop();
         return {
+            success: true,
             result: "stopped",
         };
     },

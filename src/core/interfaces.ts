@@ -543,7 +543,6 @@ export interface IAgent{
     
     // 核心组件
     contextManager: IContextManager;
-    memoryManager: IMemoryManager;
     clients: IClient<any,any>[];
     llm: ILLM; 
     taskQueue: ITaskQueue;

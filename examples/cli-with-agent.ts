@@ -30,11 +30,8 @@ async function main() {
   const contextManager = new ContextManager(
     'cli-context-manager', 
     'CLI Context Manager', 
-    'Manages contexts for CLI agent', 
-    {},
-    { mode: 'minimal', maxTokens: 8000 } // 使用 minimal 模式优化 prompt
+    { mode: 'standard', maxTokens: 8000 } // 使用 minimal 模式优化 prompt
   );
-  const memoryManager = new MapMemoryManager('cli-agent-memory', 'CLI Agent Memory', 'Memory manager for CLI agent');
 
   // 创建 Coding Context (需要工作空间路径)
   const workspacePath = path.resolve(process.cwd());
@@ -44,8 +41,6 @@ async function main() {
     'cli-agent',
     'CLI Interactive Agent',
     'An agent that interacts with users through CLI interface, supports execution mode switching, and provides coding capabilities with planning',
-    contextManager,
-    memoryManager,
     [], // 不需要传统的 clients，我们使用 EventBus
     30, // maxSteps
     LogLevel.INFO,
@@ -53,16 +48,20 @@ async function main() {
       model: OPENAI_MODELS.GPT_4O_MINI,
       enableParallelToolCalls: false,
       temperature: 0.7,
-      maxTokens: 200000,
       taskConcurency: 3,
-      executionMode: 'manual' // 默认为 manual 模式
+      executionMode: 'manual', // 默认为 manual 模式
+      promptOptimization: {
+        mode: 'standard',
+        customSystemPrompt: "",
+        maxTokens: 200000,
+      }
     },
     [
+      UserInputContext, 
       PlanContext, 
       codingContext, 
-      UserInputContext, 
-      InteractiveContext, 
       ToolCallContext,
+      // InteractiveContext, 
     ], // 添加所有 interaction 和 coding contexts
     eventBus // 传递 EventBus
   );

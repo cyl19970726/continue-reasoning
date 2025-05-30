@@ -107,6 +107,13 @@ export class CLIClient extends BaseInteractiveLayer {
     this.subscribe(['plan_progress_update'], this.handlePlanProgressUpdate.bind(this));
     this.subscribe(['plan_completed'], this.handlePlanCompleted.bind(this));
     this.subscribe(['plan_error'], this.handlePlanError.bind(this));
+    
+    // 订阅文件操作相关事件
+    this.subscribe(['file_created'], this.handleFileCreated.bind(this));
+    this.subscribe(['file_modified'], this.handleFileModified.bind(this));
+    this.subscribe(['file_deleted'], this.handleFileDeleted.bind(this));
+    this.subscribe(['directory_created'], this.handleDirectoryCreated.bind(this));
+    this.subscribe(['diff_reversed'], this.handleDiffReversed.bind(this));
 
     this.displayWelcome();
     this.startInteractiveLoop();
@@ -685,6 +692,102 @@ export class CLIClient extends BaseInteractiveLayer {
     console.log('');
   }
 
+  // 文件操作事件处理方法
+  private async handleFileCreated(message: AllEventMessages): Promise<void> {
+    const event = message as any; // FileCreatedEvent
+    const { path, size, diff } = event.payload;
+
+    console.log(chalk.green(`\n📄 File created: ${path}`));
+    console.log(chalk.gray(`   Size: ${size} bytes`));
+    
+    if ((this.config as any).showDiffs && diff) {
+      console.log(chalk.gray('Diff:'));
+      console.log(this.formatDiff(diff));
+    }
+    console.log('');
+  }
+
+  private async handleFileModified(message: AllEventMessages): Promise<void> {
+    const event = message as any; // FileModifiedEvent
+    const { path, tool, changesApplied, diff } = event.payload;
+
+    const toolIcon = this.getFileOperationToolIcon(tool);
+    console.log(chalk.blue(`\n${toolIcon} File modified: ${path}`));
+    console.log(chalk.gray(`   Tool: ${tool}`));
+    console.log(chalk.gray(`   Changes applied: ${changesApplied}`));
+    
+    if ((this.config as any).showDiffs && diff && diff.length < 1000) {
+      console.log(chalk.gray('Diff:'));
+      console.log(this.formatDiff(diff));
+    }
+    console.log('');
+  }
+
+  private async handleFileDeleted(message: AllEventMessages): Promise<void> {
+    const event = message as any; // FileDeletedEvent
+    const { path, isDirectory, filesDeleted, diff } = event.payload;
+
+    if (isDirectory) {
+      console.log(chalk.red(`\n📁 Directory deleted: ${path}`));
+      if (filesDeleted.length > 0) {
+        console.log(chalk.gray(`   Files deleted: ${filesDeleted.length}`));
+        if (filesDeleted.length <= 5) {
+          filesDeleted.forEach((file: string) => {
+            console.log(chalk.gray(`     - ${file}`));
+          });
+        } else {
+          filesDeleted.slice(0, 3).forEach((file: string) => {
+            console.log(chalk.gray(`     - ${file}`));
+          });
+          console.log(chalk.gray(`     ... and ${filesDeleted.length - 3} more`));
+        }
+      }
+    } else {
+      console.log(chalk.red(`\n🗑️  File deleted: ${path}`));
+    }
+    
+    if ((this.config as any).showDiffs && diff && diff.length < 1000) {
+      console.log(chalk.gray('Diff:'));
+      console.log(this.formatDiff(diff));
+    }
+    console.log('');
+  }
+
+  private async handleDirectoryCreated(message: AllEventMessages): Promise<void> {
+    const event = message as any; // DirectoryCreatedEvent
+    const { path, recursive } = event.payload;
+
+    console.log(chalk.green(`\n📁 Directory created: ${path}`));
+    if (recursive) {
+      console.log(chalk.gray(`   Mode: recursive (created parent directories)`));
+    }
+    console.log('');
+  }
+
+  private async handleDiffReversed(message: AllEventMessages): Promise<void> {
+    const event = message as any; // DiffReversedEvent
+    const { affectedFiles, changesReverted, reason } = event.payload;
+
+    console.log(chalk.yellow(`\n🔄 Changes reversed:`));
+    if (reason) {
+      console.log(chalk.gray(`   Reason: ${reason}`));
+    }
+    console.log(chalk.gray(`   Changes reverted: ${changesReverted}`));
+    console.log(chalk.gray(`   Affected files: ${affectedFiles.length}`));
+    
+    if (affectedFiles.length <= 10) {
+      affectedFiles.forEach((file: string) => {
+        console.log(chalk.yellow(`     - ${file}`));
+      });
+    } else {
+      affectedFiles.slice(0, 5).forEach((file: string) => {
+        console.log(chalk.yellow(`     - ${file}`));
+      });
+      console.log(chalk.yellow(`     ... and ${affectedFiles.length - 5} more`));
+    }
+    console.log('');
+  }
+
   private promptUser(prompt: string): Promise<string> {
     return new Promise((resolve, reject) => {
       this.pendingPrompts.push({ prompt, resolve, reject });
@@ -886,6 +989,32 @@ export class CLIClient extends BaseInteractiveLayer {
       case 'error': return '❌';
       default: return '⏳';
     }
+  }
+
+  private getFileOperationToolIcon(tool: string): string {
+    switch (tool) {
+      case 'whole_file': return '📝';
+      case 'edit_block': return '🎯';
+      case 'ranged_edit': return '📍';
+      case 'unified_diff': return '⚙️';
+      default: return '🔧';
+    }
+  }
+
+  private formatDiff(diff: string): string {
+    const lines = diff.split('\n');
+    return lines.map(line => {
+      if (line.startsWith('+') && !line.startsWith('+++')) {
+        return chalk.green(line);
+      } else if (line.startsWith('-') && !line.startsWith('---')) {
+        return chalk.red(line);
+      } else if (line.startsWith('@@')) {
+        return chalk.cyan(line);
+      } else if (line.startsWith('---') || line.startsWith('+++')) {
+        return chalk.yellow(line);
+      }
+      return chalk.gray(line);
+    }).join('\n');
   }
 
   private colorizeRiskLevel(level: string): string {

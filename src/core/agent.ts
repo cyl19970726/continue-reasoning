@@ -1,5 +1,5 @@
 import { AnyTool, IContextManager, IMemoryManager, IAgent, IClient, ILLM, IContext, ToolCallDefinition, ToolCallParams, ToolCallResult, IRAGEnabledContext, asRAGEnabledContext } from "./interfaces";
-import { SystemToolNames, HackernewsContext, DeepWikiContext, FireCrawlContext } from "./contexts/index";
+import { SystemToolNames, HackernewsContext, DeepWikiContext, FireCrawlContext, UserInputContext, InteractiveContext } from "./contexts/index";
 import { ITaskQueue, ITask, TaskQueue } from "./taskQueue";
 import { ToolCallContext, ToolCallContextId } from "./contexts/tool";
 import { SystemToolContext } from "./contexts/system";
@@ -22,6 +22,8 @@ import { ToolSetContext } from "./contexts/toolset";
 import { logger } from "./utils/logger";
 import { createCodingContext } from "./contexts/coding";
 import { IEventBus } from "./events/eventBus";
+import { Agent } from "http";
+import { ContextManager } from "./context";
 
 dotenv.config();
 
@@ -37,10 +39,21 @@ const SYSTEM_CONTEXTS = [
 ]
 
 const DEFAULT_CONTEXTS = [
+    // System contexts (必须的系统级上下文)
     ToolCallContext,
     ClientContext,
     SystemToolContext,
+    
+    // User interaction contexts (用户交互相关，最优先)
+    UserInputContext,
+    
+    // Planning context (计划和组织)
     PlanContext,
+    
+    // Coding context (具体实现)
+    CODING_CONTEXT,
+    
+    // Execution and utility contexts (执行和工具)
     ExecuteToolsContext,
     WebSearchContext,
     MCPContext,
@@ -48,24 +61,35 @@ const DEFAULT_CONTEXTS = [
     HackernewsContext,
     DeepWikiContext,
     FireCrawlContext,
+    
+    // Interactive context (UI/交互支持，最后)
+    InteractiveContext,
 ]
 
 const DEFAULT_AGENT_OPTIONS: AgentOptions = {
     model: OPENAI_MODELS.GPT_4O,
     enableParallelToolCalls: false,
     temperature: 0.7,
-    maxTokens: 100000,
     taskConcurency: 5,
+    promptOptimization: {
+        mode: "minimal",
+        customSystemPrompt: "",
+        maxTokens: 100000,
+    },
 }
 
 export interface AgentOptions {
     model?: SupportedModel; // 指定具体模型，默认使用 GPT-4o
     enableParallelToolCalls?: boolean;
     temperature?: number;
-    maxTokens?: number;
     taskConcurency?: number;
     mcpConfigPath?: string; // Path to MCP config file
     executionMode?: 'auto' | 'manual'; // Agent执行模式：auto(无approval) | manual(有approval)
+    promptOptimization?: {
+        mode: 'minimal' | 'standard' | 'detailed' | 'custom';
+        customSystemPrompt?: string;
+        maxTokens?: number;
+    };
 }
 
 // Agent状态枚举
@@ -77,7 +101,6 @@ export class BaseAgent implements IAgent {
     description: string;
     maxSteps: number;
     contextManager: IContextManager;
-    memoryManager: IMemoryManager;
     clients: IClient<any,any>[];
     llm: ILLM; 
     taskQueue: ITaskQueue;
@@ -98,8 +121,6 @@ export class BaseAgent implements IAgent {
         id: string, 
         name: string, 
         description: string, 
-        contextManager: IContextManager, 
-        memoryManager: IMemoryManager, 
         clients: IClient<any,any>[], 
         maxSteps: number,
         logLevel?: LogLevel,
@@ -107,6 +128,7 @@ export class BaseAgent implements IAgent {
         contexts?: IContext<any>[],
         eventBus?: IEventBus // 添加EventBus参数
     ){
+
 
         agentOptions = agentOptions || DEFAULT_AGENT_OPTIONS;
         this.contexts = contexts || DEFAULT_CONTEXTS;
@@ -120,20 +142,20 @@ export class BaseAgent implements IAgent {
         this.id = id;
         this.name = name;
         this.description = description;
-        this.contextManager = contextManager;
-        this.memoryManager = memoryManager;
+        this.contextManager = new ContextManager(id, name, agentOptions?.promptOptimization);
         this.clients = clients;
         this.toolSets = [];
         this.eventBus = eventBus; // 设置EventBus
-        this.executionMode = agentOptions.executionMode || 'manual'; // 设置执行模式，默认为manual
+        this.executionMode = agentOptions?.executionMode || 'manual';
+        logger.info(`Agent initialized with execution mode: ${this.executionMode}`);
 
         // LLM configuration options
-        const temperature = agentOptions.temperature || 0.7;
-        const maxTokens = agentOptions.maxTokens || 2048;
-        this.enableParallelToolCalls = agentOptions.enableParallelToolCalls ?? false;
+        const temperature = agentOptions?.temperature || 0.7;
+        const maxTokens = agentOptions?.promptOptimization?.maxTokens || 2048;
+        this.enableParallelToolCalls = agentOptions?.enableParallelToolCalls ?? false;
         
         // 简化的模型配置：直接使用模型
-        const selectedModel: SupportedModel = agentOptions.model || OPENAI_MODELS.GPT_4O;
+        const selectedModel: SupportedModel = agentOptions?.model || OPENAI_MODELS.GPT_4O;
         const provider = getModelProvider(selectedModel);
         
         // Initialize correct LLM based on provider
@@ -162,10 +184,11 @@ export class BaseAgent implements IAgent {
         }
         
         // Set MCP config path
-        this.mcpConfigPath = agentOptions.mcpConfigPath || path.join(process.cwd(), 'config', 'mcp.json');
+        this.mcpConfigPath = agentOptions?.mcpConfigPath || path.join(process.cwd(), 'config', 'mcp.json');
         logger.info(`MCP config path: ${this.mcpConfigPath}`);
+
         
-        let taskConcurency = agentOptions.taskConcurency ? agentOptions.taskConcurency : 5;
+        let taskConcurency = agentOptions?.taskConcurency ? agentOptions?.taskConcurency : 5;
         this.taskQueue = new TaskQueue(taskConcurency);
         this.maxSteps = maxSteps;
         this.isRunning = false;
@@ -227,12 +250,6 @@ export class BaseAgent implements IAgent {
             }
         }
         this.toolSets.push(clientOutputToolSet);
-
-        if (this.llm.setParallelToolCall) {
-            this.llm.setParallelToolCall(this.enableParallelToolCalls);
-        } else {
-            this.llm.parallelToolCall = this.enableParallelToolCalls;
-        }
 
         // 订阅ExecutionModeChangeEvent
         if (this.eventBus) {
@@ -392,17 +409,13 @@ export class BaseAgent implements IAgent {
         // 不再需要设置 tool definitions，因为工具定义已经通过 llm.call 传递
 
         // format the prompt using the context and the memory
-        const contextPrompt = await this.contextManager.renderPrompt();
-        // const memoryPrompt = this.memoryManager.renderPrompt();
-        const memoryPrompt = "";
+        const prompt = await this.contextManager.renderPrompt();
 
-        // convert any tool to the toolcall definition
-        // invoke the llm to get the response text and the toolcalls
-        const prompt  = `${contextPrompt}\n${memoryPrompt}\n}`;
-
-        logger.debug(`============Prompt: ============ 
+        logger.debug(`
+            ============Prompt: ============ 
             ${prompt}
-            ==============================`);
+            ==============================
+            `);
         
         // Choose streaming or non-streaming API based on configuration
         const { text, toolCalls } = this.llm.streaming ? 

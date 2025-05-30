@@ -115,9 +115,104 @@ export function createCodingContext(workspacePath: string, initialData?: Partial
       prompt += `Sandbox type: ${sandbox.type}.\n\n`;
 
       // Core guidance for code development
-      prompt += `## 🔧 CODE DEVELOPMENT APPROACH\n\n`;
-      prompt += `For code development and modification, use the specialized editing strategy tools below.\n`;
-      prompt += `For simple file reading or system information, you can use bash commands directly.\n\n`;
+      prompt += `## 🔧 DIFF-DRIVEN DEVELOPMENT WORKFLOW\n\n`;
+      prompt += `### CRITICAL RULES:\n`;
+      prompt += `1. **File Modifications**: ONLY use EditingStrategyToolSet\n`;
+      prompt += `   - Creating files → ApplyWholeFileEditTool\n`;
+      prompt += `   - Modifying code → ApplyEditBlockTool or ApplyRangedEditTool\n`;
+      prompt += `   - Deleting files → DeleteTool\n\n`;
+      
+      prompt += `2. **File Reading**: Use bash_command Tool\n`;
+      prompt += `   - Simple reading → \`cat filename.txt\`\n`;
+      prompt += `   - Partial reading → \`head -20 file.txt\` or \`tail -10 file.txt\`\n`;
+      prompt += `   - Search content → \`grep pattern file.txt\`\n\n`;
+      
+      prompt += `3. **NEVER use bash for**:\n`;
+      prompt += `   - Creating files (no \`echo > file.txt\`)\n`;
+      prompt += `   - Modifying files (no \`sed -i\`)\n`;
+      prompt += `   - Deleting files (no \`rm\`)\n\n`;
+      
+      prompt += `### WHY THIS MATTERS:\n`;
+      prompt += `- Every edit operation generates a diff for tracking\n`;
+      prompt += `- All changes can be rolled back with ReverseDiffTool\n`;
+      prompt += `- Complete audit trail of all modifications\n\n`;
+
+      prompt += `## 📚 COMPLETE DIFF-DRIVEN EXAMPLE\n\n`;
+      prompt += `### Initial State:\n`;
+      prompt += `\`\`\`typescript\n`;
+      prompt += `// File: src/calculator.ts\n`;
+      prompt += `function add(a: number, b: number): number {\n`;
+      prompt += `  return a + b;\n`;
+      prompt += `}\n`;
+      prompt += `\`\`\`\n\n`;
+
+      prompt += `### Step 1: Read Current File\n`;
+      prompt += `\`\`\`bash\n`;
+      prompt += `Tool: BashCommandTool\n`;
+      prompt += `Input: { command: "cat src/calculator.ts" }\n`;
+      prompt += `Output: {\n`;
+      prompt += `  stdout: "function add(a: number, b: number): number {\\n  return a + b;\\n}\\n",\n`;
+      prompt += `  exit_code: 0,\n`;
+      prompt += `  success: true\n`;
+      prompt += `}\n`;
+      prompt += `\`\`\`\n\n`;
+
+      prompt += `### Step 2: Add Error Handling\n`;
+      prompt += `\`\`\`typescript\n`;
+      prompt += `Tool: ApplyEditBlockTool\n`;
+      prompt += `Input: {\n`;
+      prompt += `  path: "src/calculator.ts",\n`;
+      prompt += `  searchBlock: "function add(a: number, b: number): number {\\n  return a + b;\\n}",\n`;
+      prompt += `  replaceBlock: "function add(a: number, b: number): number {\\n  if (typeof a !== 'number' || typeof b !== 'number') {\\n    throw new Error('Parameters must be numbers');\\n  }\\n  return a + b;\\n}"\n`;
+      prompt += `}\n`;
+      prompt += `Output: {\n`;
+      prompt += `  success: true,\n`;
+      prompt += `  message: "Edit block successfully applied",\n`;
+      prompt += `  diff: "--- a/src/calculator.ts\\n+++ b/src/calculator.ts\\n@@ -1,3 +1,6 @@\\n function add(a: number, b: number): number {\\n+  if (typeof a !== 'number' || typeof b !== 'number') {\\n+    throw new Error('Parameters must be numbers');\\n+  }\\n   return a + b;\\n }",\n`;
+      prompt += `  changesApplied: 1\n`;
+      prompt += `}\n`;
+      prompt += `\`\`\`\n\n`;
+
+      prompt += `### Step 3: Create Test File\n`;
+      prompt += `\`\`\`typescript\n`;
+      prompt += `Tool: ApplyWholeFileEditTool\n`;
+      prompt += `Input: {\n`;
+      prompt += `  path: "src/calculator.test.ts",\n`;
+      prompt += `  content: "import { add } from './calculator';\\n\\ntest('add numbers', () => {\\n  expect(add(2, 3)).toBe(5);\\n});\\n\\ntest('throw error for non-numbers', () => {\\n  expect(() => add('2' as any, 3)).toThrow('Parameters must be numbers');\\n});"\n`;
+      prompt += `}\n`;
+      prompt += `Output: {\n`;
+      prompt += `  success: true,\n`;
+      prompt += `  message: "File src/calculator.test.ts created successfully",\n`;
+      prompt += `  diff: "--- /dev/null\\n+++ b/src/calculator.test.ts\\n@@ -0,0 +1,9 @@\\n+import { add } from './calculator';\\n+\\n+test('add numbers', () => {\\n+  expect(add(2, 3)).toBe(5);\\n+});\\n+\\n+test('throw error for non-numbers', () => {\\n+  expect(() => add('2' as any, 3)).toThrow('Parameters must be numbers');\\n+});"\n`;
+      prompt += `}\n`;
+      prompt += `\`\`\`\n\n`;
+
+      prompt += `### Step 4: Run Tests\n`;
+      prompt += `\`\`\`bash\n`;
+      prompt += `Tool: BashCommandTool\n`;
+      prompt += `Input: { command: "npm test src/calculator.test.ts" }\n`;
+      prompt += `Output: {\n`;
+      prompt += `  stdout: "PASS src/calculator.test.ts\\n  ✓ add numbers (3ms)\\n  ✓ throw error for non-numbers (1ms)\\n\\nTest Suites: 1 passed, 1 total\\nTests: 2 passed, 2 total",\n`;
+      prompt += `  exit_code: 0,\n`;
+      prompt += `  success: true\n`;
+      prompt += `}\n`;
+      prompt += `\`\`\`\n\n`;
+
+      prompt += `### Step 5: If Needed - Rollback Changes\n`;
+      prompt += `\`\`\`typescript\n`;
+      prompt += `Tool: ReverseDiffTool\n`;
+      prompt += `Input: {\n`;
+      prompt += `  diffContent: "--- a/src/calculator.ts\\n+++ b/src/calculator.ts\\n@@ -1,3 +1,6 @@\\n function add(a: number, b: number): number {\\n+  if (typeof a !== 'number' || typeof b !== 'number') {\\n+    throw new Error('Parameters must be numbers');\\n+  }\\n   return a + b;\\n }",\n`;
+      prompt += `  dryRun: false\n`;
+      prompt += `}\n`;
+      prompt += `Output: {\n`;
+      prompt += `  success: true,\n`;
+      prompt += `  message: "Successfully reversed and applied diff affecting 1 file(s)",\n`;
+      prompt += `  reversedDiff: "--- a/src/calculator.ts\\n+++ b/src/calculator.ts\\n@@ -1,6 +1,3 @@\\n function add(a: number, b: number): number {\\n-  if (typeof a !== 'number' || typeof b !== 'number') {\\n-    throw new Error('Parameters must be numbers');\\n-  }\\n   return a + b;\\n }",\n`;
+      prompt += `  changesApplied: 1,\n`;
+      prompt += `  affectedFiles: ["src/calculator.ts"]\n`;
+      prompt += `}\n`;
+      prompt += `\`\`\`\n\n`;
 
       prompt += `## 📝 PRIMARY EDITING TOOLS (Choose the right tool for each task)\n\n`;
       
@@ -188,21 +283,21 @@ export function createCodingContext(workspacePath: string, initialData?: Partial
 
       // Best practices reminder
       prompt += `## 🎯 DEVELOPMENT BEST PRACTICES\n\n`;
-      prompt += `1. **File Creation**: Always use ApplyWholeFileEditTool for new files\n`;
-      prompt += `2. **Code Changes**: Use ApplyEditBlockTool for targeted modifications\n`;
-      prompt += `3. **Configuration**: Use ApplyRangedEditTool for config file updates\n`;
-      prompt += `4. **Complex Refactoring**: Use ApplyUnifiedDiffTool for multi-file operations\n`;
-      prompt += `5. **Safety First**: Use dry-run mode for complex operations\n`;
-      prompt += `6. **Change Tracking**: All edit operations automatically generate diffs\n`;
-      prompt += `7. **Reading Files**: Use bash commands (cat, head, tail) for simple file reading\n`;
-      prompt += `8. **System Info**: Use bash commands for directory listing, file stats, etc.\n\n`;
+      prompt += `1. **Always Read First**: Use \`cat\` to understand current file content\n`;
+      prompt += `2. **File Creation**: ONLY use ApplyWholeFileEditTool for new files\n`;
+      prompt += `3. **Code Changes**: Use ApplyEditBlockTool for targeted modifications\n`;
+      prompt += `4. **Never Mix Tools**: DON'T use bash for file creation/modification/deletion\n`;
+      prompt += `5. **Track Changes**: Every edit generates a diff automatically\n`;
+      prompt += `6. **Test After Changes**: Use bash to run tests and verify changes\n`;
+      prompt += `7. **Rollback When Needed**: Use ReverseDiffTool to undo any changes\n\n`;
 
       prompt += `## 💡 QUICK DECISION GUIDE\n\n`;
       prompt += `**Creating a new file?** → ApplyWholeFileEditTool\n`;
-      prompt += `**Modifying existing code?** → ApplyEditBlockTool (if you know exact code) or ApplyRangedEditTool (if you know lines)\n`;
+      prompt += `**Modifying existing code?** → ApplyEditBlockTool (exact code) or ApplyRangedEditTool (line numbers)\n`;
       prompt += `**Multiple files at once?** → ApplyUnifiedDiffTool\n`;
       prompt += `**Need to undo changes?** → ReverseDiffTool\n`;
-      prompt += `**Just reading/checking files?** → Use bash commands (cat, ls, grep, etc.)\n\n`;
+      prompt += `**Just reading files?** → bash: cat, head, tail, grep\n`;
+      prompt += `**Running tests/commands?** → bash: npm test, node script.js, etc.\n\n`;
       
       return prompt;
     },

@@ -207,6 +207,73 @@ export const InteractionManagementTool = createTool({
   }
 });
 
+// 请求用户输入工具（用于Agent主动请求特定信息）
+export const RequestUserInputTool = createTool({
+  name: 'request_user_input',
+  description: 'Request specific input from the user (e.g., password, configuration, file paths)',
+  inputSchema: z.object({
+    prompt: z.string().describe('The prompt to show to the user'),
+    inputType: z.enum(['text', 'choice', 'file_path', 'confirmation', 'password', 'config']).describe('Type of input expected'),
+    options: z.array(z.string()).optional().describe('Options for choice type input'),
+    validation: z.object({
+      required: z.boolean(),
+      pattern: z.string().optional(),
+      minLength: z.number().optional(),
+      maxLength: z.number().optional()
+    }).optional().describe('Validation rules for the input'),
+    sensitive: z.boolean().optional().describe('Whether this is sensitive information'),
+    timeout: z.number().optional().describe('Timeout in milliseconds')
+  }),
+  outputSchema: z.object({
+    success: z.boolean(),
+    requestId: z.string(),
+    sent: z.boolean()
+  }),
+  async: false,
+  execute: async (params, agent) => {
+    const requestId = `input_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    logger.info(`Requesting user input: "${params.prompt}" (${requestId})`);
+    
+    // 通过EventBus发送输入请求事件
+    if (agent?.eventBus) {
+      await agent.eventBus.publish({
+        type: 'input_request',
+        source: 'agent',
+        sessionId: agent.eventBus.getActiveSessions()[0] || 'default',
+        payload: {
+          requestId,
+          ...params
+        }
+      });
+    }
+    
+    // 更新上下文中的待处理请求
+    const context = agent?.contextManager.findContextById('user-input-context');
+    if (context && 'setData' in context && 'getData' in context) {
+      const currentData = (context as any).getData();
+      (context as any).setData({
+        ...currentData,
+        pendingRequests: [
+          ...currentData.pendingRequests,
+          {
+            requestId,
+            type: 'input',
+            prompt: params.prompt,
+            timestamp: Date.now()
+          }
+        ]
+      });
+    }
+    
+    return {
+      success: true,
+      requestId,
+      sent: true
+    };
+  }
+});
+
 // Helper function to wait for approval response
 async function waitForApprovalResponse(
   eventBus: any, 
@@ -281,10 +348,12 @@ export const InteractiveContext = ContextHelper.createContext({
 
 User Interaction Management:
 • interaction_management: Handle approval requests and check pending status
+• request_user_input: Request specific input from the user (passwords, configs, etc.)
 
 Available Commands:
 - request_approval: Request user approval for risky actions
 - list_pending: Check status of pending approval requests
+- request_user_input: Request specific information from user
 
 Current Status:
 - Pending Approvals: ${pendingCount}
@@ -307,10 +376,11 @@ ${recentHistory
 
 Usage Guidelines:
 1. Use interaction_management with command='request_approval' before risky operations
-2. Required for: file operations, command execution, git operations, network access
-3. Risk levels: low (simple reads), medium (file writes), high (system commands), critical (deletions)
-4. Provide clear descriptions and previews to help users make informed decisions
-5. Respect user decisions - do not retry rejected requests without justification
+2. Use request_user_input when you need specific information from the user
+3. Required for: file operations, command execution, git operations, network access
+4. Risk levels: low (simple reads), medium (file writes), high (system commands), critical (deletions)
+5. Provide clear descriptions and previews to help users make informed decisions
+6. Respect user decisions - do not retry rejected requests without justification
 
 Remember: User approval is required for actions that could modify the system or access external resources.
     `;
@@ -318,7 +388,7 @@ Remember: User approval is required for actions that could modify the system or 
   toolSetFn: () => ({
     name: "InteractiveTools",
     description: "Tools for managing user interactions, approvals, and collaborative workflows. Use this toolset when you need user permission or input for actions.",
-    tools: [InteractionManagementTool],
+    tools: [InteractionManagementTool, RequestUserInputTool],
     active: true,
     source: "local"
   })

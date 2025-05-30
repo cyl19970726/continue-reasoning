@@ -156,6 +156,53 @@ export interface PlanErrorEvent extends BaseEvent {
   };
 }
 
+// File operation events
+export interface FileCreatedEvent extends BaseEvent {
+  type: 'file_created';
+  payload: {
+    path: string;
+    size: number;
+    diff: string;
+  };
+}
+
+export interface FileModifiedEvent extends BaseEvent {
+  type: 'file_modified';
+  payload: {
+    path: string;
+    tool: 'edit_block' | 'ranged_edit' | 'unified_diff' | 'whole_file';
+    changesApplied: number;
+    diff: string;
+  };
+}
+
+export interface FileDeletedEvent extends BaseEvent {
+  type: 'file_deleted';
+  payload: {
+    path: string;
+    isDirectory: boolean;
+    filesDeleted: string[];
+    diff?: string;
+  };
+}
+
+export interface DirectoryCreatedEvent extends BaseEvent {
+  type: 'directory_created';
+  payload: {
+    path: string;
+    recursive: boolean;
+  };
+}
+
+export interface DiffReversedEvent extends BaseEvent {
+  type: 'diff_reversed';
+  payload: {
+    affectedFiles: string[];
+    changesReverted: number;
+    reason?: string;
+  };
+}
+
 // Agent内部事件联合类型
 export type AgentInternalEvent = 
   | AgentStepEvent
@@ -169,4 +216,9 @@ export type AgentInternalEvent =
   | PlanStepCompletedEvent
   | PlanProgressUpdateEvent
   | PlanCompletedEvent
-  | PlanErrorEvent; 
+  | PlanErrorEvent
+  | FileCreatedEvent
+  | FileModifiedEvent
+  | FileDeletedEvent
+  | DirectoryCreatedEvent
+  | DiffReversedEvent; 
