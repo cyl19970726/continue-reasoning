@@ -35,7 +35,21 @@ export interface ITaskQueue{
     clearTasks(type?: 'processStep' | 'toolCall' | 'custom'): number;
 }
 
+// 思考系统的 Prompt 上下文结构
+export interface PromptCtx {
+    workflow: string;    // 工作流程描述
+    status: string;      // 当前状态信息
+    guideline: string;   // 指导原则
+    examples: string;    // 使用示例
+}
 
+// Prompt 拼接策略
+export type PromptAssemblyStrategy = 
+    | 'grouped'         // 按类型分组：所有workflow放一起，所有status放一起，etc.
+    | 'priority'        // 按优先级排序，完整保留每个context的结构
+    | 'context_first'   // 保持每个context的完整性，按context分组
+    | 'minimal'         // 只保留关键信息，精简输出
+    | 'custom';         // 自定义拼接逻辑
 
 export interface IContextManager{
     contexts: AnyRAGEnableContext[];
@@ -63,6 +77,27 @@ export interface IContextManager{
             mcpServersCount?: number
         }>
     }>;
+
+    /**
+     * 渲染结构化的 PromptCtx
+     * 收集所有 Context 的 PromptCtx 并按照指定策略进行拼接
+     * 
+     * @param strategy 拼接策略
+     * @returns 拼接后的结构化提示内容
+     */
+    renderStructuredPrompt?: (strategy?: PromptAssemblyStrategy) => Promise<PromptCtx> | PromptCtx;
+
+    /**
+     * 设置 prompt 拼接策略
+     * 
+     * @param strategy 新的拼接策略
+     */
+    setPromptAssemblyStrategy?: (strategy: PromptAssemblyStrategy) => void;
+
+    /**
+     * 获取当前的 prompt 拼接策略
+     */
+    getPromptAssemblyStrategy?: () => PromptAssemblyStrategy;
 }
 
 export interface IContext<T extends z.ZodObject<any>>{
@@ -88,6 +123,12 @@ export interface IContext<T extends z.ZodObject<any>>{
     description: string;
     dataSchema: T;
     data: z.infer<T>;
+
+    /**
+     * 思考系统的 Prompt 上下文结构
+     * 包含工作流程、状态、指导原则和示例，用于结构化的 prompt 生成
+     */
+    promptCtx?: PromptCtx;
 
     /**
      * MCP服务器配置，直接在Context中定义，而不是从配置文件加载。
@@ -164,115 +205,24 @@ export interface IContext<T extends z.ZodObject<any>>{
     onToolCall?: (toolCallResult: ToolCallResult) => void;
     
     /**
-     * Generates the prompt content for this context, which will be included in the system prompt.
-     * The returned string will be wrapped inside <context name="...">...</context> tags by the ContextManager.
+     * Generates the prompt content for this context.
      * 
-     * PROMPT METHODOLOGY:
+     * The method can return either:
+     * 1. A traditional string (legacy format) for backward compatibility
+     * 2. A PromptCtx structure for the thinking system
      * 
-     * 1. STRUCTURE
-     *    Organize your prompt with a consistent structure:
-     *    - Header: Clear section title with context name/ID
-     *    - Summary: Brief overview of current state (1-2 lines)
-     *    - Main Content: Key information organized in logical sections
-     *    - Instructions: Clear guidance on how to use this context
-     *    - Tool Set Guidance: For contexts with multiple tool sets, explain when to use each one
+     * When returning PromptCtx, the structure should contain:
+     * - workflow: Step-by-step process description
+     * - status: Current state and dynamic information
+     * - guideline: Rules, best practices, and constraints
+     * - examples: Usage examples and common scenarios
      * 
-     * 2. FORMATTING
-     *    - Use section dividers like "--- Section Name ---"
-     *    - Use bullet points (•) for lists of related items
-     *    - Use numbered lists (1. 2. 3.) for sequential instructions or steps
-     *    - For complex data, use structured formats (tables, key-value pairs)
-     *    - Highlight important information with UPPERCASE or *asterisks*
+     * The ContextManager will handle assembling these into a cohesive prompt
+     * using different assembly strategies (grouped by type, priority-based, etc.)
      * 
-     * 3. CONTENT GUIDELINES
-     *    - Start with the most important information
-     *    - Include current state, history when relevant, and available actions
-     *    - Show examples for complex operations
-     *    - For tools, explain WHEN to use them, not just HOW
-     *    - Include constraints, limitations, and important rules
-     *    - Use clear, concise language focused on agent actions
-     * 
-     * 4. MULTI-TOOLSET GUIDANCE
-     *    - When a context has multiple tool sets, clearly explain each set's purpose
-     *    - Provide decision guidelines for choosing the appropriate tool set
-     *    - Group related tools together and explain their relationships
-     *    - Use examples to illustrate typical workflows across tool sets
-     *    - Explain any sequence dependencies between tool sets
-     * 
-     * 5. CONTEXT-SPECIFIC PATTERNS
-     *    - Tool-related contexts: Show available tools, their status, recent usage
-     *    - Plan/workflow contexts: Show steps, progress, dependencies
-     *    - Data contexts: Summarize available data, recency, relevance
-     *    - Interaction contexts: Show relevant history, current query, response guidelines
-     *    - Integration contexts: Explain external system capabilities, limitations, and when to use them
-     * 
-     * EXAMPLES:
-     * 
-     * 1. Context with Multiple Tool Sets:
-     * ```
-     * --- Hacker News Integration Context ---
-     * 
-     * Current State: Connected to Hacker News API, 3 recent searches for AI topics
-     * 
-     * Available Tool Sets:
-     * 
-     * 1. BASIC STORY TOOLS
-     *    • For retrieving and searching content directly
-     *    • Use for initial exploration and specific story retrieval
-     *    • Tools: get_stories, get_story_info, search_stories
-     * 
-     * 2. USER TOOLS
-     *    • For accessing user information and submissions
-     *    • Use when tracking specific authors or companies
-     *    • Tools: get_user_info, get_user_submissions
-     * 
-     * 3. AI CONTENT TOOLS
-     *    • For specialized AI content discovery and analysis
-     *    • Use when specifically targeting AI news and trends
-     *    • Tools: find_ai_stories, analyze_ai_trends
-     * 
-     * Usage Decision Guide:
-     * - For general browsing → Use Basic Story Tools
-     * - For following specific experts → Use User Tools
-     * - For focused AI research → Use AI Content Tools first, then other tools for details
-     * ```
-     * 
-     * 2. Tool Context Example:
-     * ```
-     * --- Tool Call Context ---
-     * Available tools: 5 tools ready, 3 async operations in progress
-     * 
-     * Current Tool State:
-     * • Active calls: 3 pending async calls (call_ids: tool-123, tool-456, tool-789)
-     * • Recent results: "web_search" completed at 2023-05-01T15:30:00Z
-     * 
-     * Tool Execution Rules:
-     * 1. Check for existing calls before creating duplicates
-     * 2. Use sync tools (bash, cli-response) for immediate responses
-     * 3. Use async tools (web-search, file-analysis) for background tasks
-     * 
-     * Important: Wait for async tool results before making dependent calls
-     * ```
-     * 
-     * TESTING TASKS:
-     * To evaluate the effectiveness of your prompts, test if the LLM can:
-     * 1. Follow context-specific rules consistently (e.g., use sync vs async tools correctly)
-     * 2. Understand the current state and act appropriately (e.g., continue a plan from current step)
-     * 3. Correlate information across contexts (e.g., use plan context with execution context)
-     * 4. Avoid repetitive or redundant actions (e.g., not creating duplicate requests)
-     * 5. Prioritize tasks correctly based on context information
-     * 6. Switch between contexts appropriately (e.g., from planning to execution)
-     * 7. Select the appropriate tool set for the current task (for contexts with multiple tool sets)
-     * 
-     * Example tests:
-     * - Create a multi-step plan and check if steps are executed in the correct order
-     * - Submit an ambiguous user query and verify the agent asks for clarification
-     * - Call an async tool and verify the agent properly waits for the result
-     * - Create multiple overlapping tasks and check if the agent manages them correctly
-     * 
-     * @returns A string or Promise<string> containing the formatted prompt content
+     * @returns A string or PromptCtx structure containing the formatted prompt content
      */
-    renderPrompt: () => string | Promise<String>;
+    renderPrompt: () => string | PromptCtx | Promise<string | PromptCtx>;
 }
 
 // 支持RAG功能的Context接口
@@ -568,6 +518,8 @@ export interface IAgent{
     start(maxSteps: number): Promise<void>;
     stop(): void;
     
+    getPrompt(): string | Promise<string>;
+
     // 客户端交互
     clientSendfn: ClientSendFnType;
 

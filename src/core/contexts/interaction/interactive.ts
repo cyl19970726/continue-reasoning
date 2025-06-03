@@ -1,6 +1,6 @@
 import { createTool, ContextHelper } from "../../utils";
 import { z } from "zod";
-import { IAgent } from "../../interfaces";
+import { IAgent, PromptCtx } from "../../interfaces";
 import { logger } from "../../utils/logger";
 import { v4 as uuidv4 } from 'uuid';
 
@@ -23,6 +23,12 @@ const InteractiveContextSchema = z.object({
     decision: z.enum(['accept', 'reject', 'modify']),
     response: z.string().optional(),
     modification: z.string().optional()
+  })).default([]),
+  pendingRequests: z.array(z.object({
+    requestId: z.string(),
+    type: z.enum(['input', 'approval']),
+    prompt: z.string(),
+    timestamp: z.number()
   })).default([])
 });
 
@@ -249,7 +255,7 @@ export const RequestUserInputTool = createTool({
     }
     
     // 更新上下文中的待处理请求
-    const context = agent?.contextManager.findContextById('user-input-context');
+    const context = agent?.contextManager.findContextById(InteractiveContextId);
     if (context && 'setData' in context && 'getData' in context) {
       const currentData = (context as any).getData();
       (context as any).setData({
@@ -331,65 +337,288 @@ async function waitForApprovalResponse(
 }
 
 // Create the Interactive Context
-export const InteractiveContext = ContextHelper.createContext({
-  id: InteractiveContextId,
-  description: "Manages interactive communication between the agent and users, including approval requests and collaboration workflows. This context handles the coordination of permission-based actions.",
-  dataSchema: InteractiveContextSchema,
-  initialData: {
-    pendingApprovals: [],
-    approvalHistory: []
-  },
-  renderPromptFn: (data: z.infer<typeof InteractiveContextSchema>) => {
-    const pendingCount = data.pendingApprovals.filter(a => a.status === 'pending').length;
-    const recentHistory = data.approvalHistory.slice(-5); // Last 5 approvals
+export function createInteractiveContext() {
+  const baseContext = ContextHelper.createContext({
+    id: InteractiveContextId,
+    description: "Manages interactive communication between the agent and users, including approval requests and collaboration workflows. This context handles the coordination of permission-based actions.",
+    dataSchema: InteractiveContextSchema,
+    initialData: {
+      pendingApprovals: [],
+      approvalHistory: [],
+      pendingRequests: []
+    },
+    promptCtx: {
+      workflow: `
+## USER INTERACTION WORKFLOW
+
+### Approval Request Flow:
+1. **Risk Assessment**: Identify actions requiring user approval
+2. **Request Submission**: Use interaction_management to request approval
+3. **User Response**: Wait for user approval/rejection/modification
+4. **Action Execution**: Proceed based on user decision
+5. **Result Feedback**: Inform user of action completion
+
+### Input Request Flow:
+1. **Information Need**: Identify required user input
+2. **Input Request**: Use request_user_input to request specific information
+3. **User Response**: Receive and validate user input
+4. **Data Processing**: Use provided information in subsequent actions
+`,
+      status: `Interactive Status: No pending interactions`,
+      guideline: `
+## INTERACTION GUIDELINES
+
+### When to Request Approval:
+- **File Operations**: Creating, modifying, or deleting files
+- **Command Execution**: Running system commands or scripts
+- **Git Operations**: Committing, pushing, or merging code
+- **Network Access**: Making external API calls or downloads
+- **Critical Actions**: Any action that could affect system state
+
+### Risk Levels:
+- **Low**: Reading files, listing directories, checking status
+- **Medium**: Creating/modifying non-critical files, running safe commands
+- **High**: Modifying system files, running potentially dangerous commands
+- **Critical**: Deleting files, system-level operations, irreversible actions
+
+### Best Practices:
+1. Always request approval for actions that could modify the system
+2. Provide clear, descriptive explanations of what you want to do
+3. Include file paths, command details, and expected outcomes
+4. Respect user decisions - don't retry rejected requests immediately
+5. Use appropriate risk levels to help users make informed decisions
+6. Request user input when you need specific information not available in context
+`,
+      examples: `
+## INTERACTION EXAMPLES
+
+### Example 1: File Deletion Approval
+\`\`\`
+interaction_management({
+  command: 'request_approval',
+  actionType: 'file_delete',
+  description: 'Delete temporary build files',
+  details: {
+    filePaths: ['build/temp.js', 'build/cache/'],
+    riskLevel: 'medium',
+    preview: 'Will delete 2 temporary files and 1 cache directory'
+  }
+})
+\`\`\`
+
+### Example 2: Command Execution Approval
+\`\`\`
+interaction_management({
+  command: 'request_approval',
+  actionType: 'command_execute',
+  description: 'Run npm install to install dependencies',
+  details: {
+    command: 'npm install',
+    riskLevel: 'medium',
+    preview: 'Will install packages from package.json'
+  }
+})
+\`\`\`
+
+### Example 3: Request User Input
+\`\`\`
+request_user_input({
+  prompt: 'Enter the API endpoint URL for the production environment',
+  inputType: 'text',
+  validation: {
+    required: true,
+    pattern: '^https?://.*'
+  }
+})
+\`\`\`
+
+### Example 4: Request Configuration Choice
+\`\`\`
+request_user_input({
+  prompt: 'Select the deployment environment',
+  inputType: 'choice',
+  options: ['development', 'staging', 'production']
+})
+\`\`\`
+`
+    },
+    renderPromptFn: (data: z.infer<typeof InteractiveContextSchema>): PromptCtx => {
+      const pendingCount = data.pendingApprovals.filter(a => a.status === 'pending').length;
+      const pendingRequestsCount = data.pendingRequests?.length || 0;
+      const recentHistory = data.approvalHistory.slice(-5); // Last 5 approvals
+      
+      let dynamicStatus = `Interactive Status: `;
+      
+      if (pendingCount > 0 || pendingRequestsCount > 0) {
+        dynamicStatus += `${pendingCount + pendingRequestsCount} pending interactions\n`;
+        dynamicStatus += `- Pending Approvals: ${pendingCount}\n`;
+        dynamicStatus += `- Pending Input Requests: ${pendingRequestsCount}`;
+      } else {
+        dynamicStatus += `No pending interactions`;
+      }
+      
+      dynamicStatus += `\n- Recent Approval History: ${recentHistory.length} entries`;
+
+      if (pendingCount > 0) {
+        dynamicStatus += `\n\nPENDING APPROVALS:\n`;
+        data.pendingApprovals
+          .filter(a => a.status === 'pending')
+          .forEach(a => {
+            dynamicStatus += `- ${a.id}: ${a.actionType} - ${a.description}\n`;
+          });
+      }
+
+      if (pendingRequestsCount > 0) {
+        dynamicStatus += `\nPENDING INPUT REQUESTS:\n`;
+        data.pendingRequests.forEach(r => {
+          dynamicStatus += `- ${r.requestId}: ${r.type} - ${r.prompt}\n`;
+        });
+      }
+
+      if (recentHistory.length > 0) {
+        dynamicStatus += `\nRECENT APPROVAL HISTORY:\n`;
+        recentHistory.forEach(h => {
+          dynamicStatus += `- ${h.actionType}: ${h.decision} - ${h.description}\n`;
+        });
+      }
+
+      return {
+        workflow: `
+## USER INTERACTION WORKFLOW
+
+### Approval Request Flow:
+1. **Risk Assessment**: Identify actions requiring user approval
+2. **Request Submission**: Use interaction_management to request approval
+3. **User Response**: Wait for user approval/rejection/modification
+4. **Action Execution**: Proceed based on user decision
+5. **Result Feedback**: Inform user of action completion
+
+### Input Request Flow:
+1. **Information Need**: Identify required user input
+2. **Input Request**: Use request_user_input to request specific information
+3. **User Response**: Receive and validate user input
+4. **Data Processing**: Use provided information in subsequent actions
+
+### Available Tools:
+- **interaction_management**: Handle approval requests and check pending status
+- **request_user_input**: Request specific input from the user (passwords, configs, etc.)
+`,
+        status: dynamicStatus,
+        guideline: `
+## INTERACTION GUIDELINES
+
+### When to Request Approval:
+- **File Operations**: Creating, modifying, or deleting files
+- **Command Execution**: Running system commands or scripts
+- **Git Operations**: Committing, pushing, or merging code
+- **Network Access**: Making external API calls or downloads
+- **Critical Actions**: Any action that could affect system state
+
+### Risk Levels:
+- **Low**: Reading files, listing directories, checking status
+- **Medium**: Creating/modifying non-critical files, running safe commands
+- **High**: Modifying system files, running potentially dangerous commands
+- **Critical**: Deleting files, system-level operations, irreversible actions
+
+### Best Practices:
+1. Always request approval for actions that could modify the system
+2. Provide clear, descriptive explanations of what you want to do
+3. Include file paths, command details, and expected outcomes
+4. Respect user decisions - don't retry rejected requests immediately
+5. Use appropriate risk levels to help users make informed decisions
+6. Request user input when you need specific information not available in context
+
+### Command Usage:
+- **request_approval**: Use before risky operations
+- **list_pending**: Check status of pending approval requests
+- **request_user_input**: Request specific information from user
+`,
+        examples: `
+## INTERACTION EXAMPLES
+
+### Example 1: File Deletion Approval
+\`\`\`
+interaction_management({
+  command: 'request_approval',
+  actionType: 'file_delete',
+  description: 'Delete temporary build files',
+  details: {
+    filePaths: ['build/temp.js', 'build/cache/'],
+    riskLevel: 'medium',
+    preview: 'Will delete 2 temporary files and 1 cache directory'
+  }
+})
+\`\`\`
+
+### Example 2: Command Execution Approval
+\`\`\`
+interaction_management({
+  command: 'request_approval',
+  actionType: 'command_execute',
+  description: 'Run npm install to install dependencies',
+  details: {
+    command: 'npm install',
+    riskLevel: 'medium',
+    preview: 'Will install packages from package.json'
+  }
+})
+\`\`\`
+
+### Example 3: Request User Input
+\`\`\`
+request_user_input({
+  prompt: 'Enter the API endpoint URL for the production environment',
+  inputType: 'text',
+  validation: {
+    required: true,
+    pattern: '^https?://.*'
+  }
+})
+\`\`\`
+
+### Example 4: Request Configuration Choice
+\`\`\`
+request_user_input({
+  prompt: 'Select the deployment environment',
+  inputType: 'choice',
+  options: ['development', 'staging', 'production']
+})
+\`\`\`
+`
+      };
+    },
+    toolSetFn: () => ({
+      name: "InteractiveTools",
+      description: "Tools for managing user interactions, approvals, and collaborative workflows. Use this toolset when you need user permission or input for actions.",
+      tools: [InteractionManagementTool, RequestUserInputTool],
+      active: true,
+      source: "local"
+    })
+  });
+
+  // 扩展 context 添加自定义方法
+  return {
+    ...baseContext,
     
-    return `
---- Interactive Context ---
+    // 处理输入响应事件
+    async handleInputResponse(event: any): Promise<void> {
+      const { requestId, value } = event.payload;
+      
+      // 移除已完成的请求
+      const currentData = baseContext.getData();
+      const updatedRequests = currentData.pendingRequests.filter(
+        (req: any) => req.requestId !== requestId
+      );
+      
+      baseContext.setData({
+        ...currentData,
+        pendingRequests: updatedRequests
+      });
+      
+      logger.info(`Processed input response for request ${requestId}: ${value}`);
+    }
+  };
+}
 
-User Interaction Management:
-• interaction_management: Handle approval requests and check pending status
-• request_user_input: Request specific input from the user (passwords, configs, etc.)
-
-Available Commands:
-- request_approval: Request user approval for risky actions
-- list_pending: Check status of pending approval requests
-- request_user_input: Request specific information from user
-
-Current Status:
-- Pending Approvals: ${pendingCount}
-- Recent Approval History: ${recentHistory.length} entries
-
-${pendingCount > 0 ? `
-PENDING APPROVALS:
-${data.pendingApprovals
-  .filter(a => a.status === 'pending')
-  .map(a => `- ${a.id}: ${a.actionType} - ${a.description}`)
-  .join('\n')}
-` : ''}
-
-${recentHistory.length > 0 ? `
-RECENT APPROVAL HISTORY:
-${recentHistory
-  .map(h => `- ${h.actionType}: ${h.decision} - ${h.description}`)
-  .join('\n')}
-` : ''}
-
-Usage Guidelines:
-1. Use interaction_management with command='request_approval' before risky operations
-2. Use request_user_input when you need specific information from the user
-3. Required for: file operations, command execution, git operations, network access
-4. Risk levels: low (simple reads), medium (file writes), high (system commands), critical (deletions)
-5. Provide clear descriptions and previews to help users make informed decisions
-6. Respect user decisions - do not retry rejected requests without justification
-
-Remember: User approval is required for actions that could modify the system or access external resources.
-    `;
-  },
-  toolSetFn: () => ({
-    name: "InteractiveTools",
-    description: "Tools for managing user interactions, approvals, and collaborative workflows. Use this toolset when you need user permission or input for actions.",
-    tools: [InteractionManagementTool, RequestUserInputTool],
-    active: true,
-    source: "local"
-  })
-}); 
+// 导出默认实例
+export const InteractiveContext = createInteractiveContext(); 

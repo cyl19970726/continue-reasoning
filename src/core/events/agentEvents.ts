@@ -80,6 +80,23 @@ export interface AgentReplyEvent extends BaseEvent {
   };
 }
 
+// Agent思考过程事件
+export interface AgentThinkingEvent extends BaseEvent {
+  type: 'agent_thinking';
+  payload: {
+    stepNumber: number;
+    thinking: {
+      analysis?: string;
+      plan?: string;
+      reasoning?: string;
+      nextAction?: string;
+      executionStatus?: 'continue' | 'complete';
+    };
+    toolCalls: any[];
+    rawThinking?: string; // 原始thinking文本
+  };
+}
+
 // Plan 相关事件
 export interface PlanCreatedEvent extends BaseEvent {
   type: 'plan_created';
@@ -211,6 +228,7 @@ export type AgentInternalEvent =
   | ContextUpdateEvent
   | TaskQueueEvent
   | AgentReplyEvent
+  | AgentThinkingEvent
   | PlanCreatedEvent
   | PlanStepStartedEvent
   | PlanStepCompletedEvent

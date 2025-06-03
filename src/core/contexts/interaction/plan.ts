@@ -1,6 +1,6 @@
 import { createTool, ContextHelper } from "../../utils";
 import { z } from "zod";
-import { IAgent } from "../../interfaces";
+import { IAgent, PromptCtx } from "../../interfaces";
 import { logger } from "../../utils/logger";
 import { v4 as uuidv4 } from 'uuid';
 
@@ -426,28 +426,135 @@ export const AgentStopTool = createTool({
 // Create the Plan Context
 export const PlanContext = ContextHelper.createContext({
   id: PlanContextId,
-  description: "Manages execution planning for complex coding tasks. Follows the workflow: Accept Task → Generate Plan → Execute Plan → Update Progress → Complete Plan → Reply User → Agent Stop.",
+  description: "Manages execution planning for complex coding tasks.",
   dataSchema: PlanContextSchema,
   initialData: {
     status: 'none',
     steps: [],
     currentStepIndex: 0
   },
-  renderPromptFn: (data: z.infer<typeof PlanContextSchema>) => {
-    let prompt = `
---- Coding Agent Plan Management ---
+  promptCtx: {
+    workflow: `
+## PLANNING WORKFLOW
 
-WORKFLOW: Accept Task → Generate Plan → Execute Plan → Update Progress → Complete Plan → Reply User → Agent Stop
+Accept Task → Generate Plan → Execute Plan → Update Progress → Complete Plan → Reply User → Agent Stop
 
-Available Tools:
-• plan_management: Create, update, and complete execution plans
-• agent_stop: Stop agent when all tasks are completed
+### Core Planning Process:
+1. **Task Analysis**: Break down complex requirements into manageable steps
+2. **Plan Creation**: Use plan_management tool to create structured execution plan
+3. **Step Execution**: Execute each step with appropriate tools and update progress
+4. **Progress Tracking**: Monitor completion status and adjust as needed
+5. **Plan Completion**: Mark plan as complete and notify user
+6. **Agent Stop**: Terminate execution when all tasks are finished
+`,
+    status: `Plan Status: No active plan`,
+    guideline: `
+## PLANNING GUIDELINES
 
+### When to Create Plans:
+- Complex tasks requiring multiple steps
+- Tasks involving file creation, modification, and testing
+- Workflows that need dependency management
+- Tasks requiring validation and error handling
+
+### Plan Management Commands:
+- **plan_management create**: Start new plan with title, description, and steps
+- **plan_management update_step**: Mark step as 'in_progress'
+- **plan_management complete_step**: Complete current step and move to next
+- **plan_management complete_plan**: Mark entire plan as complete
+- **agent_stop**: Terminate agent when all work is done
+
+### Best Practices:
+1. Create clear, specific step titles and descriptions
+2. Include toolsToCall for each step when known
+3. Update step status to 'in_progress' before starting work
+4. Complete steps promptly after finishing work
+5. Always use agent_stop after completing plans
+`,
+    examples: `
+## PLANNING EXAMPLES
+
+### Example 1: Simple File Creation Task
+\`\`\`
+plan_management({
+  command: 'create',
+  title: 'Create Calculator Module',
+  description: 'Create a TypeScript calculator with tests',
+  steps: [
+    {
+      title: 'Create Calculator Function',
+      description: 'Implement add, subtract, multiply, divide functions',
+      toolsToCall: ['ApplyWholeFileEditTool']
+    },
+    {
+      title: 'Create Test File',
+      description: 'Write comprehensive tests for all functions',
+      toolsToCall: ['ApplyWholeFileEditTool']
+    },
+    {
+      title: 'Run Tests',
+      description: 'Execute tests and verify functionality',
+      toolsToCall: ['bash_command']
+    }
+  ]
+})
+\`\`\`
+
+### Example 2: Complex Refactoring Task
+\`\`\`
+plan_management({
+  command: 'create',
+  title: 'Refactor Authentication System',
+  description: 'Update authentication to use JWT tokens',
+  steps: [
+    {
+      title: 'Analyze Current Implementation',
+      description: 'Review existing auth code and identify changes needed',
+      toolsToCall: ['bash_command']
+    },
+    {
+      title: 'Update Auth Models',
+      description: 'Modify user models and add JWT support',
+      toolsToCall: ['ApplyEditBlockTool', 'ApplyRangedEditTool']
+    },
+    {
+      title: 'Update API Endpoints',
+      description: 'Modify login/logout endpoints for JWT',
+      toolsToCall: ['ApplyEditBlockTool']
+    },
+    {
+      title: 'Update Tests',
+      description: 'Modify existing tests for new auth flow',
+      toolsToCall: ['ApplyEditBlockTool']
+    },
+    {
+      title: 'Integration Testing',
+      description: 'Run full test suite and verify functionality',
+      toolsToCall: ['bash_command']
+    }
+  ]
+})
+\`\`\`
+`
+  },
+  renderPromptFn: (data: z.infer<typeof PlanContextSchema>): PromptCtx => {
+    let dynamicStatus = '';
+    let dynamicWorkflow = `
+## PLANNING WORKFLOW
+
+Accept Task → Generate Plan → Execute Plan → Update Progress → Complete Plan → Reply User → Agent Stop
+
+### Core Planning Process:
+1. **Task Analysis**: Break down complex requirements into manageable steps
+2. **Plan Creation**: Use plan_management tool to create structured execution plan
+3. **Step Execution**: Execute each step with appropriate tools and update progress
+4. **Progress Tracking**: Monitor completion status and adjust as needed
+5. **Plan Completion**: Mark plan as complete and notify user
+6. **Agent Stop**: Terminate execution when all tasks are finished
 `;
 
     if (data.status === 'none') {
-      prompt += `
-Current Status: No active plan
+      dynamicStatus = `Plan Status: No active plan
 
 For complex tasks, create a plan with these steps:
 1. Analyze requirements
@@ -456,13 +563,12 @@ For complex tasks, create a plan with these steps:
 4. Update plan progress
 5. Complete plan and reply to user
 
-Use plan_management with command='create' to start.
-`;
+Use plan_management with command='create' to start.`;
     } else if (data.status === 'active') {
       const currentStep = data.steps[data.currentStepIndex];
       const completedSteps = data.steps.filter(step => step.status === 'completed').length;
       
-      prompt += `
+      dynamicStatus = `Plan Status: ACTIVE 🔄
 Current Plan: "${data.title}"
 Description: ${data.description}
 Progress: ${completedSteps}/${data.steps.length} steps completed
@@ -472,41 +578,129 @@ Title: ${currentStep?.title || 'No current step'}
 Description: ${currentStep?.description || ''}`;
 
       if (currentStep?.toolsToCall && currentStep.toolsToCall.length > 0) {
-        prompt += `
+        dynamicStatus += `
 Tools to call: ${currentStep.toolsToCall.join(', ')}`;
       }
 
-      prompt += `
+      dynamicStatus += `
 
 ALL STEPS:`;
       data.steps.forEach((step, index) => {
         const status = step.status === 'completed' ? '✅' : 
                       step.status === 'in_progress' ? '🔄' : '⏳';
         const current = index === data.currentStepIndex ? ' ← CURRENT' : '';
-        prompt += `
+        dynamicStatus += `
 ${index + 1}. ${status} ${step.title}${current}`;
       });
 
-      prompt += `
+      dynamicStatus += `
 
-NEXT ACTIONS:
+Next Actions:
 - Use plan_management with command='update_step' to mark current step as 'in_progress'
 - Execute the required coding tools for this step
 - Use plan_management with command='complete_step' when step is done
 - Use plan_management with command='complete_plan' when all steps are finished
-- Use agent_stop when plan is complete and user has been notified
-`;
+- Use agent_stop when plan is complete and user has been notified`;
     } else if (data.status === 'completed') {
-      prompt += `
-Plan Status: COMPLETED ✅
+      dynamicStatus = `Plan Status: COMPLETED ✅
 Plan: "${data.title}"
 All ${data.steps.length} steps completed.
 
-Use agent_stop to finish execution.
-`;
+Use agent_stop to finish execution.`;
     }
 
-    return prompt;
+    return {
+      workflow: dynamicWorkflow,
+      status: dynamicStatus,
+      guideline: `
+## PLANNING GUIDELINES
+
+### When to Create Plans:
+- Complex tasks requiring multiple steps
+- Tasks involving file creation, modification, and testing
+- Workflows that need dependency management
+- Tasks requiring validation and error handling
+
+### Plan Management Commands:
+- **plan_management create**: Start new plan with title, description, and steps
+- **plan_management update_step**: Mark step as 'in_progress'
+- **plan_management complete_step**: Complete current step and move to next
+- **plan_management complete_plan**: Mark entire plan as complete
+- **agent_stop**: Terminate agent when all work is done
+
+### Best Practices:
+1. Create clear, specific step titles and descriptions
+2. Include toolsToCall for each step when known
+3. Update step status to 'in_progress' before starting work
+4. Complete steps promptly after finishing work
+5. Always use agent_stop after completing plans
+`,
+      examples: `
+## PLANNING EXAMPLES
+
+### Example 1: Simple File Creation Task
+\`\`\`
+plan_management({
+  command: 'create',
+  title: 'Create Calculator Module',
+  description: 'Create a TypeScript calculator with tests',
+  steps: [
+    {
+      title: 'Create Calculator Function',
+      description: 'Implement add, subtract, multiply, divide functions',
+      toolsToCall: ['ApplyWholeFileEditTool']
+    },
+    {
+      title: 'Create Test File',
+      description: 'Write comprehensive tests for all functions',
+      toolsToCall: ['ApplyWholeFileEditTool']
+    },
+    {
+      title: 'Run Tests',
+      description: 'Execute tests and verify functionality',
+      toolsToCall: ['bash_command']
+    }
+  ]
+})
+\`\`\`
+
+### Example 2: Complex Refactoring Task
+\`\`\`
+plan_management({
+  command: 'create',
+  title: 'Refactor Authentication System',
+  description: 'Update authentication to use JWT tokens',
+  steps: [
+    {
+      title: 'Analyze Current Implementation',
+      description: 'Review existing auth code and identify changes needed',
+      toolsToCall: ['bash_command']
+    },
+    {
+      title: 'Update Auth Models',
+      description: 'Modify user models and add JWT support',
+      toolsToCall: ['ApplyEditBlockTool', 'ApplyRangedEditTool']
+    },
+    {
+      title: 'Update API Endpoints',
+      description: 'Modify login/logout endpoints for JWT',
+      toolsToCall: ['ApplyEditBlockTool']
+    },
+    {
+      title: 'Update Tests',
+      description: 'Modify existing tests for new auth flow',
+      toolsToCall: ['ApplyEditBlockTool']
+    },
+    {
+      title: 'Integration Testing',
+      description: 'Run full test suite and verify functionality',
+      toolsToCall: ['bash_command']
+    }
+  ]
+})
+\`\`\`
+`
+    };
   },
   toolSetFn: () => ({
     name: "PlanTools",

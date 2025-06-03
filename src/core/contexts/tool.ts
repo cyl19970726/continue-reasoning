@@ -73,7 +73,7 @@ export const ToolCallContextId = "tool-call-context";
 export const ToolCallContext = Object.assign(
     ContextHelper.createRAGContext({
         id: ToolCallContextId,
-        description: "Tracks all tool call requests and their results. Used to coordinate which tools the agent can call, their async/sync status, and to correlate tool calls with their results. Essential for managing tool execution flow and preventing duplicate or conflicting tool invocations.",
+        description: "Tracks all tool call requests and their results.",
         dataSchema: ToolCallContextDataSchema,
         initialData: {
             toolCalls: []
@@ -87,8 +87,6 @@ export const ToolCallContext = Object.assign(
             const failedCalls = completedCalls.filter(tc => !isToolCallSuccessful(tc));
             
             const toolContextPrompt = `
-            ------ ToolCallContext (Tracks Tool Calls & Results) ------
-            
             IMPORTANT TOOL EXECUTION RULES:
             *   Sync Tools (\`async: false\`): These execute IMMEDIATELY. The agent waits for them. Use these for critical, blocking actions.
             *   Async Tools (\`async: true\`): These are queued and run in the BACKGROUND. The agent DOES NOT wait. Their results will appear LATER, potentially after several steps. Use these for non-blocking, long-running tasks.

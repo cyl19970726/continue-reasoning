@@ -337,7 +337,8 @@ export const ContextHelper = {
     description: string;
     dataSchema: T;
     initialData: Partial<z.infer<T>>;
-    renderPromptFn?: (data: z.infer<T>) => string;
+    promptCtx?: import("./interfaces").PromptCtx;
+    renderPromptFn?: (data: z.infer<T>) => string | import("./interfaces").PromptCtx;
     toolSetFn: () => import("./interfaces").ToolSet;
     handleToolCall?: (toolCallResult: any) => void;
     mcpServers?: {
@@ -354,7 +355,7 @@ export const ContextHelper = {
         autoActivate?: boolean;
     }[];
   }): IRAGEnabledContext<T> {
-    const { id, description, dataSchema, initialData, renderPromptFn, toolSetFn, handleToolCall, mcpServers } = options;
+    const { id, description, dataSchema, initialData, promptCtx, renderPromptFn, toolSetFn, handleToolCall, mcpServers } = options;
     
     const context: IRAGEnabledContext<T> = {
       id,
@@ -362,6 +363,9 @@ export const ContextHelper = {
       dataSchema,
       
       data: dataSchema.parse(initialData) as z.infer<T>,
+      
+      // Add promptCtx if provided
+      promptCtx,
       
       // Add mcpServers if provided
       mcpServers,
@@ -518,17 +522,11 @@ export const ContextHelper = {
         return this.data;
       },
       
-      renderPrompt(): string {
+      renderPrompt(): string | import("./interfaces").PromptCtx {
         if (renderPromptFn) {
-          return `
-            --- Context-${this.id} ---
-            Description: ${this.description}
-            ${renderPromptFn(this.data)}
-          `;
+          return renderPromptFn(this.data);
         }
         return `
-          --- Context-${this.id} ---
-          Description: ${this.description}
           Empty Context
         `;
       },
@@ -554,7 +552,8 @@ export const ContextHelper = {
     description: string;
     dataSchema: T;
     initialData?: Partial<z.infer<T>>;
-    renderPromptFn?: (data: z.infer<T>) => string;
+    promptCtx?: import("./interfaces").PromptCtx;
+    renderPromptFn?: (data: z.infer<T>) => string | import("./interfaces").PromptCtx;
     toolSetFn?: () => import("./interfaces").ToolSet;
     handleToolCall?: (toolCallResult: any) => void;
     ragConfigs?: Record<string, {
@@ -569,6 +568,7 @@ export const ContextHelper = {
       description, 
       dataSchema, 
       initialData = {}, 
+      promptCtx,
       renderPromptFn, 
       toolSetFn,
       handleToolCall,
@@ -581,6 +581,7 @@ export const ContextHelper = {
       description,
       dataSchema,
       initialData,
+      promptCtx,
       renderPromptFn,
       toolSetFn: toolSetFn || (() => ({
         name: '',
@@ -597,24 +598,29 @@ export const ContextHelper = {
       rags: {}, // Initialize empty object
       
       // Override renderPrompt method with async version
-      renderPrompt: async function(): Promise<string> {
+      renderPrompt: async function(): Promise<string | import("./interfaces").PromptCtx> {
         // First load RAG-related data
         const ragData = await this.loadRAGForPrompt!();
         
         // If there's a custom renderPromptFn, use it
-        let basePrompt = `
-            --- Context-${this.id} ---
-            Description: ${this.description}
-        `;
+        let baseResult: string | import("./interfaces").PromptCtx;
 
         if (renderPromptFn) {
-          basePrompt += `\n${renderPromptFn(this.data)}`;
+          baseResult = renderPromptFn(this.data);
         } else {
-          basePrompt += `\nEmpty Context`;
+          baseResult = "Empty Context";
         }
-        
-        // Combine basic prompt and RAG data
-        return `${basePrompt}\n\n${ragData}`;
+
+        // If the result is a PromptCtx, add RAG data to status
+        if (typeof baseResult === 'object' && baseResult !== null && 'workflow' in baseResult) {
+          return {
+            ...baseResult,
+            status: ragData ? `${baseResult.status}\n\n${ragData}` : baseResult.status
+          };
+        } else {
+          // If it's a string, append RAG data
+          return ragData ? `${baseResult}\n\n${ragData}` : baseResult;
+        }
       },
       
       // Register RAG instance
@@ -652,10 +658,15 @@ export const ContextHelper = {
       
       // Load RAG data for prompt
       async loadRAGForPrompt(): Promise<string> {
-        let ragData = '--- Related Knowledge ---\n';
+        let knowledgeContent = '';
         
         // Initialize rags if undefined
         if (!this.rags) this.rags = {};
+        
+        // Early return if no RAGs configured
+        if (Object.keys(this.rags).length === 0) {
+          return '';
+        }
         
         // Iterate through all registered RAGs
         for (const [ragId, rag] of Object.entries(this.rags)) {
@@ -677,22 +688,27 @@ export const ContextHelper = {
             // Format results
             if (results.length > 0) {
               if (config.resultsFormatter) {
-                ragData += config.resultsFormatter(results);
+                knowledgeContent += config.resultsFormatter(results);
               } else {
                 // Default formatting
-                ragData += `\n--- ${ragId} Knowledge ---\n`;
+                knowledgeContent += `\n--- ${ragId} Knowledge ---\n`;
                 results.forEach((result, i) => {
-                  ragData += `[${i+1}] ${result.content} (Score: ${result.score.toFixed(2)})\n`;
+                  knowledgeContent += `[${i+1}] ${result.content} (Score: ${result.score.toFixed(2)})\n`;
                 });
               }
             }
           } catch (error) {
             console.error(`Error querying RAG ${ragId}:`, error);
-            ragData += `\nError querying ${ragId}: ${error}\n`;
+            // Don't include errors in prompt content to avoid noise
           }
         }
         
-        return ragData;
+        // Only add the header if we have actual content
+        if (knowledgeContent.trim()) {
+          return '--- Related Knowledge ---\n' + knowledgeContent;
+        }
+        
+        return '';
       }
     };
 

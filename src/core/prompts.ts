@@ -1,6 +1,11 @@
 export const minimalHeader = `
 # HHH-AGI
-Advanced AI agent. Read contexts, use tools, call stop-response when done.
+AI agent. Read contexts, use tools, call stop-response when done.
+`;
+
+export const ultraMinimalHeader = `
+# Task Agent
+Read contexts → Use tools → Call stop-response
 `;
 
 export const standardHeader = `

@@ -11,12 +11,6 @@ const UserInputContextSchema = z.object({
     source: z.enum(['user', 'agent']),
     content: z.string(),
     sessionId: z.string()
-  })).default([]),
-  pendingRequests: z.array(z.object({
-    requestId: z.string(),
-    type: z.enum(['input', 'approval']),
-    prompt: z.string(),
-    timestamp: z.number()
   })).default([])
 });
 
@@ -143,12 +137,11 @@ export function createUserInputContext() {
     dataSchema: UserInputContextSchema,
     initialData: {
       conversationHistory: [],
-      pendingRequests: []
     },
     renderPromptFn: (data: UserInputContextData) => {
-      const { currentUserInput, conversationHistory, pendingRequests } = data;
+      const { currentUserInput, conversationHistory } = data;
       
-      let prompt = '## User Input Context\n\n';
+      let prompt = '';
       
       if (currentUserInput) {
         prompt += `**Current User Input:** ${currentUserInput}\n\n`;
@@ -160,15 +153,6 @@ export function createUserInputContext() {
         recentHistory.forEach(entry => {
           const time = new Date(entry.timestamp).toLocaleTimeString();
           prompt += `- [${time}] ${entry.source}: ${entry.content}\n`;
-        });
-        prompt += '\n';
-      }
-      
-      if (pendingRequests.length > 0) {
-        prompt += '**Pending User Input Requests:**\n';
-        pendingRequests.forEach(request => {
-          const time = new Date(request.timestamp).toLocaleTimeString();
-          prompt += `- [${time}] ${request.type}: ${request.prompt} (ID: ${request.requestId})\n`;
         });
         prompt += '\n';
       }
@@ -200,33 +184,6 @@ export function createUserInputContext() {
   return {
     ...baseContext,
     
-    // 处理输入响应事件
-    async handleInputResponse(event: any): Promise<void> {
-      const { requestId, value } = event.payload;
-      
-      // 移除已完成的请求
-      const currentData = baseContext.getData();
-      const updatedRequests = currentData.pendingRequests.filter(
-        (req: any) => req.requestId !== requestId
-      );
-      
-      // 添加到对话历史
-      const newHistoryEntry = {
-        timestamp: Date.now(),
-        source: 'user' as const,
-        content: value,
-        sessionId: event.sessionId
-      };
-      
-      baseContext.setData({
-        ...currentData,
-        pendingRequests: updatedRequests,
-        conversationHistory: [...currentData.conversationHistory, newHistoryEntry]
-      });
-      
-      logger.info(`Processed input response for request ${requestId}: ${value}`);
-    },
-
     // 处理用户消息事件
     async handleUserMessage(event: any): Promise<void> {
       const { content, messageType, context } = event.payload;

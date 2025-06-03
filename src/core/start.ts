@@ -27,13 +27,13 @@ if (logLevelIndex !== -1 && logLevelIndex < args.length - 1) {
 let agentOptions: AgentOptions = {
     enableParallelToolCalls: false,
     temperature: 0.7,
-    maxTokens: 100000,
     taskConcurency: 5,
-    mcpConfigPath: path.join(process.cwd(), 'config', 'mcp.json')
+    mcpConfigPath: path.join(process.cwd(), 'config', 'mcp.json'),
+    promptOptimization: {
+        mode: 'standard',
+        maxTokens: 100000
+    }
 }
-
-const contextManager = new ContextManager("1", "test", "test", z.object({}), undefined, agentOptions.systemPromptOverride);
-const memoryManager = new MapMemoryManager("1", "test", "test");
 
 // Initialize LLM
 // const llm = new GeminiWrapper(LLMModel.Enum.google, true, 0.7, 1000);
@@ -47,8 +47,6 @@ const agent = new BaseAgent(
     "1", 
     "test", 
     "test", 
-    contextManager, 
-    memoryManager, 
     clients, 
     100,
     logLevelArg,

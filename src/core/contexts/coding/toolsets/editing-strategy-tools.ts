@@ -21,7 +21,7 @@ const ApplyWholeFileEditReturnsSchema = z.object({
 });
 
 export const ApplyWholeFileEditTool = createTool({
-  id: 'apply_whole_file_edit',
+  id: 'ApplyWholeFileEdit',
   name: 'ApplyWholeFileEdit',
   description: 'Primary tool for creating new files or completely replacing existing file content. Generates a diff showing the changes and handles directory creation automatically.',
   inputSchema: ApplyWholeFileEditParamsSchema,
@@ -173,7 +173,7 @@ const ApplyUnifiedDiffReturnsSchema = z.object({
 });
 
 export const ApplyUnifiedDiffTool = createTool({
-  id: 'apply_unified_diff',
+  id: 'ApplyUnifiedDiff',
   name: 'ApplyUnifiedDiff',
   description: 'Applies unified diff content to files. Automatically detects single/multi-file diffs and extracts file paths from diff headers. Supports file creation, modification, and deletion.',
   inputSchema: ApplyUnifiedDiffParamsSchema,
@@ -281,7 +281,7 @@ const ApplyEditBlockReturnsSchema = z.object({
 });
 
 export const ApplyEditBlockTool = createTool({
-  id: 'apply_edit_block',
+  id: 'ApplyEditBlock',
   name: 'ApplyEditBlock',
   description: 'Applies an edit block by searching for exact code and replacing it. Perfect for targeted code modifications. Use empty searchBlock to create new files.',
   inputSchema: ApplyEditBlockParamsSchema,
@@ -392,7 +392,7 @@ const ApplyRangedEditReturnsSchema = z.object({
 });
 
 export const ApplyRangedEditTool = createTool({
-  id: 'apply_ranged_edit',
+  id: 'ApplyRangedEdit',
   name: 'ApplyRangedEdit',
   description: 'Applies content to a specific line range in a file. Perfect for precise line-based modifications. Use -1 for both start and end to append to file.',
   inputSchema: ApplyRangedEditParamsSchema,
@@ -784,7 +784,7 @@ const CreateDirectoryReturnsSchema = z.object({
 });
 
 export const CreateDirectoryTool = createTool({
-  id: 'create_directory',
+  id: 'CreateDirectory',
   name: 'CreateDirectory',
   description: 'Creates a new directory. Part of the diff-driven development system, but directory creation does not generate diffs.',
   inputSchema: CreateDirectoryParamsSchema,
@@ -886,7 +886,7 @@ const ReadFileReturnsSchema = z.object({
 });
 
 export const ReadFileTool = createTool({
-  id: 'read_file',
+  id: 'ReadFile',
   name: 'ReadFile',
   description: 'Reads content from a specified file or a segment of it. Part of the diff-driven development system.',
   inputSchema: ReadFileParamsSchema,
@@ -963,7 +963,7 @@ const CompareFilesReturnsSchema = z.object({
 });
 
 export const CompareFilesTool = createTool({
-  id: 'compare_files_gemini',
+  id: 'CompareFiles',
   name: 'CompareFiles',
   description: 'Compares two files and generates a unified diff showing the differences between them.',
   inputSchema: CompareFilesParamsSchema,
@@ -1033,7 +1033,7 @@ const ReverseDiffReturnsSchema = z.object({
 });
 
 export const ReverseDiffTool = createTool({
-  id: 'reverse_diff',
+  id: 'ReverseDiff',
   name: 'ReverseDiff',
   description: 'Reverses (undoes) a unified diff to rollback changes. Perfect for error recovery, feature toggling, and A/B testing workflows.',
   inputSchema: ReverseDiffParamsSchema,

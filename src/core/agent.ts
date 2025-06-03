@@ -8,7 +8,7 @@ import { z } from "zod";
 import { cliClientId, ClientContext,cliResponseToolName } from "./contexts/client";
 import { Message,ToolSet } from "./interfaces";
 import dotenv from "dotenv";
-import { time } from "console";
+import { error, time } from "console";
 import { PlanContext } from "./contexts/plan";
 import { MCPContext, MCPContextId, AddStdioMcpServer, AddSseOrHttpMcpServer } from "./contexts/mcp";
 import { WebSearchContext } from "./contexts/web-search";
@@ -24,6 +24,8 @@ import { createCodingContext } from "./contexts/coding";
 import { IEventBus } from "./events/eventBus";
 import { Agent } from "http";
 import { ContextManager } from "./context";
+// 新增思考系统导入
+import { createThinkingSystem, ThinkingOrchestrator, ProcessResult } from "./thinking";
 
 dotenv.config();
 
@@ -76,6 +78,12 @@ const DEFAULT_AGENT_OPTIONS: AgentOptions = {
         customSystemPrompt: "",
         maxTokens: 100000,
     },
+    // 新增思考系统选项
+    enableThinkingSystem: false,
+    thinkingOptions: {
+        maxConversationHistory: 10,
+        maxExecutionHistory: 5
+    },
 }
 
 export interface AgentOptions {
@@ -89,6 +97,12 @@ export interface AgentOptions {
         mode: 'minimal' | 'standard' | 'detailed' | 'custom';
         customSystemPrompt?: string;
         maxTokens?: number;
+    };
+    // 新增思考系统选项
+    enableThinkingSystem?: boolean; // 是否启用思考系统
+    thinkingOptions?: {
+        maxConversationHistory?: number;
+        maxExecutionHistory?: number;
     };
 }
 
@@ -116,6 +130,10 @@ export class BaseAgent implements IAgent {
     currentStep: number = 0; // 添加步骤跟踪
 
     contexts: IRAGEnabledContext<any>[] = [];
+
+    // 新增思考系统相关属性
+    thinkingSystem?: ThinkingOrchestrator;
+    enableThinking: boolean = false;
 
     constructor(
         id: string, 
@@ -148,6 +166,9 @@ export class BaseAgent implements IAgent {
         this.eventBus = eventBus; // 设置EventBus
         this.executionMode = agentOptions?.executionMode || 'manual';
         logger.info(`Agent initialized with execution mode: ${this.executionMode}`);
+
+        // 思考系统配置
+        this.enableThinking = agentOptions?.enableThinkingSystem ?? false;
 
         // LLM configuration options
         const temperature = agentOptions?.temperature || 0.7;
@@ -183,6 +204,11 @@ export class BaseAgent implements IAgent {
             this.llm.parallelToolCall = this.enableParallelToolCalls;
         }
         
+        // 初始化思考系统
+        if (this.enableThinking) {
+            this.initializeThinkingSystem(agentOptions?.thinkingOptions);
+        }
+
         // Set MCP config path
         this.mcpConfigPath = agentOptions?.mcpConfigPath || path.join(process.cwd(), 'config', 'mcp.json');
         logger.info(`MCP config path: ${this.mcpConfigPath}`);
@@ -195,6 +221,195 @@ export class BaseAgent implements IAgent {
         this.shouldStop = false;
     }
 
+    // 新增：初始化思考系统
+    private initializeThinkingSystem(thinkingOptions?: {
+        maxConversationHistory?: number;
+        maxExecutionHistory?: number;
+    }): void {
+        if (!this.llm) {
+            throw new Error('LLM must be initialized before thinking system');
+        }
+
+        // 直接使用 ILLM 接口，不需要适配器
+        this.thinkingSystem = createThinkingSystem(this.llm, {
+            contextManager: this.contextManager,
+            maxConversationHistory: thinkingOptions?.maxConversationHistory || 10,
+            maxExecutionHistory: thinkingOptions?.maxExecutionHistory || 5
+        });
+
+        logger.info('Thinking system initialized');
+    }
+
+    // 新增：使用思考系统处理步骤
+    private async processStepWithThinking(userInput: string): Promise<boolean> {
+        if (!this.thinkingSystem) {
+            throw new Error('Thinking system is not initialized');
+        }
+
+        try {
+            const sessionId = `agent-session-${this.id}`;
+
+            // 获取活跃工具的定义
+            const toolDefinitions = this.getActiveTools().map(tool => {
+               return tool.toCallParams();
+            });
+
+            // 使用思考系统处理这一步
+            // 注意：如果是第一步，使用processUserInput；否则使用continueReasoning
+            const result: ProcessResult = this.currentStep === 0 
+                ? await this.thinkingSystem.processUserInput(userInput, sessionId, toolDefinitions)
+                : await this.thinkingSystem.continueReasoning(sessionId, toolDefinitions);
+
+            logger.info(`Thinking step ${result.stepNumber} completed`);
+            logger.debug('Thinking Content:', result.thinking);
+            logger.debug('Response message:', result.response?.message);
+
+            // 发布 thinking 事件（只有当有思考内容时）
+            if (this.eventBus && result.thinking) {
+                await this.eventBus.publish({
+                    type: 'agent_thinking',
+                    source: 'agent',
+                    sessionId: sessionId,
+                    payload: {
+                        stepNumber: result.stepNumber,
+                        thinking: {
+                            analysis: result.thinking.analysis,
+                            plan: result.thinking.plan,
+                            reasoning: result.thinking.reasoning,
+                            nextAction: result.thinking.nextAction,
+                            executionStatus: result.thinking.executionStatus
+                        },
+                        toolCalls: result.toolCalls,
+                        rawThinking: result.rawText
+                    }
+                });
+            }
+
+            // 发布 reply 事件（只有当有 response message 且不为空时）
+            if (this.eventBus && result.response && result.response.message && result.response.message.trim()) {
+                await this.eventBus.publish({
+                    type: 'agent_reply',
+                    source: 'agent',
+                    sessionId: sessionId,
+                    payload: {
+                        content: result.response.message,
+                        replyType: 'text',
+                        metadata: {
+                            reasoning: result.thinking?.reasoning,
+                            confidence: 85 // 可以基于thinking质量计算
+                        }
+                    }
+                });
+            }
+
+            // 执行工具调用
+            if (result.toolCalls.length > 0) {
+                const toolResults = await this.executeThinkingToolCalls(result.toolCalls);
+                await this.thinkingSystem.processToolResults(result.stepNumber, toolResults);
+            }
+
+            return result.thinking?.executionStatus === 'continue';
+
+        } catch (error) {
+            logger.error('Error in thinking system step:', error);
+            throw error;
+        }
+    }
+
+
+    // 新增：执行思考系统的工具调用
+    private async executeThinkingToolCalls(toolCalls: any[]): Promise<any[]> {
+        const results: any[] = [];
+        const allTools = this.getActiveTools();
+
+        for (const toolCall of toolCalls) {
+            // 处理不同的工具调用结构
+            let toolName: string;
+            let parameters: any;
+            
+            if (toolCall.function && toolCall.function.name) {
+                // 传统结构：{ function: { name: "...", arguments: "..." } }
+                toolName = toolCall.function.name;
+                parameters = JSON.parse(toolCall.function.arguments);
+            } else if (toolCall.name) {
+                // 思考系统结构：{ name: "...", parameters: {...} }
+                toolName = toolCall.name;
+                parameters = toolCall.parameters;
+            } else {
+                logger.error(`Invalid tool call structure:`, toolCall);
+                results.push({
+                    success: false,
+                    error: `Invalid tool call structure`
+                });
+                continue;
+            }
+            
+            const tool = allTools.find(t => t.name === toolName);
+            if (!tool) {
+                logger.error(`Tool ${toolName} not found`);
+                results.push({
+                    success: false,
+                    error: `Tool ${toolName} not found`
+                });
+                continue;
+            }
+
+            try {
+                const result = await tool.execute(parameters, this);
+                results.push(result);
+                
+                // 调用processToolCallResult以便其他系统能响应
+                this.processToolCallResult(result as ToolCallResult);
+
+            } catch (error) {
+                logger.error(`Error executing tool ${toolName}:`, error);
+                results.push({
+                    success: false,
+                    error: error instanceof Error ? error.message : String(error)
+                });
+            }
+        }
+
+        return results;
+    }
+
+    // 新增：获取思考系统统计信息
+    public getThinkingStats(): any {
+        if (!this.thinkingSystem) {
+            return { error: 'Thinking system not enabled' };
+        }
+        return this.thinkingSystem.getExecutionStats();
+    }
+
+    // 新增：导出思考会话
+    public exportThinkingSession(): string | null {
+        if (!this.thinkingSystem) {
+            return null;
+        }
+        return this.thinkingSystem.exportSession();
+    }
+
+    // 新增：导入思考会话
+    public importThinkingSession(sessionData: string): boolean {
+        if (!this.thinkingSystem) {
+            return false;
+        }
+        try {
+            this.thinkingSystem.importSession(sessionData);
+            return true;
+        } catch (error) {
+            logger.error('Failed to import thinking session:', error);
+            return false;
+        }
+    }
+
+    // 新增：重置思考系统
+    public resetThinkingSystem(): void {
+        if (this.thinkingSystem) {
+            this.thinkingSystem.reset();
+            logger.info('Thinking system reset');
+        }
+    }
 
     async setup(): Promise<void>{
         // Register all contexts with the context manager
@@ -281,6 +496,37 @@ export class BaseAgent implements IAgent {
         }
     }
 
+    async startWithUserInput(userInput: string, maxSteps: number):Promise<void> {
+        if (this.isRunning) {
+            logger.warn('Agent is already running');
+            return;
+        }
+
+        try {
+            await this.changeState('running', 'User requested start');
+            this.isRunning = true;
+            this.shouldStop = false;
+            this.currentStep = 0;
+
+            logger.info(`==========Agent Starting: Max Steps ${maxSteps} ==========`);
+            logger.info(`Thinking system enabled: ${this.enableThinking}`);
+
+            // 将主要的执行逻辑放入taskQueue
+            await this.taskQueue.addProcessStepTask(async () => {
+                return await this.executeStepsLoop(userInput,maxSteps);
+            }, 10); // 高优先级
+
+        } catch (error) {
+            logger.error('Error in agent start:', error);
+            await this.changeState('error', `Start error: ${(error as Error).message}`);
+        } finally {
+            this.isRunning = false;
+            if (this.currentState !== 'error') {
+                await this.changeState('idle', 'Execution completed');
+            }
+        }
+    }
+
     // 新的异步start方法
     async start(maxSteps: number): Promise<void> {
         if (this.isRunning) {
@@ -295,10 +541,11 @@ export class BaseAgent implements IAgent {
             this.currentStep = 0;
 
             logger.info(`==========Agent Starting: Max Steps ${maxSteps} ==========`);
+            logger.info(`Thinking system enabled: ${this.enableThinking}`);
 
             // 将主要的执行逻辑放入taskQueue
             await this.taskQueue.addProcessStepTask(async () => {
-                return await this.executeStepsLoop(maxSteps);
+                return await this.processStep()
             }, 10); // 高优先级
 
         } catch (error) {
@@ -313,7 +560,7 @@ export class BaseAgent implements IAgent {
     }
 
     // 执行步骤循环
-    private async executeStepsLoop(maxSteps: number): Promise<void> {
+    private async executeStepsLoop(userInput: string, maxSteps: number): Promise<void> {
         while (!this.shouldStop && this.currentStep < maxSteps) {
             logger.info(`==========Agent Current Step: ${this.currentStep} ==========`);
             
@@ -333,7 +580,15 @@ export class BaseAgent implements IAgent {
             try {
                 // 将每个processStep也放入taskQueue异步执行
                 await this.taskQueue.addProcessStepTask(async () => {
-                    return await this.processStep();
+                    // 根据是否启用思考系统选择不同的处理方法
+                    if (this.enableThinking && this.thinkingSystem) {
+                        const continueThinking = await this.processStepWithThinking(userInput);
+                        if (!continueThinking) {
+                            this.stop();
+                        }
+                    } else {
+                        throw new Error('Thinking system is not enabled');
+                    }
                 }, 5); // 中等优先级
 
                 // 发布步骤完成事件
@@ -648,14 +903,29 @@ export class BaseAgent implements IAgent {
     public async processUserInput(input: string, sessionId: string): Promise<void> {
         logger.info(`Agent processing user input directly: "${input}" in session ${sessionId}`);
         
-        // 直接更新 UserInputContext
-        const userInputContext = this.contextManager.findContextById('user-input-context');
-        if (userInputContext && 'processUserInput' in userInputContext) {
-            (userInputContext as any).processUserInput(input, sessionId);
+        // 如果启用了思考系统，使用思考系统处理
+        if (this.enableThinking && this.thinkingSystem) {
+            try {
+                // 获取活跃工具的定义
+                const toolDefinitions = this.getActiveTools().map(tool => tool.toCallParams());
+
+                // 重置步骤计数，因为这是新的用户输入
+                this.currentStep = 0;
+                
+                const result = await this.thinkingSystem.processUserInput(input, sessionId, toolDefinitions);
+                
+                // 执行工具调用
+                if (result.toolCalls.length > 0) {
+                    const toolResults = await this.executeThinkingToolCalls(result.toolCalls);
+                    await this.thinkingSystem.processToolResults(result.stepNumber, toolResults);
+                }
+                
+                logger.info(`Thinking system processed user input: step ${result.stepNumber}`);
+                return;
+            } catch (error) {
+                throw error;
+            }
         }
-        
-        // 启动Agent处理
-        await this.start(10); // 处理用户输入时限制步数
     }
 
     /**
@@ -682,7 +952,13 @@ export class BaseAgent implements IAgent {
         const { content, messageType, context } = event.payload;
         logger.info(`Agent handling user message: "${content}" (type: ${messageType})`);
         
-        // 更新 UserInputContext
+        // 如果启用了思考系统，直接使用思考系统处理
+        if (this.enableThinking && this.thinkingSystem) {
+            await this.processUserInput(content, event.sessionId);
+            return;
+        }
+        
+        // 传统方式：更新 UserInputContext
         const userInputContext = this.contextManager.findContextById('user-input-context');
         if (userInputContext && 'handleUserMessage' in userInputContext) {
             await (userInputContext as any).handleUserMessage(event);
@@ -699,10 +975,10 @@ export class BaseAgent implements IAgent {
         const { requestId, value } = event.payload;
         logger.info(`Agent handling input response for request ${requestId}: ${value}`);
         
-        // 更新 UserInputContext
-        const userInputContext = this.contextManager.findContextById('user-input-context');
-        if (userInputContext && 'handleInputResponse' in userInputContext) {
-            await (userInputContext as any).handleInputResponse(event);
+        // 更新 InteractiveContext (因为 RequestUserInputTool 已经移动到了那里)
+        const interactiveContext = this.contextManager.findContextById('interactive-context');
+        if (interactiveContext && 'handleInputResponse' in interactiveContext) {
+            await (interactiveContext as any).handleInputResponse(event);
         }
         
         // 启动Agent处理（如果需要）
@@ -772,6 +1048,50 @@ export class BaseAgent implements IAgent {
                 }
             });
         });
+    }
+
+    public async getPrompt(): Promise<string> {
+        return await this.contextManager.renderPrompt();
+    }
+
+    /**
+     * 新增：启用思考系统
+     */
+    public enableThinkingSystem(options?: {
+        maxConversationHistory?: number;
+        maxExecutionHistory?: number;
+    }): boolean {
+        if (this.enableThinking) {
+            logger.warn('Thinking system is already enabled');
+            return true;
+        }
+
+        try {
+            this.enableThinking = true;
+            this.initializeThinkingSystem(options);
+            logger.info('Thinking system enabled successfully');
+            return true;
+        } catch (error) {
+            logger.error('Failed to enable thinking system:', error);
+            this.enableThinking = false;
+            return false;
+        }
+    }
+
+    /**
+     * 新增：禁用思考系统
+     */
+    public disableThinkingSystem(): void {
+        this.enableThinking = false;
+        this.thinkingSystem = undefined;
+        logger.info('Thinking system disabled');
+    }
+
+    /**
+     * 新增：检查思考系统是否启用
+     */
+    public isThinkingEnabled(): boolean {
+        return this.enableThinking && !!this.thinkingSystem;
     }
 }
 
