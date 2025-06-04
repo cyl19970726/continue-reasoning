@@ -261,8 +261,8 @@ export class BaseAgent implements IAgent {
                 : await this.thinkingSystem.continueReasoning(sessionId, toolDefinitions);
 
             logger.info(`Thinking step ${result.stepNumber} completed`);
-            logger.debug('Thinking Content:', result.thinking);
-            logger.debug('Response message:', result.response?.message);
+            logger.info('Thinking Content:', result.thinking);
+            logger.info('Response message:', result.response?.message);
 
             // 发布 thinking 事件（只有当有思考内容时）
             if (this.eventBus && result.thinking) {
@@ -276,8 +276,7 @@ export class BaseAgent implements IAgent {
                             analysis: result.thinking.analysis,
                             plan: result.thinking.plan,
                             reasoning: result.thinking.reasoning,
-                            nextAction: result.thinking.nextAction,
-                            executionStatus: result.thinking.executionStatus
+                            nextAction: result.thinking.nextAction
                         },
                         toolCalls: result.toolCalls,
                         rawThinking: result.rawText
@@ -303,12 +302,22 @@ export class BaseAgent implements IAgent {
             }
 
             // 执行工具调用
+            let shouldContinue = true;
             if (result.toolCalls.length > 0) {
                 const toolResults = await this.executeThinkingToolCalls(result.toolCalls);
                 await this.thinkingSystem.processToolResults(result.stepNumber, toolResults);
+                
+                // 检查是否有 agent_stop 工具调用
+                const hasStopCall = result.toolCalls.some(call => 
+                    call.name === 'agent_stop'
+                );
+                
+                if (hasStopCall) {
+                    shouldContinue = false;
+                }
             }
 
-            return result.thinking?.executionStatus === 'continue';
+            return shouldContinue;
 
         } catch (error) {
             logger.error('Error in thinking system step:', error);
@@ -496,7 +505,15 @@ export class BaseAgent implements IAgent {
         }
     }
 
-    async startWithUserInput(userInput: string, maxSteps: number):Promise<void> {
+    async startWithUserInput(
+        userInput: string, 
+        maxSteps: number, 
+        options?: {
+            savePromptPerStep?: boolean;  // 是否每步保存prompt
+            promptSaveDir?: string;       // prompt保存目录
+            promptSaveFormat?: 'markdown' | 'json' | 'both';  // 保存格式
+        }
+    ): Promise<void> {
         if (this.isRunning) {
             logger.warn('Agent is already running');
             return;
@@ -510,10 +527,15 @@ export class BaseAgent implements IAgent {
 
             logger.info(`==========Agent Starting: Max Steps ${maxSteps} ==========`);
             logger.info(`Thinking system enabled: ${this.enableThinking}`);
+            
+            // 如果启用了每步保存prompt，记录设置
+            if (options?.savePromptPerStep && this.enableThinking) {
+                logger.info(`Prompt saving enabled: ${options.promptSaveFormat || 'markdown'} format to ${options.promptSaveDir || './step-prompts'}`);
+            }
 
             // 将主要的执行逻辑放入taskQueue
             await this.taskQueue.addProcessStepTask(async () => {
-                return await this.executeStepsLoop(userInput,maxSteps);
+                return await this.executeStepsLoop(userInput, maxSteps, options);
             }, 10); // 高优先级
 
         } catch (error) {
@@ -560,7 +582,11 @@ export class BaseAgent implements IAgent {
     }
 
     // 执行步骤循环
-    private async executeStepsLoop(userInput: string, maxSteps: number): Promise<void> {
+    private async executeStepsLoop(userInput: string, maxSteps: number, options?: {
+        savePromptPerStep?: boolean;  // 是否每步保存prompt
+        promptSaveDir?: string;       // prompt保存目录
+        promptSaveFormat?: 'markdown' | 'json' | 'both';  // 保存格式
+    }): Promise<void> {
         while (!this.shouldStop && this.currentStep < maxSteps) {
             logger.info(`==========Agent Current Step: ${this.currentStep} ==========`);
             
@@ -584,6 +610,7 @@ export class BaseAgent implements IAgent {
                     if (this.enableThinking && this.thinkingSystem) {
                         const continueThinking = await this.processStepWithThinking(userInput);
                         if (!continueThinking) {
+                            logger.info("The Thinking System is not able to continue reasoning, so the agent will stop");
                             this.stop();
                         }
                     } else {
@@ -602,6 +629,17 @@ export class BaseAgent implements IAgent {
                             action: 'complete'
                         }
                     });
+                }
+
+                // 🆕 每步保存 prompt（如果启用）
+                if (options?.savePromptPerStep && this.enableThinking && this.thinkingSystem) {
+                    try {
+                        await this.saveStepPrompt(this.currentStep, options);
+                        logger.debug(`Prompt saved for step ${this.currentStep}`);
+                    } catch (error) {
+                        logger.error(`Failed to save prompt for step ${this.currentStep}:`, error);
+                        // 不中断执行，只记录错误
+                    }
                 }
 
                 this.currentStep++;
@@ -1092,6 +1130,56 @@ export class BaseAgent implements IAgent {
      */
     public isThinkingEnabled(): boolean {
         return this.enableThinking && !!this.thinkingSystem;
+    }
+
+    /**
+     * 保存单步的 prompt（私有方法）
+     */
+    private async saveStepPrompt(stepNumber: number, options: {
+        savePromptPerStep?: boolean;
+        promptSaveDir?: string;
+        promptSaveFormat?: 'markdown' | 'json' | 'both';
+    }): Promise<void> {
+        if (!this.thinkingSystem) {
+            throw new Error('Thinking system not available');
+        }
+
+        const saveDir = options.promptSaveDir || './step-prompts';
+        const format = options.promptSaveFormat || 'markdown';
+        
+        // 确保目录存在
+        const fs = await import('fs');
+        const path = await import('path');
+        
+        if (!fs.existsSync(saveDir)) {
+            fs.mkdirSync(saveDir, { recursive: true });
+        }
+
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+        const stepPadded = stepNumber.toString().padStart(3, '0');
+        
+        try {
+            if (format === 'markdown' || format === 'both') {
+                const markdownFile = path.join(saveDir, `step-${stepPadded}-${timestamp}.md`);
+                await this.thinkingSystem.savePromptHistory(markdownFile, {
+                    formatType: 'markdown',
+                    includeMetadata: true,
+                    stepRange: { start: stepNumber, end: stepNumber }
+                });
+            }
+
+            if (format === 'json' || format === 'both') {
+                const jsonFile = path.join(saveDir, `step-${stepPadded}-${timestamp}.json`);
+                await this.thinkingSystem.savePromptHistory(jsonFile, {
+                    formatType: 'json',
+                    includeMetadata: true,
+                    stepRange: { start: stepNumber, end: stepNumber }
+                });
+            }
+        } catch (error) {
+            logger.error(`Error saving step ${stepNumber} prompt:`, error);
+            throw error;
+        }
     }
 }
 

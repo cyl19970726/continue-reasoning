@@ -10,6 +10,7 @@ export interface ExecutionStep {
   toolCalls: ToolCallParams[];
   toolResults: any[];
   completed: boolean;
+  prompt?: string;
 }
 
 export interface ExecutionHistoryRenderOptions {
@@ -17,7 +18,9 @@ export interface ExecutionHistoryRenderOptions {
   includeResponse?: boolean;
   includeToolCalls?: boolean;
   includeToolResults?: boolean;
+  includePrompt?: boolean;
   maxSteps?: number;
+  promptSummaryLength?: number;
 }
 
 export class ExecutionTracker {
@@ -30,7 +33,9 @@ export class ExecutionTracker {
     includeResponse: true,
     includeToolCalls: true,
     includeToolResults: true,
-    maxSteps: 5
+    includePrompt: false,  // 默认不包含prompt避免输出过长
+    maxSteps: 5,
+    promptSummaryLength: 200
   };
 
   constructor(renderOptions?: Partial<ExecutionHistoryRenderOptions>) {
@@ -56,7 +61,7 @@ export class ExecutionTracker {
   /**
    * 添加新的执行步骤
    */
-  addStep(thinking: ParsedThinking | null, response: ParsedResponse | null, toolCalls: ToolCallParams[]): void {
+  addStep(thinking: ParsedThinking | null, response: ParsedResponse | null, toolCalls: ToolCallParams[], prompt?: string): void {
     const step: ExecutionStep = {
       stepNumber: this.currentStep,
       timestamp: new Date(),
@@ -64,7 +69,8 @@ export class ExecutionTracker {
       response,
       toolCalls,
       toolResults: [],
-      completed: false
+      completed: false,
+      prompt
     };
     
     this.steps.push(step);
@@ -125,6 +131,12 @@ export class ExecutionTracker {
       // 工具调用省略了Param
       if (renderOptions.includeToolCalls && step.toolCalls.length > 0) {
         history += `**Tool Calls:** ${step.toolCalls.map(tc => `tool: ${tc.name}, call_id: ${tc.call_id}`).join(', ')}\n`;
+      }
+      
+      // Prompt内容（可选，用于调试）
+      if (renderOptions.includePrompt && step.prompt) {
+        const promptSummary = this.truncatePrompt(step.prompt, renderOptions.promptSummaryLength || 200);
+        history += `**Prompt Summary:** ${promptSummary}\n`;
       }
       
       // 结果状态
@@ -279,5 +291,260 @@ export class ExecutionTracker {
       }
       return true;
     });
+  }
+
+  private truncatePrompt(prompt: string, maxLength: number): string {
+    if (prompt.length <= maxLength) return prompt;
+    return prompt.substring(0, maxLength) + '... [truncated]';
+  }
+
+  /**
+   * 保存所有prompt到文件（用于prompt分析和优化）
+   */
+  async savePromptsToFile(filePath: string, options?: {
+    includeMetadata?: boolean;
+    formatType?: 'markdown' | 'json' | 'txt';
+    stepRange?: { start?: number; end?: number };
+  }): Promise<void> {
+    try {
+      const { includeMetadata = true, formatType = 'markdown', stepRange = {} } = options || {};
+      
+      let stepsToSave = this.steps.filter(step => step.prompt);
+      
+      // 应用步骤范围过滤
+      if (stepRange.start !== undefined || stepRange.end !== undefined) {
+        stepsToSave = stepsToSave.filter(step => {
+          const stepNum = step.stepNumber;
+          return (stepRange.start === undefined || stepNum >= stepRange.start) &&
+                 (stepRange.end === undefined || stepNum <= stepRange.end);
+        });
+      }
+
+      let content = '';
+      
+      if (formatType === 'markdown') {
+        content = this.formatPromptsAsMarkdown(stepsToSave, includeMetadata);
+      } else if (formatType === 'json') {
+        content = this.formatPromptsAsJson(stepsToSave, includeMetadata);
+      } else {
+        content = this.formatPromptsAsText(stepsToSave, includeMetadata);
+      }
+
+      // 使用Node.js的fs模块写入文件
+      const fs = await import('fs');
+      const path = await import('path');
+      
+      // 确保目录存在
+      const dir = path.dirname(filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      
+      fs.writeFileSync(filePath, content, 'utf-8');
+      console.log(`Prompts saved to: ${filePath}`);
+      
+    } catch (error) {
+      console.error('Failed to save prompts to file:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取prompt统计信息
+   */
+  getPromptStats(): {
+    totalStepsWithPrompts: number;
+    averagePromptLength: number;
+    maxPromptLength: number;
+    minPromptLength: number;
+    promptLengthTrend: { stepNumber: number; length: number }[];
+  } {
+    const stepsWithPrompts = this.steps.filter(step => step.prompt);
+    
+    if (stepsWithPrompts.length === 0) {
+      return {
+        totalStepsWithPrompts: 0,
+        averagePromptLength: 0,
+        maxPromptLength: 0,
+        minPromptLength: 0,
+        promptLengthTrend: []
+      };
+    }
+
+    const promptLengths = stepsWithPrompts.map(step => step.prompt!.length);
+    const total = promptLengths.reduce((sum, len) => sum + len, 0);
+
+    return {
+      totalStepsWithPrompts: stepsWithPrompts.length,
+      averagePromptLength: Math.round(total / stepsWithPrompts.length),
+      maxPromptLength: Math.max(...promptLengths),
+      minPromptLength: Math.min(...promptLengths),
+      promptLengthTrend: stepsWithPrompts.map(step => ({
+        stepNumber: step.stepNumber,
+        length: step.prompt!.length
+      }))
+    };
+  }
+
+  /**
+   * 分析prompt演化模式
+   */
+  analyzePromptEvolution(): {
+    lengthGrowthPattern: 'increasing' | 'decreasing' | 'stable' | 'fluctuating';
+    averageGrowthPerStep: number;
+    significantChanges: { fromStep: number; toStep: number; changePercent: number }[];
+  } {
+    const stepsWithPrompts = this.steps.filter(step => step.prompt);
+    
+    if (stepsWithPrompts.length < 2) {
+      return {
+        lengthGrowthPattern: 'stable',
+        averageGrowthPerStep: 0,
+        significantChanges: []
+      };
+    }
+
+    const lengths = stepsWithPrompts.map(step => step.prompt!.length);
+    const changes = [];
+    let totalChange = 0;
+
+    for (let i = 1; i < lengths.length; i++) {
+      const change = lengths[i] - lengths[i - 1];
+      changes.push(change);
+      totalChange += change;
+    }
+
+    const averageChange = totalChange / changes.length;
+    
+    // 判断增长模式
+    let pattern: 'increasing' | 'decreasing' | 'stable' | 'fluctuating' = 'stable';
+    const positiveChanges = changes.filter(c => c > 0).length;
+    const negativeChanges = changes.filter(c => c < 0).length;
+    
+    if (positiveChanges > negativeChanges * 2) pattern = 'increasing';
+    else if (negativeChanges > positiveChanges * 2) pattern = 'decreasing';
+    else if (Math.abs(averageChange) < 50) pattern = 'stable';
+    else pattern = 'fluctuating';
+
+    // 找出显著变化（超过20%的变化）
+    const significantChanges = [];
+    for (let i = 1; i < lengths.length; i++) {
+      const changePercent = ((lengths[i] - lengths[i - 1]) / lengths[i - 1]) * 100;
+      if (Math.abs(changePercent) > 20) {
+        significantChanges.push({
+          fromStep: stepsWithPrompts[i - 1].stepNumber,
+          toStep: stepsWithPrompts[i].stepNumber,
+          changePercent: Math.round(changePercent * 100) / 100
+        });
+      }
+    }
+
+    return {
+      lengthGrowthPattern: pattern,
+      averageGrowthPerStep: Math.round(averageChange * 100) / 100,
+      significantChanges
+    };
+  }
+
+  private formatPromptsAsMarkdown(steps: ExecutionStep[], includeMetadata: boolean): string {
+    let content = `# Prompt Execution History\n\n`;
+    
+    if (includeMetadata) {
+      const stats = this.getPromptStats();
+      const evolution = this.analyzePromptEvolution();
+      
+      content += `## Summary\n\n`;
+      content += `- **Total Steps with Prompts**: ${stats.totalStepsWithPrompts}\n`;
+      content += `- **Average Prompt Length**: ${stats.averagePromptLength} characters\n`;
+      content += `- **Length Range**: ${stats.minPromptLength} - ${stats.maxPromptLength} characters\n`;
+      content += `- **Growth Pattern**: ${evolution.lengthGrowthPattern}\n`;
+      content += `- **Average Growth per Step**: ${evolution.averageGrowthPerStep} characters\n\n`;
+      
+      if (evolution.significantChanges.length > 0) {
+        content += `### Significant Changes\n\n`;
+        for (const change of evolution.significantChanges) {
+          content += `- Step ${change.fromStep} → ${change.toStep}: ${change.changePercent > 0 ? '+' : ''}${change.changePercent}%\n`;
+        }
+        content += '\n';
+      }
+      
+      content += `---\n\n`;
+    }
+    
+    for (const step of steps) {
+      content += `## Step ${step.stepNumber} - ${this.formatTimestamp(step.timestamp)}\n\n`;
+      
+      if (includeMetadata) {
+        content += `**Metadata:**\n`;
+        content += `- Prompt Length: ${step.prompt!.length} characters\n`;
+        content += `- Tool Calls: ${step.toolCalls.length}\n`;
+        content += `- Status: ${step.completed ? 'Completed' : 'In Progress'}\n\n`;
+      }
+      
+      content += `**Prompt:**\n\`\`\`\n${step.prompt!}\n\`\`\`\n\n`;
+      
+      if (step.thinking) {
+        content += `**Thinking Summary:**\n`;
+        content += `- Analysis: ${step.thinking.analysis.substring(0, 100)}...\n`;
+        content += `- Plan: ${step.thinking.plan.substring(0, 100)}...\n\n`;
+      }
+      
+      content += `---\n\n`;
+    }
+    
+    return content;
+  }
+
+  private formatPromptsAsJson(steps: ExecutionStep[], includeMetadata: boolean): string {
+    const data = {
+      metadata: includeMetadata ? {
+        exportTime: new Date().toISOString(),
+        stats: this.getPromptStats(),
+        evolution: this.analyzePromptEvolution()
+      } : undefined,
+      steps: steps.map(step => ({
+        stepNumber: step.stepNumber,
+        timestamp: step.timestamp.toISOString(),
+        promptLength: step.prompt!.length,
+        prompt: step.prompt!,
+        toolCallsCount: step.toolCalls.length,
+        toolCalls: step.toolCalls.map(tc => ({ name: tc.name, call_id: tc.call_id })),
+        completed: step.completed,
+        thinking: step.thinking ? {
+          analysis: step.thinking.analysis,
+          plan: step.thinking.plan,
+          reasoning: step.thinking.reasoning,
+          nextAction: step.thinking.nextAction
+        } : null
+      }))
+    };
+    
+    return JSON.stringify(data, null, 2);
+  }
+
+  private formatPromptsAsText(steps: ExecutionStep[], includeMetadata: boolean): string {
+    let content = `PROMPT EXECUTION HISTORY\n`;
+    content += `========================\n\n`;
+    
+    if (includeMetadata) {
+      const stats = this.getPromptStats();
+      content += `SUMMARY:\n`;
+      content += `- Total Steps: ${stats.totalStepsWithPrompts}\n`;
+      content += `- Avg Length: ${stats.averagePromptLength} chars\n`;
+      content += `- Range: ${stats.minPromptLength} - ${stats.maxPromptLength} chars\n\n`;
+    }
+    
+    for (const step of steps) {
+      content += `STEP ${step.stepNumber} (${this.formatTimestamp(step.timestamp)})\n`;
+      content += `${'='.repeat(50)}\n`;
+      content += `Length: ${step.prompt!.length} characters\n`;
+      content += `Tools: ${step.toolCalls.length}\n`;
+      content += `Status: ${step.completed ? 'Completed' : 'In Progress'}\n\n`;
+      content += `PROMPT:\n`;
+      content += `${step.prompt!}\n\n`;
+      content += `${'='.repeat(50)}\n\n`;
+    }
+    
+    return content;
   }
 } 

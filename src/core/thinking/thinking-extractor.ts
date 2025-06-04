@@ -1,11 +1,10 @@
-export type ExecutionStatus = 'continue' | 'complete';
+import { logger } from "../context";
 
 export interface ParsedThinking {
   analysis: string;
   plan: string;
   reasoning: string;
   nextAction: string;
-  executionStatus: ExecutionStatus;
 }
 
 export interface DetailedPlan {
@@ -33,6 +32,7 @@ export class ThinkingExtractor {
   parseThinking(text: string): ParsedThinking | null {
     const thinkingMatch = text.match(/<thinking>([\s\S]*?)<\/thinking>/);
     if (!thinkingMatch) {
+      logger.warn('ThinkingExtractor: No <thinking> tags found in text \n ----/n ', text ,' -----\n');
       return null;
     }
 
@@ -43,12 +43,13 @@ export class ThinkingExtractor {
       plan: this.extractSection(thinkingContent, 'plan'),
       reasoning: this.extractSection(thinkingContent, 'reasoning'),
       nextAction: this.extractSection(thinkingContent, 'next_action'),
-      executionStatus: this.extractExecutionStatus(thinkingContent)
     };
     
     // 如果至少有一个字段有内容，就返回解析结果（放宽验证）
     if (parsed.analysis || parsed.plan || parsed.reasoning || parsed.nextAction) {
       return parsed;
+    }else {
+      logger.warn('ThinkingExtractor: No valid thinking content found');
     }
     
     return null;
@@ -90,7 +91,8 @@ export class ThinkingExtractor {
   }
 
   private extractSection(content: string, sectionName: string): string {
-    const regex = new RegExp(`<${sectionName}>([\s\S]*?)<\/${sectionName}>`, 'i');
+    // 使用更严格的正则表达式，考虑可能的空白字符
+    const regex = new RegExp(`<${sectionName}>\\s*([\\s\\S]*?)\\s*<\\/${sectionName}>`, 'i');
     const match = content.match(regex);
     const result = match ? match[1].trim() : '';
     
@@ -131,16 +133,5 @@ export class ThinkingExtractor {
   private extractTimeline(planContent: string): Timeline {
     // 未来实现：提取时间线信息
     return { estimatedDuration: 0, milestones: [] };
-  }
-
-  private extractExecutionStatus(content: string): ExecutionStatus {
-    const statusText = this.extractSection(content, 'execution_status').toLowerCase();
-    
-    if (statusText.includes('complete') || statusText.includes('finished') || statusText.includes('done')) {
-      return 'complete';
-    }
-    
-    // 默认为 continue
-    return 'continue';
   }
 } 

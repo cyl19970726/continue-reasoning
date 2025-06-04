@@ -1,6 +1,7 @@
 import { ThinkingExtractor, ParsedThinking } from './thinking-extractor';
 import { ResponseExtractor, ParsedResponse } from './response-extractor';
 import { ILLM, ToolCallDefinition, ToolCallParams } from '../interfaces';
+import { logger } from '../context';
 
 export interface LLMResponse {
   thinking: ParsedThinking | null;
@@ -38,7 +39,7 @@ export class ThinkingEngine {
       const response = this.responseExtractor.parseResponse(text);
       
       // 验证解析结果
-    //   this.validateParsedContent(thinking, response, text);
+      this.validateParsedContent(thinking, response, text);
       
       return {
         thinking,
@@ -127,19 +128,14 @@ export class ThinkingEngine {
       });
     }
     
-    // 验证响应有效性
-    if (!this.responseExtractor.validateResponse(response)) {
-      console.warn('Invalid response detected: empty message');
-    }
-    
     // 检查是否包含思考标签但解析失败
     if (rawText.includes('<thinking>') && !thinking) {
-      console.warn('Found thinking tags but failed to parse thinking content');
+      logger.warn('Found thinking tags but failed to parse thinking content');
     }
     
-    // 检查是否包含响应标签但解析失败
-    if (rawText.includes('<response>') && !response?.message) {
-      console.warn('Found response tags but failed to parse response content');
+    // 检查是否包含响应标签但解析失败（只有在有response标签时才检查）
+    if (rawText.includes('<response>') && rawText.includes('<message>') && !response?.message) {
+        logger.warn('Found response tags but failed to parse response content');
     }
   }
 

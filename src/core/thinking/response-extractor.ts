@@ -26,13 +26,19 @@ export class ResponseExtractor {
   parseResponse(text: string): ParsedResponse | null {
     const responseMatch = text.match(/<response>([\s\S]*?)<\/response>/);
     if (!responseMatch) {
-      return null; // 如果没有 response 标签，整个文本作为消息
+      return null; // 没有 response 标签时返回 null（这是正常的）
     }
 
     const responseContent = responseMatch[1];
+    const message = this.extractSection(responseContent, 'message');
+    
+    // 如果没有 message 内容，也返回 null（这也是正常的）
+    if (!message || !message.trim()) {
+      return null;
+    }
     
     return {
-      message: this.extractSection(responseContent, 'message'),
+      message: message,
       action: this.extractSection(responseContent, 'action'),
       status: this.extractSection(responseContent, 'status')
     };
@@ -71,7 +77,10 @@ export class ResponseExtractor {
    * 验证响应完整性
    */
   validateResponse(response: ParsedResponse | null): boolean {
-    if (!response) return false;
+    // response 是可选的，null 是有效的
+    if (!response) return true;
+    
+    // 如果有 response，确保 message 不为空
     return !!(response.message && response.message.trim());
   }
 

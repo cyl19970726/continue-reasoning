@@ -1,6 +1,6 @@
 import { ThinkingEngine, LLMResponse } from './thinking-engine';
 import { ExecutionTracker, ExecutionHistoryRenderOptions } from './execution-tracker';
-import { ParsedThinking, ExecutionStatus } from './thinking-extractor';
+import { ParsedThinking } from './thinking-extractor';
 import { ParsedResponse, ConversationMessage } from './response-extractor';
 import { ILLM, ToolCallDefinition, IContextManager, PromptAssemblyStrategy, ToolCallParams } from '../interfaces';
 
@@ -11,7 +11,6 @@ export interface ProcessResult {
   stepNumber: number;
   sessionId: string;
   rawText: string;
-  executionStatus: ExecutionStatus;
 }
 
 export interface ThinkingOrchestratorOptions {
@@ -296,12 +295,13 @@ export class ThinkingOrchestrator {
         });
       }
 
-      // 4. 添加到执行管理器
+      // 4. 添加到执行管理器（包含prompt记录）
       if (llmResponse.thinking) {
         this.executionTracker.addStep(
           llmResponse.thinking, 
           llmResponse.response,
-          llmResponse.toolCalls
+          llmResponse.toolCalls,
+          prompt  // 添加prompt记录
         );
       }
       
@@ -313,7 +313,6 @@ export class ThinkingOrchestrator {
         stepNumber: this.executionTracker.getCurrentStepNumber() - 1,
         sessionId,
         rawText: llmResponse.rawText,
-        executionStatus: llmResponse.thinking?.executionStatus || 'continue'
       };
 
       // 6. 生成质量报告（可选）
@@ -441,16 +440,74 @@ export class ThinkingOrchestrator {
   }
 
   /**
+   * 保存prompt历史到文件（用于prompt分析和优化）
+   */
+  async savePromptHistory(filePath: string, options?: {
+    includeMetadata?: boolean;
+    formatType?: 'markdown' | 'json' | 'txt';
+    stepRange?: { start?: number; end?: number };
+  }): Promise<void> {
+    return this.executionTracker.savePromptsToFile(filePath, options);
+  }
+
+  /**
+   * 获取prompt统计信息
+   */
+  getPromptStats() {
+    return this.executionTracker.getPromptStats();
+  }
+
+  /**
+   * 分析prompt演化模式
+   */
+  analyzePromptEvolution() {
+    return this.executionTracker.analyzePromptEvolution();
+  }
+
+  /**
+   * 快速保存最近的prompt（用于调试）
+   */
+  async saveRecentPrompts(filePath: string, stepCount: number = 5): Promise<void> {
+    const recentSteps = this.executionTracker.getRecentSteps(stepCount);
+    const endStep = recentSteps.length > 0 ? recentSteps[recentSteps.length - 1].stepNumber : undefined;
+    const startStep = recentSteps.length > 0 ? recentSteps[0].stepNumber : undefined;
+    
+    return this.executionTracker.savePromptsToFile(filePath, {
+      formatType: 'markdown',
+      includeMetadata: true,
+      stepRange: { start: startStep, end: endStep }
+    });
+  }
+
+  /**
    * 获取思考协议模板
    */
   private getThinkingProtocolTemplate(): string {
     return `
 ## THINKING PROTOCOL
 
-You must engage in structured thinking before taking actions. Use the following format:
+⚠️  **CRITICAL REQUIREMENT**: You MUST include complete thinking analysis before any action. This is NON-NEGOTIABLE.
+
+**THINKING FORMAT** (Use EXACTLY this structure):
 
 <thinking>
 <analysis>
+[Your analysis here]
+</analysis>
+<plan>
+[Your plan here]
+</plan>
+<reasoning>
+[Your reasoning here]
+</reasoning>
+<next_action>
+[Your next action here]
+</next_action>
+</thinking>
+
+**THINKING CONTENT GUIDELINES:**
+
+**Analysis Section:**
 - Current task: [Describe what you need to accomplish]
 - Available context: [List relevant information from above]
 - Execution history review: [What has been done in previous steps]
@@ -458,78 +515,50 @@ You must engage in structured thinking before taking actions. Use the following 
 - Constraints: [Note any limitations or requirements]
 - Available tools: [List tools you can use for this specific task]
 - Environment state: [Current state of workspace/system]
-</analysis>
 
-<plan>
+**Plan Section:**
 - Step 1: [First action to take - specify tool and approach]
 - Step 2: [Second action to take - build on Step 1 results]
 - Step 3: [Continue as needed - ensure logical progression]
 - Validation strategy: [How to verify success at each step]
 - Error handling: [What to do if something goes wrong]
 - Efficiency considerations: [How to minimize redundant operations]
-</plan>
 
-<reasoning>
+**Reasoning Section:**
 - Why this approach: [Justify your chosen method over alternatives]
 - Data utilization: [How you're using existing information vs. gathering new data]
 - Tool selection rationale: [Why these specific tools for this task]
 - Risk assessment: [Potential issues and mitigation strategies]
 - Expected outcome: [What you expect to achieve and how to measure success]
 - Dependency management: [How this step relates to previous/future steps]
-</reasoning>
 
-<next_action>
+**Next Action Section:**
 Next concrete tasks to be completed:
 - Primary task: [The specific task to be completed next, based on the analysis above]
-- Tool selection: [Specific tool names to be used, e.g.: read_file, edit_file, run_terminal_cmd, etc.]
-- Operation type: [The type of operation each tool will perform, e.g.: read configuration files, modify code, execute tests, etc.]
+- Tool selection: [Specific tool names to be used, e.g.: read_file, edit_file, run_terminal_cmd, agent_stop, etc.]
+- Operation type: [The type of operation each tool will perform, e.g.: read configuration files, modify code, execute tests, stop execution, etc.]
 - Tool sequence: [If multiple tools are needed, specify the execution order]
 - Data dependencies: [What existing data is needed to avoid redundant retrieval]
 - Validation method: [How to verify the correctness and quality of task completion]
 - Downstream impact: [How this step affects overall task progress]
 
-Notes:
+**IMPORTANT NOTES:**
+- Use agent_stop tool when all tasks are completed or user interaction is needed
 - Only need to select tool names and operation types, specific parameters are handled automatically by the system in toolCalls
 - Prioritize using existing data and execution history to avoid redundant operations
 - Choose the minimal viable toolset to complete the task
 - Focus on strategic tool usage, without involving specific invocation details
-</next_action>
 
-<execution_status>
-[REQUIRED: Choose one]
-- continue: More steps are needed to complete the overall task
-- complete: The task has been fully completed and no further steps are required
-
-[Explanation: Briefly explain why you chose this status based on your analysis and current progress]
-</execution_status>
-</thinking>
+**AFTER thinking, you may optionally provide a response:**
 
 <response>
-**RESPONSE GUIDELINES:**
-You should provide a user-facing message ONLY in these situations:
-1. **Task Initiation**: When starting a complex multi-step task
-2. **Key Milestones**: When completing important phases or encountering significant progress
-3. **Final Results**: When delivering completed outputs or findings
-4. **User Guidance Needed**: When requiring clarification or approval
-5. **Error/Issue Resolution**: When explaining problems and solutions
-
-**DO NOT respond during:**
-- Routine tool executions (file reading, simple edits)
-- Intermediate processing steps
-- Information gathering phases
-- Internal preparation work
-
-**When you do respond, include:**
 <message>
-[Concise, informative message explaining current progress, key findings, or next steps. Focus on value to the user.]
+[Optional user-facing message - only when needed for task initiation, milestones, results, guidance, or error resolution]
 </message>
-
-**When you should remain silent:**
-Simply proceed to tool execution without a response message. The system will handle tool calls automatically.
 </response>
 
-**CRITICAL EXECUTION RULES:**
-1. **Think Before Every Action**: ALWAYS complete the thinking section before any tool execution
+**🚨 EXECUTION RULES:**
+1. **THINKING FIRST**: Always complete the <thinking> section before any tool execution - NO EXCEPTIONS
 2. **Data-First Approach**: Check available information and execution history before gathering new data
 3. **Avoid Redundancy**: Don't repeat actions if information already exists or tasks are completed
 4. **Tool Selection Optimization**: Use the minimal viable toolset that achieves the objective
@@ -539,7 +568,10 @@ Simply proceed to tool execution without a response message. The system will han
 8. **Strategic Communication**: Only communicate with users at meaningful decision points
 9. **Error Recovery**: Have contingency plans and graceful failure handling
 10. **Context Continuity**: Maintain awareness of the full session context and user intent
-`;
+11. **Task Completion Control**: Use agent_stop tool when all objectives are achieved or user input is required
+
+⚠️  **CRITICAL WARNING**: If you skip the thinking section or don't follow the exact format, the system will fail.
+    `;
   }
 
   /**
@@ -550,8 +582,13 @@ Simply proceed to tool execution without a response message. The system will han
 
 You are an advanced AI Agent specialized in handling complex tasks through structured thinking and intelligent tool usage.
 
-## CORE MISSION
-Your primary role is to solve problems efficiently by combining deep analysis with precise action execution. You excel at breaking down complex requests into manageable steps while maintaining context continuity.
+## 🧠 CORE MISSION - THINKING-FIRST ARCHITECTURE
+Your primary role is to solve problems efficiently by combining deep analysis with precise action execution. You MUST engage in structured thinking before every action.
+
+## 🚨 CRITICAL SYSTEM REQUIREMENT
+**MANDATORY THINKING**: You MUST ALWAYS generate complete thinking content using the exact <thinking> format before taking any action. This is NON-NEGOTIABLE and system-critical.
+
+**IMPORTANT**: The system expects and requires thinking content for every response. Failure to provide thinking content will cause system failures.
 
 ## SYSTEM ARCHITECTURE - CRITICAL
 
@@ -601,15 +638,17 @@ Your primary role is to solve problems efficiently by combining deep analysis wi
 
 ## EXECUTION PHILOSOPHY
 
-The core principle: **Continuous Contextual Reasoning**
+The core principle: **Mandatory Continuous Contextual Reasoning**
 
-Every reasoning step should be:
+Every reasoning step must be:
 1. **Historically Informed** - Based on all previous thinking and results
 2. **Contextually Integrated** - Connected to the complete session context
 3. **Progressively Building** - Advancing the overall understanding and plan
-4. **Simultaneously Planning** - Generating thinking and actions together
+4. **Thinking-Tool Synchronized** - Generating thinking and actions together
 
 Your role is to maintain a continuous thread of reasoning that evolves and improves with each step, ensuring that complex tasks are handled through accumulated intelligence and contextual awareness.
+
+**🚨 SYSTEM CRITICAL**: Always provide complete thinking content using the required <thinking> format. The system architecture depends on this.
 
 ---
 
