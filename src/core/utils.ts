@@ -341,6 +341,7 @@ export const ContextHelper = {
     renderPromptFn?: (data: z.infer<T>) => string | import("./interfaces").PromptCtx;
     toolSetFn: () => import("./interfaces").ToolSet;
     handleToolCall?: (toolCallResult: any) => void;
+    install?: (agent: import("./interfaces").IAgent) => Promise<void>;
     mcpServers?: {
         name: string;
         type?: "stdio" | "sse" | "streamableHttp";
@@ -355,7 +356,7 @@ export const ContextHelper = {
         autoActivate?: boolean;
     }[];
   }): IRAGEnabledContext<T> {
-    const { id, description, dataSchema, initialData, promptCtx, renderPromptFn, toolSetFn, handleToolCall, mcpServers } = options;
+    const { id, description, dataSchema, initialData, promptCtx, renderPromptFn, toolSetFn, handleToolCall, install, mcpServers } = options;
     
     const context: IRAGEnabledContext<T> = {
       id,
@@ -370,8 +371,20 @@ export const ContextHelper = {
       // Add mcpServers if provided
       mcpServers,
       
-      // Add install method for MCP server connections
+      // Add install method - supports both custom install and MCP server connections
       async install(agent: import("./interfaces").IAgent): Promise<void> {
+        // First run custom install function if provided
+        if (install) {
+          try {
+            await install(agent);
+            logger.info(`Custom install function completed for context ${this.id}`);
+          } catch (error) {
+            logger.error(`Custom install function failed for context ${this.id}:`, error);
+            throw error;
+          }
+        }
+        
+        // Then handle MCP servers if configured
         if (!this.mcpServers || this.mcpServers.length === 0) {
           return; // No MCP servers to connect
         }
@@ -556,6 +569,7 @@ export const ContextHelper = {
     renderPromptFn?: (data: z.infer<T>) => string | import("./interfaces").PromptCtx;
     toolSetFn?: () => import("./interfaces").ToolSet;
     handleToolCall?: (toolCallResult: any) => void;
+    install?: (agent: import("./interfaces").IAgent) => Promise<void>;
     ragConfigs?: Record<string, {
       rag: IRAG,
       queryTemplate?: string,
@@ -572,6 +586,7 @@ export const ContextHelper = {
       renderPromptFn, 
       toolSetFn,
       handleToolCall,
+      install,
       ragConfigs = {}
     } = options;
 
@@ -589,7 +604,8 @@ export const ContextHelper = {
         tools: [],
         active: false
       })),
-      handleToolCall
+      handleToolCall,
+      install
     });
     
     // Extend to a RAG context

@@ -1,3 +1,6 @@
+import { XmlExtractor, ExtractionResult, createXmlExtractor } from './xml-extractor';
+import { logger } from "../utils/logger";
+
 export interface ParsedResponse {
   message?: string;
   // 未来可扩展更多响应类型
@@ -19,33 +22,186 @@ export interface ConversationMessage {
   timestamp: Date;
 }
 
-export class ResponseExtractor {
-  /**
-   * 解析 response 标签内容
-   */
-  parseResponse(text: string): ParsedResponse | null {
-    const responseMatch = text.match(/<response>([\s\S]*?)<\/response>/);
-    if (!responseMatch) {
-      return null; // 没有 response 标签时返回 null（这是正常的）
-    }
+export interface ResponseExtractionOptions {
+  enableFallback?: boolean;
+  minResponseLength?: number;
+  allowPartialResponse?: boolean;
+  extractFromPlainText?: boolean;
+}
 
-    const responseContent = responseMatch[1];
-    const message = this.extractSection(responseContent, 'message');
-    
-    // 如果没有 message 内容，也返回 null（这也是正常的）
-    if (!message || !message.trim()) {
-      return null;
-    }
-    
-    return {
-      message: message,
-      action: this.extractSection(responseContent, 'action'),
-      status: this.extractSection(responseContent, 'status')
+export class ResponseExtractor {
+  private xmlExtractor: XmlExtractor;
+  private options: ResponseExtractionOptions;
+
+  constructor(options: ResponseExtractionOptions = {}) {
+    this.xmlExtractor = createXmlExtractor({
+      caseSensitive: false,
+      preserveWhitespace: false,
+      allowEmptyContent: false,
+      fallbackToRegex: true
+    });
+
+    this.options = {
+      enableFallback: false,
+      minResponseLength: 3,
+      allowPartialResponse: false,
+      extractFromPlainText: false,
+      ...options
     };
   }
 
   /**
-   * 处理用户输入（之前 userInputContext 的职责）
+   * 🎯 解析 response 标签内容
+   * 严格的解析逻辑，只接受明确的结构化响应
+   */
+  parseResponse(text: string): ParsedResponse | null {
+    if (!text || text.trim().length === 0) {
+      logger.warn('ResponseExtractor: Empty text provided');
+      return null;
+    }
+
+    try {
+      // 1. 只尝试完整的 response 标签解析
+      const responseResult = this.xmlExtractor.extract(text, 'response');
+      if (!responseResult.success || !responseResult.content) {
+        logger.info('ResponseExtractor: No response tag found');
+        return null;
+      }
+
+      // 2. 解析 response 内容，必须有明确的结构
+      const parsed = this.parseResponseContent(responseResult.content);
+      
+      // 3. 验证解析结果，必须有有效的 message
+      if (this.isValidResponse(parsed)) {
+        logger.info('ResponseExtractor: Successfully parsed structured response');
+        return parsed;
+      }
+
+      // 4. 如果没有明确的 message 标签，检查 response 内容是否直接是消息
+      if (this.isValidContent(responseResult.content)) {
+        // 只有当内容看起来像是直接的消息时才接受
+        if (this.looksLikeDirectMessage(responseResult.content)) {
+          logger.info('ResponseExtractor: Using response content as direct message');
+          return { message: responseResult.content };
+        }
+      }
+
+      logger.warn('ResponseExtractor: Response tag found but no valid message content');
+      return null;
+
+    } catch (error) {
+      logger.error('ResponseExtractor: Error parsing response:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 🔄 备选提取方案 - 移除，保持严格性
+   */
+  private tryFallbackExtraction(text: string): ParsedResponse | null {
+    // 不再使用备选方案，保持严格的响应要求
+    return null;
+  }
+
+  /**
+   * 🔍 检查内容是否看起来像直接消息（无 XML 标签）
+   */
+  private looksLikeDirectMessage(content: string): boolean {
+    // 不包含任何 XML 标签，且内容合理
+    const hasXmlTags = /<[^>]+>/.test(content);
+    if (hasXmlTags) {
+      return false;
+    }
+    
+    // 内容应该像是对用户的直接回复
+    const messagePatterns = [
+      /^(hi|hello|what|how|can|let|i)/i,
+      /\?$/,  // 以问号结尾
+      /^[A-Z].*[.!?]$/,  // 以大写字母开头，以标点结尾
+    ];
+    
+    return messagePatterns.some(pattern => pattern.test(content.trim()));
+  }
+
+  /**
+   * 📝 从纯文本中提取响应 - 移除此功能
+   */
+  private extractFromPlainText(text: string): ParsedResponse | null {
+    // 不再从纯文本提取，保持严格要求
+    return null;
+  }
+
+  /**
+   * 🔍 解析 response 标签内的结构化内容
+   */
+  private parseResponseContent(responseContent: string): ParsedResponse {
+    const results = this.xmlExtractor.extractMultiple(responseContent, [
+      'message',
+      'action', 
+      'status'
+    ]);
+
+    return {
+      message: results.message?.success ? results.message.content : undefined,
+      action: results.action?.success ? results.action.content : undefined,
+      status: results.status?.success ? results.status.content : undefined
+    };
+  }
+
+  /**
+   * ✅ 验证响应有效性
+   */
+  private isValidResponse(response: ParsedResponse): boolean {
+    if (!response) return false;
+    
+    // 检查是否有 message 内容
+    if (response.message && this.isValidContent(response.message)) {
+      return true;
+    }
+
+    // 检查是否有其他有效字段
+    if (response.action && this.isValidContent(response.action)) {
+      return true;
+    }
+
+    if (response.status && this.isValidContent(response.status)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * ✅ 验证内容有效性
+   */
+  private isValidContent(content: string): boolean {
+    if (!content) return false;
+    
+    const trimmed = content.trim();
+    if (trimmed.length < this.options.minResponseLength!) {
+      return false;
+    }
+
+    // 检查是否只包含无意义的内容
+    const meaninglessPatterns = [
+      /^\.+$/,           // 只有点号
+      /^-+$/,            // 只有短划线
+      /^\s*ok\s*$/i,     // 只有 "ok"
+      /^\s*yes\s*$/i,    // 只有 "yes"
+      /^\s*no\s*$/i,     // 只有 "no"
+    ];
+
+    for (const pattern of meaninglessPatterns) {
+      if (pattern.test(trimmed)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * 🔧 处理用户输入（之前 userInputContext 的职责）
    */
   processUserInput(input: string): UserInputContext {
     return {
@@ -56,7 +212,7 @@ export class ResponseExtractor {
   }
 
   /**
-   * 生成对话历史
+   * 📚 生成对话历史
    */
   buildConversationHistory(messages: ConversationMessage[]): string {
     if (messages.length === 0) return '';
@@ -74,28 +230,62 @@ export class ResponseExtractor {
   }
 
   /**
-   * 验证响应完整性
+   * ✅ 验证响应完整性（增强版）
    */
   validateResponse(response: ParsedResponse | null): boolean {
-    // response 是可选的，null 是有效的
-    if (!response) return true;
+    // null response 现在被认为是无效的，因为我们需要确保有响应
+    if (!response) {
+      logger.warn('ResponseExtractor: Response is null - this should be avoided');
+      return false;
+    }
     
-    // 如果有 response，确保 message 不为空
-    return !!(response.message && response.message.trim());
+    return this.isValidResponse(response);
   }
 
   /**
-   * 生成响应摘要
+   * 📄 生成响应摘要
    */
   generateResponseSummary(response: ParsedResponse): string {
-    return this.truncate(response.message || '', 150);
+    if (response.message) {
+      return this.truncate(response.message, 150);
+    }
+    
+    if (response.action) {
+      return `Action: ${this.truncate(response.action, 100)}`;
+    }
+    
+    if (response.status) {
+      return `Status: ${this.truncate(response.status, 100)}`;
+    }
+    
+    return 'Empty response';
   }
 
-  private extractSection(content: string, sectionName: string): string {
-    const regex = new RegExp(`<${sectionName}>([\s\S]*?)<\/${sectionName}>`, 'i');
-    const match = content.match(regex);
-    return match ? match[1].trim() : '';
+  /**
+   * 🛠️ 获取提取统计信息
+   */
+  getExtractionStats(text: string): Record<string, any> {
+    const stats = this.xmlExtractor.getExtractionStats(text, [
+      'response', 'message', 'action', 'status', 'thinking'
+    ]);
+
+    return {
+      ...stats,
+      textLength: text.length,
+      hasXmlTags: /<[^>]+>/.test(text),
+      hasResponseTag: text.includes('<response>'),
+      hasMessageTag: text.includes('<message>')
+    };
   }
+
+  /**
+   * 🔧 设置提取选项
+   */
+  setOptions(options: Partial<ResponseExtractionOptions>): void {
+    this.options = { ...this.options, ...options };
+  }
+
+  // === 私有辅助方法 ===
 
   private identifyTaskType(input: string): TaskType {
     const inputLower = input.toLowerCase();

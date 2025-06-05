@@ -3,6 +3,7 @@ import { z } from "zod";
 import { render } from "./utils";
 import { IEventBus } from "./events/eventBus";
 import { SupportedModel } from "./models";
+import { InteractiveMessage, MessageHandler, SubscriptionConfig, InteractiveCapabilities } from "./events/types";
 
 // 从 agent.ts 导入类型定义
 export type LLMProvider = 'openai' | 'anthropic' | 'google';
@@ -484,6 +485,63 @@ export interface Swarms{
 }
 
 export type ClientSendFnType = (clientInfo: {clientId: string, userId: string}, incomingMessages: Message) => void;
+
+/**
+ * 🎯 HHH-AGI 交互系统架构
+ * 
+ * 组件关系：
+ * 
+ * ┌─────────────────────────────────────────────────────────────┐
+ * │                    IInteractionHub                          │
+ * │                    (协调中心)                               │
+ * │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+ * │  │   IAgent    │  │    Event    │  │  IInteractiveLayer  │  │
+ * │  │  (智能体)   │  │     Bus     │  │   (用户交互层)      │  │
+ * │  │             │  │  (事件总线)  │  │                     │  │
+ * │  └─────────────┘  └─────────────┘  └─────────────────────┘  │
+ * └─────────────────────────────────────────────────────────────┘
+ * 
+ * 职责分工：
+ * - IInteractionHub: 系统协调器，管理所有组件生命周期
+ * - EventBus: 事件传输层，负责事件路由和分发
+ * - IAgent: 智能体，处理任务逻辑和工具执行
+ * - IInteractiveLayer: 用户界面层，处理用户输入输出
+ */
+
+export interface IInteractionHub {
+    eventBus: IEventBus;
+    
+    // 注册组件
+    registerAgent(agent: IAgent): void;
+    registerInteractiveLayer(layer: IInteractiveLayer): void;
+    
+    // 启动和停止
+    start(): Promise<void>;
+    stop(): Promise<void>;
+    
+    // 获取注册的组件
+    getAgents(): IAgent[];
+    getInteractiveLayers(): IInteractiveLayer[];
+    
+    // 🆕 系统协调功能
+    broadcastToAgents(eventType: string, payload: any): Promise<void>;
+    broadcastToInteractiveLayers(eventType: string, payload: any): Promise<void>;
+    
+    // 🆕 组件状态管理
+    getSystemStatus(): {
+        agents: Array<{ id: string; status: string; isRunning: boolean }>;
+        interactiveLayers: Array<{ id: string; capabilities: any }>;
+        eventBusStatus: any;
+    };
+    
+    // 事件路由（可选，用于复杂的多对多场景）
+    routeEvent?(event: any, targetType: 'agent' | 'interactive_layer', targetId?: string): Promise<void>;
+}
+
+/**
+ * 🤖 智能体接口 - 核心任务处理器
+ * 职责：任务理解、工具调用、思考推理
+ */
 export interface IAgent{
     // 基本属性
     id: string;
@@ -493,7 +551,6 @@ export interface IAgent{
     
     // 核心组件
     contextManager: IContextManager;
-    clients: IClient<any,any>[];
     llm: ILLM; 
     taskQueue: ITaskQueue;
     
@@ -515,13 +572,14 @@ export interface IAgent{
 
     // 核心生命周期方法
     setup(): Promise<void>;
-    start(maxSteps: number): Promise<void>;
+    startWithUserInput(userInput: string, maxSteps: number, options?: {
+        savePromptPerStep?: boolean;  // 是否每步保存prompt
+        promptSaveDir?: string;       // prompt保存目录
+        promptSaveFormat?: 'markdown' | 'json' | 'both';  // 保存格式
+    }): Promise<void>;
     stop(): void;
     
     getPrompt(): string | Promise<string>;
-
-    // 客户端交互
-    clientSendfn: ClientSendFnType;
 
     // 工具集管理
     listToolSets(): ToolSet[];
@@ -534,12 +592,56 @@ export interface IAgent{
     getExecutionMode(): 'auto' | 'manual' | 'supervised';
     setExecutionMode(mode: 'auto' | 'manual' | 'supervised'): Promise<void>;
     
+    // 🆕 标准化的事件处理接口
+    setupEventHandlers(): void;
+    handleUserMessage(event: any): Promise<void>;
+    handleInputResponse(event: any): Promise<void>;
+    subscribeToExecutionModeChanges?(): void;
+    
     // 用户交互方法
     processUserInput(input: string, sessionId: string): Promise<void>;
-    requestApproval(request: any): Promise<any>;
-    requestUserInput(request: any): Promise<any>;
+    
+    // 🆕 事件发布能力
+    publishEvent(eventType: string, payload: any, sessionId?: string): Promise<void>;
+    subscribe(eventType: string, handler: (event: any) => void): string;
+    unsubscribe(subscriptionId: string): void;
+    
+    // 🆕 生命周期钩子（供子类扩展）
+    beforeStart?(): Promise<void>;
+    afterStop?(): Promise<void>;
+    onToolCallComplete?(toolResult: ToolCallResult): Promise<void>;
 }
 
+/**
+ * 🖥️ 交互层接口 - 用户界面处理器  
+ * 职责：用户输入处理、界面渲染、交互反馈
+ */
+export interface IInteractiveLayer {
+    id: string;
+    
+    // 消息处理
+    sendMessage(message: InteractiveMessage): Promise<void>;
+    receiveMessage(): Promise<InteractiveMessage>;
+    
+    // 事件订阅
+    subscribe(eventType: string | string[], handler: MessageHandler, config?: SubscriptionConfig): string;
+    unsubscribe(eventType: string | string[], handler: MessageHandler): void;
+    
+    // 能力和状态
+    getCapabilities(): InteractiveCapabilities;
+    start(): Promise<void>;
+    stop(): Promise<void>;
+    
+    // 🆕 增强的交互能力
+    setExecutionMode(mode: 'auto' | 'manual' | 'supervised'): Promise<void>;
+    getCurrentSession(): string;
+    getActiveEvents(): InteractiveMessage[];
+    clearEventHistory(): void;
+    
+    // 🆕 与 IInteractionHub 的集成
+    setInteractionHub?(hub: IInteractionHub): void;
+    onAgentStateChange?(agentId: string, state: any): Promise<void>;
+}
 
 // First define the schemas for tool calls
 export const ToolCallDefinitionSchema = z.object({
@@ -593,27 +695,13 @@ export const MessageSchema = z.object({
 });
 export type Message = z.infer<typeof MessageSchema>;
 
-// 新增：交互中心接口，管理Agent和InteractiveLayer之间的协作
-export interface IInteractionHub {
-    eventBus: IEventBus;
-    
-    // 注册组件
-    registerAgent(agent: IAgent): void;
-    registerInteractiveLayer(layer: any): void; // 使用any避免循环依赖
-    
-    // 启动和停止
-    start(): Promise<void>;
-    stop(): Promise<void>;
-    
-    // 获取注册的组件
-    getAgents(): IAgent[];
-    getInteractiveLayers(): any[];
-    
-    // 事件路由（可选，用于复杂的多对多场景）
-    routeEvent?(event: any, targetType: 'agent' | 'interactive_layer', targetId?: string): Promise<void>;
-}
-
 // 简化的用户输入处理工具接口
 export interface IUserInputTool extends ITool<any, any, IAgent> {
     handleUserMessage(message: string, sessionId: string): Promise<any>;
+}
+
+/**
+ * Configuration for the agent
+ */
+export interface Config {
 }

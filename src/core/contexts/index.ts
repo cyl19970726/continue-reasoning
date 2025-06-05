@@ -18,6 +18,3 @@ export enum BasicToolNames {
 export { HackernewsContext, HackernewsContextId } from './hackernews';
 export { DeepWikiContext, DeepWikiContextId } from './deepwiki';
 export { FireCrawlContext, FireCrawlContextId } from './firecrawl';
-export { InteractiveContext, InteractiveContextId, InteractionManagementTool } from './interaction/interactive';
-export { UserInputContext } from './interaction/userInput';
-export { DealTaskContext } from './interaction/deal-task';

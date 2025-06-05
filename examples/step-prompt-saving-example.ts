@@ -1,10 +1,9 @@
-import { BaseAgent } from '../src/core/agent';
 import { LogLevel } from '../src/core/utils/logger';
-import { createCodingContext } from '../src/core/contexts/coding';
 import { createThinkingContext } from '../src/core/thinking/thinking-context';
 import { globalEventBus } from '../src/core/events/eventBus';
 import { logger } from '../src/core/utils/logger';
 import { OPENAI_MODELS } from '../src/core/models';
+import { CodingAgent } from '../src/agents/coding-agent';
 import path from 'path';
 import fs from 'fs';
 
@@ -18,17 +17,15 @@ async function stepPromptSavingExample() {
         fs.mkdirSync(workspacePath, { recursive: true });
     }
 
-    // 创建Agent
-    const codingContext = createCodingContext(workspacePath);
+    // 创建thinking context
     const thinkingContext = createThinkingContext(logger, globalEventBus);
-    
-    const contexts = [codingContext, thinkingContext];
 
-    const agent = new BaseAgent(
+    // 🆕 使用 CodingAgent
+    const agent = new CodingAgent(
         'step-prompt-demo',
-        'Step Prompt Demo Agent',
-        'Agent for demonstrating step-by-step prompt saving',
-        [],
+        'Step Prompt Demo Coding Agent',
+        'Coding agent for demonstrating step-by-step prompt saving',
+        workspacePath,
         5, // 运行5步来生成足够的示例
         LogLevel.DEBUG,
         {
@@ -41,7 +38,7 @@ async function stepPromptSavingExample() {
                 maxExecutionHistory: 2  // 较小的历史以观察演化
             }
         },
-        contexts,
+        [thinkingContext],
         globalEventBus
     );
 

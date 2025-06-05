@@ -28,7 +28,6 @@ async function promptAnalysisExample() {
         'prompt-analysis',
         'Prompt Analysis Agent',
         'Agent for demonstrating prompt recording and analysis',
-        [],
         5, // 运行5步来生成足够的prompt数据
         LogLevel.DEBUG,
         {

@@ -13,6 +13,7 @@ import {
   AllEventMessages
 } from '../events/types';
 import { BaseInteractiveLayer, InteractiveLayerConfig } from '../events/interactiveLayer';
+import { IInteractionHub } from '../interfaces';
 import { logger } from '../utils/logger';
 
 export interface CLIClientConfig extends InteractiveLayerConfig {
@@ -27,6 +28,7 @@ export interface CLIClientConfig extends InteractiveLayerConfig {
 }
 
 export class CLIClient extends BaseInteractiveLayer {
+  public readonly id: string = 'cli-client';
   private rl!: readline.Interface;
   protected config: CLIClientConfig;
   private commandHistory: string[] = [];
@@ -38,12 +40,18 @@ export class CLIClient extends BaseInteractiveLayer {
   }> = [];
   private multilineBuffer: string[] = [];
   private isMultilineMode: boolean = false;
+  private interactionHub?: IInteractionHub;
 
   constructor(config: CLIClientConfig) {
     super(config);
     this.config = config;
     this.setupReadline();
     this.loadHistory();
+  }
+
+  setInteractionHub(hub: IInteractionHub): void {
+    this.interactionHub = hub;
+    logger.info('CLIClient: InteractionHub reference set');
   }
 
   static createDefault(eventBus: any): CLIClient {
@@ -65,7 +73,11 @@ export class CLIClient extends BaseInteractiveLayer {
         'error',
         'execution_mode_change_request',
         'execution_mode_change_response',
-        'task_event'
+        'task_event',
+        'user_message',
+        'agent_reply',
+        'agent_thinking',
+        'think'
       ]
     };
 
@@ -85,22 +97,21 @@ export class CLIClient extends BaseInteractiveLayer {
   }
 
   async sendMessage(message: InteractiveMessage): Promise<void> {
-    // EventBus expects events without id and timestamp (it will generate them)
     const { id, timestamp, ...eventWithoutIdAndTimestamp } = message;
     await this.config.eventBus.publish(eventWithoutIdAndTimestamp);
     this.displayMessage(message);
   }
 
   protected async onStart(): Promise<void> {
-    // 订阅各种事件类型
     this.subscribe(['approval_request'], this.handleApprovalRequest.bind(this));
     this.subscribe(['input_request'], this.handleInputRequest.bind(this));
     this.subscribe(['status_update'], this.handleStatusUpdate.bind(this));
     this.subscribe(['error'], this.handleError.bind(this));
     this.subscribe(['collaboration_request'], this.handleCollaborationRequest.bind(this));
     this.subscribe(['agent_reply'], this.handleAgentReply.bind(this));
+    this.subscribe(['agent_thinking'], this.handleAgentThinking.bind(this));
+    this.subscribe(['think'], this.handleThinkEvent.bind(this));
     
-    // 订阅 plan 相关事件
     this.subscribe(['plan_created'], this.handlePlanCreated.bind(this));
     this.subscribe(['plan_step_started'], this.handlePlanStepStarted.bind(this));
     this.subscribe(['plan_step_completed'], this.handlePlanStepCompleted.bind(this));
@@ -108,7 +119,6 @@ export class CLIClient extends BaseInteractiveLayer {
     this.subscribe(['plan_completed'], this.handlePlanCompleted.bind(this));
     this.subscribe(['plan_error'], this.handlePlanError.bind(this));
     
-    // 订阅文件操作相关事件
     this.subscribe(['file_created'], this.handleFileCreated.bind(this));
     this.subscribe(['file_modified'], this.handleFileModified.bind(this));
     this.subscribe(['file_deleted'], this.handleFileDeleted.bind(this));
@@ -132,15 +142,12 @@ export class CLIClient extends BaseInteractiveLayer {
       history: this.commandHistory
     });
 
-    // 处理用户输入
     this.rl.on('line', this.handleUserInput.bind(this));
     
-    // 处理退出信号
     this.rl.on('SIGINT', () => {
       this.handleExit();
     });
 
-    // 处理关闭事件
     this.rl.on('close', () => {
       process.exit(0);
     });
@@ -149,7 +156,6 @@ export class CLIClient extends BaseInteractiveLayer {
   private async handleUserInput(input: string): Promise<void> {
     const trimmedInput = input.trim();
     
-    // 处理空输入
     if (!trimmedInput) {
       if (this.isMultilineMode) {
         this.multilineBuffer.push('');
@@ -158,18 +164,15 @@ export class CLIClient extends BaseInteractiveLayer {
       return;
     }
 
-    // 检查是否有等待的提示
     if (this.pendingPrompts.length > 0) {
       const prompt = this.pendingPrompts.shift()!;
       prompt.resolve(trimmedInput);
       return;
     }
 
-    // 处理多行输入模式
     if (this.config.enableMultilineInput) {
       const delimiter = this.config.multilineDelimiter || '###';
       
-      // 检查是否开始多行输入
       if (trimmedInput === delimiter && !this.isMultilineMode) {
         this.isMultilineMode = true;
         this.multilineBuffer = [];
@@ -180,7 +183,6 @@ export class CLIClient extends BaseInteractiveLayer {
         return;
       }
       
-      // 检查是否结束多行输入
       if (trimmedInput === delimiter && this.isMultilineMode) {
         this.isMultilineMode = false;
         const multilineContent = this.multilineBuffer.join('\n');
@@ -195,15 +197,13 @@ export class CLIClient extends BaseInteractiveLayer {
         return;
       }
       
-      // 在多行模式中收集输入
       if (this.isMultilineMode) {
-        this.multilineBuffer.push(input); // 保留原始输入，包括空格
+        this.multilineBuffer.push(input);
         this.showPrompt();
         return;
       }
     }
 
-    // 处理文件输入命令
     if (this.config.enableFileInput && trimmedInput.startsWith('/file ')) {
       const filePath = trimmedInput.substring(6).trim();
       await this.handleFileInput(filePath);
@@ -211,16 +211,13 @@ export class CLIClient extends BaseInteractiveLayer {
       return;
     }
 
-    // 处理特殊命令
     if (await this.handleSpecialCommands(trimmedInput)) {
       this.showPrompt();
       return;
     }
 
-    // 添加到历史记录
     this.addToHistory(trimmedInput);
 
-    // 发送用户消息
     await this.sendUserMessage(trimmedInput);
     this.showPrompt();
   }
@@ -286,30 +283,25 @@ export class CLIClient extends BaseInteractiveLayer {
 
   private async handleFileInput(filePath: string): Promise<void> {
     try {
-      // 解析相对路径
       const resolvedPath = path.resolve(filePath);
       
-      // 检查文件是否存在
       if (!fs.existsSync(resolvedPath)) {
         console.log(chalk.red(`❌ File not found: ${filePath}`));
         return;
       }
 
-      // 检查是否是文件
       const stats = fs.statSync(resolvedPath);
       if (!stats.isFile()) {
         console.log(chalk.red(`❌ Path is not a file: ${filePath}`));
         return;
       }
 
-      // 检查文件大小（限制为 1MB）
-      const maxSize = 1024 * 1024; // 1MB
+      const maxSize = 1024 * 1024;
       if (stats.size > maxSize) {
         console.log(chalk.red(`❌ File too large (${Math.round(stats.size / 1024)}KB). Maximum size: ${Math.round(maxSize / 1024)}KB`));
         return;
       }
 
-      // 读取文件内容
       const content = fs.readFileSync(resolvedPath, 'utf8');
       
       console.log(chalk.green(`📁 Loading file: ${filePath} (${stats.size} bytes)`));
@@ -318,10 +310,8 @@ export class CLIClient extends BaseInteractiveLayer {
       console.log(content.substring(0, 500) + (content.length > 500 ? '...' : ''));
       console.log(chalk.gray('-'.repeat(50)));
 
-      // 添加到历史记录
       this.addToHistory(`[FILE: ${filePath}]\n${content}`);
 
-      // 发送文件内容作为用户消息
       await this.sendUserMessage(`[FILE: ${filePath}]\n${content}`);
       
       console.log(chalk.green('✅ File content sent to agent.'));
@@ -332,7 +322,6 @@ export class CLIClient extends BaseInteractiveLayer {
   }
 
   private async sendUserMessage(content: string): Promise<void> {
-    // 发送用户消息事件而不是输入响应事件
     const message: InteractiveMessage = {
       id: '',
       timestamp: 0,
@@ -417,41 +406,66 @@ export class CLIClient extends BaseInteractiveLayer {
 
   private async handleInputRequest(message: AllEventMessages): Promise<void> {
     const event = message as InputRequestEvent;
-    const { prompt, inputType, options, validation } = event.payload;
+    const { requestId, prompt, inputType, options, validation, sensitive } = event.payload;
 
     console.log(chalk.cyan(`\n📝 Input Required: ${prompt}`));
     
+    if (inputType) {
+      const typeIcon = this.getInputTypeIcon(inputType);
+      console.log(chalk.gray(`${typeIcon} Input Type: ${inputType}`));
+    }
+    
     if (options && options.length > 0) {
       console.log(chalk.gray(`Options: ${options.join(', ')}`));
+    }
+
+    if (sensitive) {
+      console.log(chalk.yellow('⚠️ This is sensitive information - input will be masked'));
     }
 
     let userInput: string;
     let isValid = false;
 
     do {
-      userInput = await this.promptUser('> ');
+      const inputPrompt = sensitive ? '🔒 > ' : '> ';
+      userInput = await this.promptUser(inputPrompt);
       
-      // 验证输入
       if (validation) {
         if (validation.required && !userInput.trim()) {
-          console.log(chalk.red('This field is required.'));
+          console.log(chalk.red('❌ This field is required.'));
           continue;
         }
         
         if (validation.pattern && !new RegExp(validation.pattern).test(userInput)) {
-          console.log(chalk.red('Input format is invalid.'));
+          console.log(chalk.red('❌ Input format is invalid.'));
           continue;
         }
         
         if (validation.minLength && userInput.length < validation.minLength) {
-          console.log(chalk.red(`Input must be at least ${validation.minLength} characters.`));
+          console.log(chalk.red(`❌ Input must be at least ${validation.minLength} characters.`));
           continue;
         }
         
         if (validation.maxLength && userInput.length > validation.maxLength) {
-          console.log(chalk.red(`Input must be no more than ${validation.maxLength} characters.`));
+          console.log(chalk.red(`❌ Input must be no more than ${validation.maxLength} characters.`));
           continue;
         }
+      }
+
+      if (inputType === 'choice' && options && options.length > 0) {
+        if (!options.includes(userInput)) {
+          console.log(chalk.red(`❌ Please choose from: ${options.join(', ')}`));
+          continue;
+        }
+      }
+
+      if (inputType === 'confirmation') {
+        const normalized = userInput.toLowerCase();
+        if (!['y', 'yes', 'n', 'no', 'true', 'false'].includes(normalized)) {
+          console.log(chalk.red('❌ Please enter: y/yes/n/no/true/false'));
+          continue;
+        }
+        userInput = ['y', 'yes', 'true'].includes(normalized) ? 'true' : 'false';
       }
 
       isValid = true;
@@ -464,13 +478,27 @@ export class CLIClient extends BaseInteractiveLayer {
       source: 'user',
       sessionId: this.currentSession,
       payload: {
-        requestId: event.id,
+        requestId: requestId,
         value: userInput,
-        cancelled: false
+        cancelled: false,
+        inputType: inputType
       }
     };
 
+    console.log(chalk.green(`✅ Input submitted: ${sensitive ? '[REDACTED]' : userInput}`));
     await this.sendMessage(responseMessage);
+  }
+
+  private getInputTypeIcon(inputType: string): string {
+    switch (inputType) {
+      case 'text': return '📝';
+      case 'password': return '🔒';
+      case 'choice': return '🔘';
+      case 'confirmation': return '❓';
+      case 'file_path': return '📁';
+      case 'config': return '⚙️';
+      default: return '📝';
+    }
   }
 
   private async handleStatusUpdate(message: AllEventMessages): Promise<void> {
@@ -544,10 +572,9 @@ export class CLIClient extends BaseInteractiveLayer {
   }
 
   private async handleAgentReply(message: AllEventMessages): Promise<void> {
-    const event = message as any; // AgentReplyEvent
+    const event = message as any;
     const { content, replyType, metadata } = event.payload;
 
-    // 根据回复类型选择不同的显示样式
     let icon = '🤖';
     let color = chalk.blue;
     
@@ -569,7 +596,6 @@ export class CLIClient extends BaseInteractiveLayer {
     console.log(color(`\n${icon} Agent Reply (${replyType}):`));
     console.log(chalk.white(content));
     
-    // 显示元数据信息
     if (metadata) {
       if (metadata.reasoning) {
         console.log(chalk.gray(`💭 Reasoning: ${metadata.reasoning}`));
@@ -588,12 +614,95 @@ export class CLIClient extends BaseInteractiveLayer {
       }
     }
     
-    console.log(''); // 添加空行
+    console.log('');
   }
 
-  // Plan 事件处理方法
+  private async handleAgentThinking(message: AllEventMessages): Promise<void> {
+    const event = message as any;
+    const { stepNumber, thinking, toolCalls, rawThinking } = event.payload;
+
+    console.log(chalk.magenta(`\n🧠 Agent Thinking (Step ${stepNumber}):`));
+    
+    if (thinking) {
+      if (thinking.analysis) {
+        console.log(chalk.cyan(`📊 Analysis: ${thinking.analysis}`));
+      }
+      
+      if (thinking.plan) {
+        console.log(chalk.blue(`📋 Plan: ${thinking.plan}`));
+      }
+      
+      if (thinking.reasoning) {
+        console.log(chalk.yellow(`💭 Reasoning: ${thinking.reasoning}`));
+      }
+      
+      if (thinking.nextAction) {
+        console.log(chalk.green(`➡️ Next Action: ${thinking.nextAction}`));
+      }
+    }
+
+    if (toolCalls && toolCalls.length > 0) {
+      console.log(chalk.gray(`🔧 Tool Calls: ${toolCalls.map((tc: any) => tc.name || tc.function?.name).join(', ')}`));
+    }
+
+    if (process.env.DEBUG_THINKING && rawThinking) {
+      console.log(chalk.gray(`\n🔍 Raw Thinking:\n${rawThinking.substring(0, 200)}${rawThinking.length > 200 ? '...' : ''}`));
+    }
+
+    console.log('');
+  }
+
+  private async handleThinkEvent(message: AllEventMessages): Promise<void> {
+    const event = message as any;
+    const { content, type, metadata } = event.payload;
+
+    switch (type) {
+      case 'reasoning':
+        console.log(chalk.magenta(`\n💭 Agent Reasoning:`));
+        console.log(chalk.white(content));
+        break;
+        
+      case 'analysis':
+        console.log(chalk.cyan(`\n📊 Agent Analysis:`));
+        console.log(chalk.white(content));
+        break;
+        
+      case 'planning':
+        console.log(chalk.blue(`\n📋 Agent Planning:`));
+        console.log(chalk.white(content));
+        break;
+        
+      case 'reflection':
+        console.log(chalk.yellow(`\n🤔 Agent Reflection:`));
+        console.log(chalk.white(content));
+        break;
+        
+      default:
+        console.log(chalk.magenta(`\n🧠 Agent Think (${type || 'general'}):`));
+        console.log(chalk.white(content));
+        break;
+    }
+
+    if (metadata) {
+      if (metadata.confidence !== undefined) {
+        const confidencePercent = Math.round(metadata.confidence * 100);
+        console.log(chalk.gray(`🎯 Confidence: ${confidencePercent}%`));
+      }
+      
+      if (metadata.duration !== undefined) {
+        console.log(chalk.gray(`⏱️ Duration: ${metadata.duration}ms`));
+      }
+      
+      if (metadata.context) {
+        console.log(chalk.gray(`📝 Context: ${metadata.context}`));
+      }
+    }
+
+    console.log('');
+  }
+
   private async handlePlanCreated(message: AllEventMessages): Promise<void> {
-    const event = message as any; // PlanCreatedEvent
+    const event = message as any;
     const { planId, title, description, totalSteps, steps } = event.payload;
 
     console.log(chalk.green(`\n📋 Plan Created: ${title}`));
@@ -614,7 +723,7 @@ export class CLIClient extends BaseInteractiveLayer {
   }
 
   private async handlePlanStepStarted(message: AllEventMessages): Promise<void> {
-    const event = message as any; // PlanStepStartedEvent
+    const event = message as any;
     const { stepIndex, stepTitle, stepDescription, toolsToCall } = event.payload;
 
     const stepNumber = (stepIndex + 1).toString().padStart(2, '0');
@@ -628,7 +737,7 @@ export class CLIClient extends BaseInteractiveLayer {
   }
 
   private async handlePlanStepCompleted(message: AllEventMessages): Promise<void> {
-    const event = message as any; // PlanStepCompletedEvent
+    const event = message as any;
     const { stepIndex, stepTitle, nextStepTitle } = event.payload;
 
     const stepNumber = (stepIndex + 1).toString().padStart(2, '0');
@@ -643,7 +752,7 @@ export class CLIClient extends BaseInteractiveLayer {
   }
 
   private async handlePlanProgressUpdate(message: AllEventMessages): Promise<void> {
-    const event = message as any; // PlanProgressUpdateEvent
+    const event = message as any;
     const { currentStepIndex, totalSteps, completedSteps, progress, currentStepTitle } = event.payload;
 
     const progressBar = this.createProgressBar(progress, 30);
@@ -659,7 +768,7 @@ export class CLIClient extends BaseInteractiveLayer {
   }
 
   private async handlePlanCompleted(message: AllEventMessages): Promise<void> {
-    const event = message as any; // PlanCompletedEvent
+    const event = message as any;
     const { title, totalSteps, executionTime } = event.payload;
 
     const executionTimeFormatted = this.formatExecutionTime(executionTime);
@@ -673,7 +782,7 @@ export class CLIClient extends BaseInteractiveLayer {
   }
 
   private async handlePlanError(message: AllEventMessages): Promise<void> {
-    const event = message as any; // PlanErrorEvent
+    const event = message as any;
     const { stepId, stepTitle, error, recoverable } = event.payload;
 
     console.log(chalk.red(`\n❌ Plan Execution Error`));
@@ -692,9 +801,8 @@ export class CLIClient extends BaseInteractiveLayer {
     console.log('');
   }
 
-  // 文件操作事件处理方法
   private async handleFileCreated(message: AllEventMessages): Promise<void> {
-    const event = message as any; // FileCreatedEvent
+    const event = message as any;
     const { path, size, diff } = event.payload;
 
     console.log(chalk.green(`\n📄 File created: ${path}`));
@@ -708,7 +816,7 @@ export class CLIClient extends BaseInteractiveLayer {
   }
 
   private async handleFileModified(message: AllEventMessages): Promise<void> {
-    const event = message as any; // FileModifiedEvent
+    const event = message as any;
     const { path, tool, changesApplied, diff } = event.payload;
 
     const toolIcon = this.getFileOperationToolIcon(tool);
@@ -724,7 +832,7 @@ export class CLIClient extends BaseInteractiveLayer {
   }
 
   private async handleFileDeleted(message: AllEventMessages): Promise<void> {
-    const event = message as any; // FileDeletedEvent
+    const event = message as any;
     const { path, isDirectory, filesDeleted, diff } = event.payload;
 
     if (isDirectory) {
@@ -754,7 +862,7 @@ export class CLIClient extends BaseInteractiveLayer {
   }
 
   private async handleDirectoryCreated(message: AllEventMessages): Promise<void> {
-    const event = message as any; // DirectoryCreatedEvent
+    const event = message as any;
     const { path, recursive } = event.payload;
 
     console.log(chalk.green(`\n📁 Directory created: ${path}`));
@@ -765,7 +873,7 @@ export class CLIClient extends BaseInteractiveLayer {
   }
 
   private async handleDiffReversed(message: AllEventMessages): Promise<void> {
-    const event = message as any; // DiffReversedEvent
+    const event = message as any;
     const { affectedFiles, changesReverted, reason } = event.payload;
 
     console.log(chalk.yellow(`\n🔄 Changes reversed:`));
@@ -791,7 +899,6 @@ export class CLIClient extends BaseInteractiveLayer {
   private promptUser(prompt: string): Promise<string> {
     return new Promise((resolve, reject) => {
       this.pendingPrompts.push({ prompt, resolve, reject });
-      // 直接显示提示，不使用 rl.question，因为我们用自己的输入处理机制
       process.stdout.write(chalk.cyan(prompt));
     });
   }
@@ -909,7 +1016,6 @@ export class CLIClient extends BaseInteractiveLayer {
     const modeIndicator = this.executionMode === 'auto' ? '⚡' : 
                          this.executionMode === 'manual' ? '✋' : '👁️';
     
-    // 多行模式提示符
     if (this.isMultilineMode) {
       const lineNumber = this.multilineBuffer.length + 1;
       this.rl.setPrompt(chalk.yellow(`📝 ${lineNumber.toString().padStart(2)} | `));
@@ -932,7 +1038,6 @@ export class CLIClient extends BaseInteractiveLayer {
   private addToHistory(command: string): void {
     this.commandHistory.push(command);
     
-    // 保持历史记录大小限制
     const maxSize = this.config.maxHistorySize || 1000;
     if (this.commandHistory.length > maxSize) {
       this.commandHistory = this.commandHistory.slice(-maxSize);
@@ -969,7 +1074,6 @@ export class CLIClient extends BaseInteractiveLayer {
     process.exit(0);
   }
 
-  // 工具方法
   private getSourceIcon(source: 'user' | 'agent' | 'system'): string {
     switch (source) {
       case 'user': return '👤';

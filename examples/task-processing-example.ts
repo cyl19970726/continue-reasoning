@@ -1,24 +1,17 @@
-import { BaseAgent } from '../src/core/agent';
-import { CliClient } from '../src/core/contexts/client';
 import { LogLevel } from '../src/core/utils/logger';
-import { createCodingContext } from '../src/core/contexts/coding';
-import { ToolCallContext } from '../src/core/contexts/tool';
-import { InteractiveContext } from '../src/core/contexts/interaction/interactive';
-import { PlanContext } from '../src/core/contexts/plan';
-import { UserInputContext } from '../src/core/contexts/interaction/userInput';
-import { ExecuteToolsContext } from '../src/core/contexts/execute';
-import { globalEventBus } from '../src/core/events/eventBus';
 import { createThinkingContext } from '../src/core/thinking/thinking-context';
+import { globalEventBus } from '../src/core/events/eventBus';
 import { logger } from '../src/core/utils/logger';
 import path from 'path';
 import { ANTHROPIC_MODELS, GOOGLE_MODELS, OPENAI_MODELS } from '@/core/models';
+import { CodingAgent } from '../src/agents/coding-agent';
 
 async function demonstrateTaskProcessing() {
     console.log('🎯 Demonstrating Task Processing System with Thinking...\n');
 
     // 启动全局事件总线
     await globalEventBus.start();
-    
+
     // 创建测试工作空间目录
     const workspacePath = path.join(process.cwd(), 'test-agent');
     
@@ -28,21 +21,14 @@ async function demonstrateTaskProcessing() {
         console.log(`📁 Created test workspace: ${workspacePath}`);
     }
 
-    const codingContext = createCodingContext(workspacePath);
     const thinkingContext = createThinkingContext(logger, globalEventBus);
     
-    // 创建包含必要 Context 的列表
-    const contexts = [
-        codingContext,
-        thinkingContext,  // 添加thinking-context以提供agent_stop工具
-    ];
-
-    // 创建 Agent（启用思考系统）
-    const agent = new BaseAgent(
-        'task-agent',
-        'Task Processing Agent',
-        'Agent specialized in task processing and execution with thinking capabilities',
-        [],
+    // 🆕 使用专门的 CodingAgent 而不是通用的 BaseAgent
+    const agent = new CodingAgent(
+        'coding-task-agent',
+        'Coding Task Processing Agent',
+        'Specialized agent for coding tasks with advanced programming capabilities',
+        workspacePath,  // 工作空间路径
         10, // maxSteps
         LogLevel.DEBUG,
         {
@@ -62,7 +48,7 @@ async function demonstrateTaskProcessing() {
                 maxExecutionHistory: 5
             }
         },
-        contexts,
+        [thinkingContext],  // 额外的contexts（coding context 会自动添加）
         globalEventBus  // 传入事件总线
     );
 
