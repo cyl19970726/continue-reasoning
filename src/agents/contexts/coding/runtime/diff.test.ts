@@ -413,6 +413,182 @@ index 1234567..abcdefg 100644
     });
   });
 
+  describe('Git Integration Enhancements', () => {
+    describe('calculateFileHash', () => {
+      it('should generate consistent SHA1 hashes', () => {
+        const content = 'Hello World';
+        const hash = calculateFileHash(content);
+        
+        expect(hash).toHaveLength(7);
+        expect(hash).toMatch(/^[a-f0-9]{7}$/);
+        
+        // Same content should produce same hash
+        const hash2 = calculateFileHash(content);
+        expect(hash).toBe(hash2);
+      });
+
+      it('should handle empty content', () => {
+        const hash = calculateFileHash('');
+        expect(hash).toHaveLength(7);
+        expect(hash).toMatch(/^[a-f0-9]{7}$/);
+      });
+
+      it('should produce different hashes for different content', () => {
+        const hash1 = calculateFileHash('content1');
+        const hash2 = calculateFileHash('content2');
+        expect(hash1).not.toBe(hash2);
+      });
+    });
+
+    describe('getGitTimestamp', () => {
+      it('should generate git-compatible timestamp format', () => {
+        const timestamp = getGitTimestamp();
+        
+        // Should match format: "1234567890 +0800"
+        expect(timestamp).toMatch(/^\d{10} [+-]\d{4}$/);
+      });
+
+      it('should include timezone offset', () => {
+        const timestamp = getGitTimestamp();
+        
+        // Should have timezone part
+        const parts = timestamp.split(' ');
+        expect(parts).toHaveLength(2);
+        expect(parts[1]).toMatch(/^[+-]\d{4}$/);
+      });
+    });
+
+    describe('generateUnifiedDiff with Git options', () => {
+      it('should generate diff with Git headers when includeHash is true', async () => {
+        const oldContent = 'Hello World';
+        const newContent = 'Hello Universe';
+        
+        const diff = await generateUnifiedDiff(oldContent, newContent, {
+          oldPath: 'a/test.txt',
+          newPath: 'b/test.txt',
+          gitOptions: {
+            includeHash: true
+          }
+        });
+        
+        expect(diff).toContain('diff --git a/test.txt b/test.txt');
+        expect(diff).toMatch(/index [a-f0-9]{7}\.\.[a-f0-9]{7} 100644/);
+        expect(diff).toContain('--- a/test.txt');
+        expect(diff).toContain('+++ b/test.txt');
+      });
+
+      it('should generate diff with custom hashes', async () => {
+        const oldContent = 'Hello World';
+        const newContent = 'Hello Universe';
+        
+        const diff = await generateUnifiedDiff(oldContent, newContent, {
+          oldPath: 'a/test.txt',
+          newPath: 'b/test.txt',
+          gitOptions: {
+            includeHash: true,
+            oldHash: 'abc1234',
+            newHash: 'def5678'
+          }
+        });
+        
+        expect(diff).toContain('index abc1234..def5678 100644');
+      });
+
+      it('should generate diff with Git timestamps when useGitTimestamp is true', async () => {
+        const oldContent = 'Hello World';
+        const newContent = 'Hello Universe';
+        
+        const diff = await generateUnifiedDiff(oldContent, newContent, {
+          oldPath: 'a/test.txt',
+          newPath: 'b/test.txt',
+          gitOptions: {
+            useGitTimestamp: true
+          }
+        });
+        
+        // Should contain timestamp in both file headers
+        const lines = diff.split('\n');
+        const oldLine = lines.find(line => line.startsWith('--- '));
+        const newLine = lines.find(line => line.startsWith('+++ '));
+        
+        expect(oldLine).toMatch(/--- a\/test\.txt\t\d{10} [+-]\d{4}/);
+        expect(newLine).toMatch(/\+\+\+ b\/test\.txt\t\d{10} [+-]\d{4}/);
+      });
+
+      it('should generate standard diff when no Git options are provided', async () => {
+        const oldContent = 'Hello World';
+        const newContent = 'Hello Universe';
+        
+        const diff = await generateUnifiedDiff(oldContent, newContent, {
+          oldPath: 'a/test.txt',
+          newPath: 'b/test.txt'
+        });
+        
+        expect(diff).not.toContain('diff --git');
+        expect(diff).not.toContain('index');
+        expect(diff).toContain('--- a/test.txt\n');
+        expect(diff).toContain('+++ b/test.txt\n');
+      });
+    });
+
+    describe('addFileHashesToDiff', () => {
+      it('should add Git headers to existing diff', () => {
+        const originalDiff = `--- a/test.txt
++++ b/test.txt
+@@ -1 +1 @@
+-Old content
++New content
+`;
+        
+        const oldContent = 'Old content';
+        const newContent = 'New content';
+        
+        const enhancedDiff = addFileHashesToDiff(originalDiff, oldContent, newContent);
+        
+        expect(enhancedDiff).toContain('diff --git a/test.txt b/test.txt');
+        expect(enhancedDiff).toMatch(/index [a-f0-9]{7}\.\.[a-f0-9]{7} 100644/);
+        expect(enhancedDiff).toContain('--- a/test.txt');
+        expect(enhancedDiff).toContain('+++ b/test.txt');
+      });
+
+      it('should handle multi-file diffs', () => {
+        const multiDiff = `--- a/file1.txt
++++ b/file1.txt
+@@ -1 +1 @@
+-Old 1
++New 1
+--- a/file2.txt
++++ b/file2.txt
+@@ -1 +1 @@
+-Old 2
++New 2
+`;
+        
+        const enhancedDiff = addFileHashesToDiff(multiDiff);
+        
+        // Should have two git headers
+        const gitHeaders = enhancedDiff.split('\n').filter(line => line.startsWith('diff --git'));
+        expect(gitHeaders).toHaveLength(2);
+        
+        expect(enhancedDiff).toContain('diff --git a/file1.txt b/file1.txt');
+        expect(enhancedDiff).toContain('diff --git a/file2.txt b/file2.txt');
+      });
+
+      it('should use default hashes when content is not provided', () => {
+        const originalDiff = `--- a/test.txt
++++ b/test.txt
+@@ -1 +1 @@
+-Old
++New
+`;
+        
+        const enhancedDiff = addFileHashesToDiff(originalDiff);
+        
+        expect(enhancedDiff).toContain('index 0000000..0000000 100644');
+      });
+    });
+  });
+
   describe('reverseDiff', () => {
     it('should reverse a simple file modification', () => {
       const originalDiff = `--- a/config.js
