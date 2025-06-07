@@ -30,6 +30,7 @@
     "test:hackernews": "vitest tests/core/hackernews.test.ts",
     "test:mcp": "vitest tests/core/mcp.test.ts",
     "test:base-memory": "vitest tests/core/memory/baseMemory.test.ts",
+    "test:snapshot": "vitest src/agents/contexts/coding/snapshot/__tests__/operation-buffer.test.ts src/agents/contexts/coding/snapshot/__tests__/session-cache.test.ts src/agents/contexts/coding/snapshot/__tests__/compression.test.ts src/agents/contexts/coding/snapshot/__tests__/snapshot-manager-simple.test.ts --watch=false",
     "test": "vitest"
   },
   "dependencies": {

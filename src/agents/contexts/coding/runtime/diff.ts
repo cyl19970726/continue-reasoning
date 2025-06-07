@@ -3,6 +3,8 @@
  * This module provides utilities for generating, parsing, validating, and applying diffs
  */
 
+import * as crypto from 'crypto';
+
 export interface DiffParseResult {
   oldPath: string;
   newPath: string;
@@ -34,23 +36,68 @@ export interface ReverseDiffResult {
   conflicts?: string[];
 }
 
+export interface GitDiffOptions {
+  includeHash?: boolean;
+  useGitTimestamp?: boolean;
+  oldHash?: string;
+  newHash?: string;
+}
+
 /**
- * Generate a unified diff between two strings
+ * Calculate file hash using SHA1 (Git-compatible)
+ */
+export function calculateFileHash(content: string): string {
+  return crypto.createHash('sha1').update(content).digest('hex').substring(0, 7);
+}
+
+/**
+ * Generate Git-compatible timestamp
+ */
+export function getGitTimestamp(): string {
+  const now = new Date();
+  const timestamp = Math.floor(now.getTime() / 1000);
+  const offset = -now.getTimezoneOffset();
+  const sign = offset >= 0 ? '+' : '-';
+  const hours = Math.floor(Math.abs(offset) / 60);
+  const minutes = Math.abs(offset) % 60;
+  return `${timestamp} ${sign}${hours.toString().padStart(2, '0')}${minutes.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Generate a unified diff between two strings with enhanced Git compatibility
  */
 export async function generateUnifiedDiff(
   oldContent: string,
   newContent: string,
-  options?: { oldPath?: string; newPath?: string }
+  options?: { oldPath?: string; newPath?: string; gitOptions?: GitDiffOptions }
 ): Promise<string> {
   const oldLines = oldContent ? oldContent.split('\n') : [];
   const newLines = newContent ? newContent.split('\n') : [];
   
   const oldPath = options?.oldPath || 'a/file';
   const newPath = options?.newPath || 'b/file';
+  const gitOptions = options?.gitOptions;
   
-  // For now, create a simple diff format
-  // In the future, this could use a proper diff algorithm
-  let diff = `--- ${oldPath}\n+++ ${newPath}\n`;
+  // Start with basic diff format
+  let diff = '';
+  
+  // Add Git-style headers if requested
+  if (gitOptions?.includeHash) {
+    const oldHash = gitOptions.oldHash || calculateFileHash(oldContent);
+    const newHash = gitOptions.newHash || calculateFileHash(newContent);
+    
+    // Add git diff header
+    diff += `diff --git ${oldPath} ${newPath}\n`;
+    diff += `index ${oldHash}..${newHash} 100644\n`;
+  }
+  
+  // Add timestamp support
+  if (gitOptions?.useGitTimestamp) {
+    const timestamp = getGitTimestamp();
+    diff += `--- ${oldPath}\t${timestamp}\n+++ ${newPath}\t${timestamp}\n`;
+  } else {
+    diff += `--- ${oldPath}\n+++ ${newPath}\n`;
+  }
   
   // Simple implementation: show all lines as removed then added
   // A real implementation would use a diff algorithm like Myers' algorithm
@@ -590,4 +637,43 @@ function reverseHunkHeader(hunkLine: string): string {
   
   // Swap old and new positions
   return `@@ -${newStart},${newCount} +${oldStart},${oldCount} @@${context}`;
+}
+
+/**
+ * Add file hashes to an existing diff (for Git compatibility)
+ */
+export function addFileHashesToDiff(diffContent: string, oldContent?: string, newContent?: string): string {
+  const lines = diffContent.split('\n');
+  const result: string[] = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Check for file headers
+    if (line.startsWith('--- ') && i + 1 < lines.length && lines[i + 1].startsWith('+++ ')) {
+      const oldPath = line.substring(4);
+      const newPath = lines[i + 1].substring(4);
+      
+      // Generate hashes if content is provided
+      let oldHash = '0000000';
+      let newHash = '0000000';
+      
+      if (oldContent !== undefined && newContent !== undefined) {
+        oldHash = calculateFileHash(oldContent);
+        newHash = calculateFileHash(newContent);
+      }
+      
+      // Add git diff header
+      result.push(`diff --git ${oldPath} ${newPath}`);
+      result.push(`index ${oldHash}..${newHash} 100644`);
+      result.push(line); // --- line
+      result.push(lines[i + 1]); // +++ line
+      
+      i++; // Skip the +++ line since we already processed it
+    } else {
+      result.push(line);
+    }
+  }
+  
+  return result.join('\n');
 } 
