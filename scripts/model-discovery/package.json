@@ -1,0 +1,23 @@
+{
+  "name": "model-discovery",
+  "version": "1.0.0",
+  "description": "Test script to discover available AI models",
+  "type": "module",
+  "main": "test-models.js",
+  "scripts": {
+    "test-models": "node test-models.js",
+    "install-deps": "npm install"
+  },
+  "dependencies": {
+    "openai": "^4.67.3",
+    "@anthropic-ai/sdk": "^0.30.1",
+    "@google/genai": "^0.12.0",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0"
+  },
+  "keywords": ["ai", "models", "openai", "anthropic", "google"],
+  "author": "",
+  "license": "MIT"
+} 
