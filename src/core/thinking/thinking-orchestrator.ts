@@ -3,6 +3,7 @@ import { ExecutionTracker, ExecutionHistoryRenderOptions } from './execution-tra
 import { ParsedThinking } from './thinking-extractor';
 import { ParsedResponse, ConversationMessage } from './response-extractor';
 import { ILLM, ToolCallDefinition, IContextManager, PromptAssemblyStrategy, ToolCallParams } from '../interfaces';
+import { logger } from '../context';
 
 export interface ProcessResult {
   thinking: ParsedThinking | null; 
@@ -35,6 +36,7 @@ export class ThinkingOrchestrator {
     promptAssemblyStrategy: PromptAssemblyStrategy;
     executionHistoryRenderOptions: ExecutionHistoryRenderOptions;
   };
+  private currentPrompt: string = '';
 
   constructor(llm: ILLM, options: ThinkingOrchestratorOptions) {
     // 默认的执行历史渲染选项：不包含 response（因为已在 conversationHistory 中）
@@ -193,7 +195,13 @@ export class ThinkingOrchestrator {
     // 5. 添加当前步骤输入
     prompt += `\n## Current Step Input\n${userInput}\n\n`;
 
+    this.currentPrompt = prompt;
+
     return prompt;
+  }
+
+  getCurrentPrompt(): string {
+    return this.currentPrompt;
   }
 
   /**
@@ -335,7 +343,30 @@ export class ThinkingOrchestrator {
   /**
    * 处理用户输入（第一步特殊处理）
    */
-  async processUserInput(userInput: string, sessionId: string, tools: ToolCallDefinition[] = []): Promise<ProcessResult> {
+  async processUserInput(
+    userInput: string, 
+    sessionId: string, 
+    tools: ToolCallDefinition[] = [],
+    conversationHistory?: Array<{
+      id: string;
+      role: 'user' | 'agent' | 'system';
+      content: string;
+      timestamp: number;
+      metadata?: Record<string, any>;
+    }>
+  ): Promise<ProcessResult> {
+    // 🆕 如果提供了对话历史，预先加载到对话历史中
+    if (conversationHistory && conversationHistory.length > 0) {
+      logger.debug(`[ThinkingOrchestrator] Loading conversation history: ${conversationHistory.length} messages`);
+      
+      // 清空现有历史（如果需要）并加载新历史
+      this.conversationHistory = conversationHistory.map(record => ({
+        role: record.role === 'agent' ? 'assistant' : record.role as 'user' | 'assistant',
+        content: record.content,
+        timestamp: new Date(record.timestamp)
+      }));
+    }
+
     return this.processStep(userInput, sessionId, tools);
   }
 

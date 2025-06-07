@@ -25,6 +25,14 @@ export interface CLIClientConfig extends InteractiveLayerConfig {
   enableMultilineInput?: boolean;
   multilineDelimiter?: string;
   enableFileInput?: boolean;
+  enableRichInput?: boolean;
+  enableInputPreview?: boolean;
+  enableSmartPrompts?: boolean;
+  enableKeyboardShortcuts?: boolean;
+  maxPreviewLength?: number;
+  showInputStats?: boolean;
+  enableConversationHistory?: boolean;
+  defaultUserId?: string;
 }
 
 export class CLIClient extends BaseInteractiveLayer {
@@ -41,17 +49,67 @@ export class CLIClient extends BaseInteractiveLayer {
   private multilineBuffer: string[] = [];
   private isMultilineMode: boolean = false;
   private interactionHub?: IInteractionHub;
+  
+  private currentInput: string = '';
+  private inputStartTime: number = 0;
+  private typingTimer?: NodeJS.Timeout;
+  private currentSuggestions: string[] = [];
+  private historyIndex: number = -1;
+  private isComposing: boolean = false;
+  private inputStats = {
+    totalInputs: 0,
+    totalCharacters: 0,
+    averageInputLength: 0,
+    multilineInputs: 0
+  };
+
+  private userId: string;
 
   constructor(config: CLIClientConfig) {
     super(config);
-    this.config = config;
+    this.config = {
+      enableRichInput: true,
+      enableInputPreview: true,
+      enableSmartPrompts: true,
+      enableKeyboardShortcuts: true,
+      maxPreviewLength: 100,
+      showInputStats: false,
+      enableConversationHistory: true,
+      defaultUserId: 'cli-user',
+      ...config
+    };
+    this.userId = this.config.defaultUserId || 'cli-user';
     this.setupReadline();
     this.loadHistory();
+  }
+
+  protected getUserId(): string {
+    return this.userId;
+  }
+
+  protected extractAgentId(message: InteractiveMessage): string {
+    return (message.payload as any)?.agentId || 'default-agent';
+  }
+
+  protected extractContent(message: InteractiveMessage): string {
+    return (message.payload as any)?.content || JSON.stringify(message.payload);
+  }
+
+  protected displayMessage(message: InteractiveMessage): void {
+    const timestamp = new Date(message.timestamp).toLocaleTimeString();
+    const sourceIcon = this.getSourceIcon(message.source);
+    
+    console.log(chalk.gray(`[${timestamp}] ${sourceIcon} ${message.type}`));
   }
 
   setInteractionHub(hub: IInteractionHub): void {
     this.interactionHub = hub;
     logger.info('CLIClient: InteractionHub reference set');
+  }
+
+  setUserId(userId: string): void {
+    this.userId = userId;
+    logger.info(`CLIClient: User ID set to ${userId}`);
   }
 
   static createDefault(eventBus: any): CLIClient {
@@ -82,7 +140,7 @@ export class CLIClient extends BaseInteractiveLayer {
     };
 
     return new CLIClient({
-      name: 'CLI Client',
+      name: 'Enhanced CLI Client with Conversation History',
       capabilities,
       eventBus,
       enableSyntaxHighlighting: true,
@@ -92,7 +150,15 @@ export class CLIClient extends BaseInteractiveLayer {
       maxHistorySize: 1000,
       enableMultilineInput: true,
       multilineDelimiter: '###',
-      enableFileInput: true
+      enableFileInput: true,
+      enableRichInput: true,
+      enableInputPreview: true,
+      enableSmartPrompts: true,
+      enableKeyboardShortcuts: true,
+      maxPreviewLength: 150,
+      showInputStats: true,
+      enableConversationHistory: true,
+      defaultUserId: 'cli-user'
     });
   }
 
@@ -144,17 +210,104 @@ export class CLIClient extends BaseInteractiveLayer {
 
     this.rl.on('line', this.handleUserInput.bind(this));
     
+    if (this.config.enableKeyboardShortcuts) {
+      this.setupKeyboardShortcuts();
+    }
+    
     this.rl.on('SIGINT', () => {
-      this.handleExit();
+      if (this.isMultilineMode) {
+        console.log(chalk.yellow('\n📝 Exiting multi-line mode...'));
+        this.isMultilineMode = false;
+        this.multilineBuffer = [];
+        this.showPrompt();
+      } else {
+        this.handleExit();
+      }
     });
 
     this.rl.on('close', () => {
       process.exit(0);
     });
+
+    if (this.config.enableRichInput) {
+      this.setupRichInput();
+    }
+  }
+
+  private setupKeyboardShortcuts(): void {
+    process.stdin.on('keypress', (chunk, key) => {
+      if (!key) return;
+
+      if (key.ctrl && key.name === 'l') {
+        console.clear();
+        this.displayWelcome();
+        this.showPrompt();
+        return;
+      }
+
+      if (key.ctrl && key.name === 'h') {
+        this.displayHelp();
+        this.showPrompt();
+        return;
+      }
+
+      if (key.ctrl && key.name === 'r') {
+        this.displayHistory(20);
+        this.showPrompt();
+        return;
+      }
+
+      if (key.ctrl && key.name === 'm') {
+        if (!this.isMultilineMode) {
+          this.startMultilineMode();
+        } else {
+          this.exitMultilineMode();
+        }
+        return;
+      }
+
+      if (key.ctrl && key.name === 's') {
+        this.displayInputStats();
+        this.showPrompt();
+        return;
+      }
+
+      if (key.name === 'up' || key.name === 'down') {
+        this.handleHistoryNavigation(key.name === 'up');
+        return;
+      }
+
+      if (key.name === 'tab' && this.config.enableAutoComplete) {
+        this.handleSmartCompletion();
+        return;
+      }
+    });
+  }
+
+  private setupRichInput(): void {
+    let inputBuffer = '';
+    
+    process.stdin.on('data', (chunk) => {
+      if (this.isComposing) return;
+      
+      const input = chunk.toString();
+      inputBuffer += input;
+      
+      if (this.typingTimer) {
+        clearTimeout(this.typingTimer);
+      }
+      
+      this.typingTimer = setTimeout(() => {
+        this.handleTypingFeedback(inputBuffer);
+        inputBuffer = '';
+      }, 300);
+    });
   }
 
   private async handleUserInput(input: string): Promise<void> {
     const trimmedInput = input.trim();
+    
+    this.updateInputStats(input);
     
     if (!trimmedInput) {
       if (this.isMultilineMode) {
@@ -174,31 +327,18 @@ export class CLIClient extends BaseInteractiveLayer {
       const delimiter = this.config.multilineDelimiter || '###';
       
       if (trimmedInput === delimiter && !this.isMultilineMode) {
-        this.isMultilineMode = true;
-        this.multilineBuffer = [];
-        console.log(chalk.cyan(`📝 Multi-line input mode started!`));
-        console.log(chalk.gray(`   • Press Enter to create new lines`));
-        console.log(chalk.gray(`   • Type '${delimiter}' on a new line to finish and send`));
-        this.showPrompt();
+        this.startMultilineMode();
         return;
       }
       
       if (trimmedInput === delimiter && this.isMultilineMode) {
-        this.isMultilineMode = false;
-        const multilineContent = this.multilineBuffer.join('\n');
-        this.multilineBuffer = [];
-        
-        if (multilineContent.trim()) {
-          this.addToHistory(multilineContent);
-          await this.sendUserMessage(multilineContent);
-        }
-        console.log(chalk.green('✅ Multi-line input completed.'));
-        this.showPrompt();
+        this.exitMultilineMode();
         return;
       }
       
       if (this.isMultilineMode) {
         this.multilineBuffer.push(input);
+        this.showMultilinePreview();
         this.showPrompt();
         return;
       }
@@ -218,8 +358,190 @@ export class CLIClient extends BaseInteractiveLayer {
 
     this.addToHistory(trimmedInput);
 
+    if (this.config.enableInputPreview && trimmedInput.length > 50) {
+      this.showInputPreview(trimmedInput);
+    }
+
     await this.sendUserMessage(trimmedInput);
     this.showPrompt();
+  }
+
+  private startMultilineMode(): void {
+    this.isMultilineMode = true;
+    this.multilineBuffer = [];
+    const delimiter = this.config.multilineDelimiter || '###';
+    
+    console.log(chalk.cyan(`\n📝 Multi-line input mode activated!`));
+    console.log(chalk.gray(`┌─ Tips:`));
+    console.log(chalk.gray(`├─ • Press Enter to create new lines`));
+    console.log(chalk.gray(`├─ • Type '${delimiter}' on a new line to finish and send`));
+    console.log(chalk.gray(`├─ • Press Ctrl+M to exit without sending`));
+    console.log(chalk.gray(`└─ • Press Ctrl+C to cancel and exit`));
+    console.log('');
+    this.showPrompt();
+  }
+
+  private exitMultilineMode(): void {
+    if (!this.isMultilineMode) return;
+    
+    this.isMultilineMode = false;
+    const multilineContent = this.multilineBuffer.join('\n');
+    this.multilineBuffer = [];
+    
+    if (multilineContent.trim()) {
+      this.inputStats.multilineInputs++;
+      this.addToHistory(multilineContent);
+      
+      console.log(chalk.green('\n✅ Multi-line input completed!'));
+      console.log(chalk.gray(`📊 Content: ${multilineContent.length} characters, ${multilineContent.split('\n').length} lines`));
+      
+      if (this.config.enableInputPreview) {
+        this.showInputPreview(multilineContent);
+      }
+      
+      this.sendUserMessage(multilineContent);
+    } else {
+      console.log(chalk.yellow('\n📝 Multi-line input cancelled (empty content)'));
+    }
+    
+    this.showPrompt();
+  }
+
+  private showMultilinePreview(): void {
+    if (!this.config.enableInputPreview || this.multilineBuffer.length === 0) return;
+    
+    const content = this.multilineBuffer.join('\n');
+    const lines = this.multilineBuffer.length;
+    const chars = content.length;
+    
+    console.log(chalk.gray(`📝 Multi-line preview: ${lines} lines, ${chars} characters`));
+    
+    if (content.length > 0 && content.length <= (this.config.maxPreviewLength || 100)) {
+      const preview = content.substring(0, 50) + (content.length > 50 ? '...' : '');
+      console.log(chalk.gray(`   Preview: "${preview}"`));
+    }
+  }
+
+  private showInputPreview(input: string): void {
+    if (!this.config.enableInputPreview) return;
+    
+    const maxLength = this.config.maxPreviewLength || 100;
+    const preview = input.length > maxLength ? 
+      input.substring(0, maxLength) + '...' : input;
+    
+    console.log(chalk.gray(`📋 Input preview (${input.length} chars): "${preview}"`));
+    
+    if (input.startsWith('/')) {
+      console.log(chalk.blue(`🔧 Detected: Command input`));
+    } else if (input.includes('\n')) {
+      console.log(chalk.blue(`📄 Detected: Multi-line content`));
+    } else if (input.length > 200) {
+      console.log(chalk.blue(`📝 Detected: Long text input`));
+    } else if (input.includes('?')) {
+      console.log(chalk.blue(`❓ Detected: Question input`));
+    }
+  }
+
+  private displayInputStats(): void {
+    console.log(chalk.cyan('\n📊 Input Statistics:'));
+    console.log(chalk.white(`Total inputs: ${this.inputStats.totalInputs}`));
+    console.log(chalk.white(`Total characters: ${this.inputStats.totalCharacters}`));
+    console.log(chalk.white(`Average input length: ${this.inputStats.averageInputLength.toFixed(1)} chars`));
+    console.log(chalk.white(`Multi-line inputs: ${this.inputStats.multilineInputs}`));
+    console.log(chalk.white(`Command history size: ${this.commandHistory.length}`));
+    
+    if (this.inputStats.totalInputs > 0) {
+      const multilinePercent = (this.inputStats.multilineInputs / this.inputStats.totalInputs * 100).toFixed(1);
+      console.log(chalk.gray(`Multi-line usage: ${multilinePercent}%`));
+    }
+    console.log('');
+  }
+
+  private updateInputStats(input: string): void {
+    this.inputStats.totalInputs++;
+    this.inputStats.totalCharacters += input.length;
+    this.inputStats.averageInputLength = this.inputStats.totalCharacters / this.inputStats.totalInputs;
+  }
+
+  private handleHistoryNavigation(up: boolean): void {
+    if (this.commandHistory.length === 0) return;
+    
+    if (up) {
+      if (this.historyIndex < this.commandHistory.length - 1) {
+        this.historyIndex++;
+      }
+    } else {
+      if (this.historyIndex > -1) {
+        this.historyIndex--;
+      }
+    }
+    
+    if (this.historyIndex >= 0 && this.historyIndex < this.commandHistory.length) {
+      const historyItem = this.commandHistory[this.commandHistory.length - 1 - this.historyIndex];
+      this.rl.write(null, { ctrl: true, name: 'u' });
+      this.rl.write(historyItem);
+      
+      if (this.config.enableInputPreview) {
+        console.log(chalk.gray(`📚 History: ${this.historyIndex + 1}/${this.commandHistory.length}`));
+      }
+    }
+  }
+
+  private handleSmartCompletion(): void {
+    const line = (this.rl as any).line || '';
+    const suggestions = this.generateSmartSuggestions(line);
+    
+    if (suggestions.length === 0) return;
+    
+    console.log(chalk.cyan('\n💡 Smart suggestions:'));
+    suggestions.forEach((suggestion, index) => {
+      console.log(chalk.white(`  ${index + 1}. ${suggestion}`));
+    });
+    
+    this.showPrompt();
+  }
+
+  private generateSmartSuggestions(input: string): string[] {
+    const suggestions: string[] = [];
+    
+    if (input.startsWith('/')) {
+      const commands = ['/help', '/mode', '/history', '/clear', '/events', '/stats', '/plan', '/exit'];
+      suggestions.push(...commands.filter(cmd => cmd.startsWith(input)));
+    }
+    
+    const recentCommands = this.commandHistory
+      .slice(-10)
+      .filter(cmd => cmd.toLowerCase().includes(input.toLowerCase()))
+      .slice(0, 3);
+    
+    suggestions.push(...recentCommands);
+    
+    if (input.includes('file') || input.includes('路径')) {
+      suggestions.push('/file <path>', 'Please specify the file path');
+    }
+    
+    if (input.includes('help') || input.includes('帮助')) {
+      suggestions.push('/help', 'Type /help for available commands');
+    }
+    
+    return [...new Set(suggestions)].slice(0, 5);
+  }
+
+  private handleTypingFeedback(input: string): void {
+    if (!this.config.enableRichInput || input.length === 0) return;
+    
+    if (input.includes('###') && !this.isMultilineMode) {
+      console.log(chalk.yellow('💡 Tip: Type ### to start multi-line input mode'));
+    }
+    
+    if (input.startsWith('/') && input.length > 1) {
+      const possibleCommands = ['/help', '/mode', '/history', '/clear'];
+      const matches = possibleCommands.filter(cmd => cmd.startsWith(input));
+      
+      if (matches.length > 0 && matches.length <= 3) {
+        console.log(chalk.gray(`💡 Suggestions: ${matches.join(', ')}`));
+      }
+    }
   }
 
   private async handleSpecialCommands(input: string): Promise<boolean> {
@@ -269,6 +591,51 @@ export class CLIClient extends BaseInteractiveLayer {
 
       case '/plan':
         this.displayPlanStatus();
+        return true;
+
+      case '/features':
+        this.displayFeatures();
+        return true;
+
+      case '/toggle':
+        if (args[0]) {
+          await this.toggleFeature(args[0]);
+        } else {
+          console.log(chalk.yellow('Available features to toggle: preview, shortcuts, smart, stats, history'));
+          console.log(chalk.gray('Usage: /toggle <feature>'));
+        }
+        return true;
+
+      case '/conversation':
+      case '/conv':
+        await this.displayConversationHistory(parseInt(args[0]) || 10);
+        return true;
+
+      case '/session':
+        this.displaySessionInfo();
+        return true;
+
+      case '/user':
+        if (args[0]) {
+          this.setUserId(args[0]);
+          console.log(chalk.green(`✓ User ID changed to: ${args[0]}`));
+        } else {
+          console.log(chalk.yellow(`Current user ID: ${this.userId}`));
+        }
+        return true;
+
+      case '/memory':
+        await this.displayMemoryStats();
+        return true;
+
+      case '/search':
+        if (args.length > 0) {
+          const query = args.join(' ');
+          await this.searchConversationHistory(query);
+        } else {
+          console.log(chalk.yellow('Usage: /search <query>'));
+          console.log(chalk.gray('Example: /search React component'));
+        }
         return true;
 
       case '/exit':
@@ -322,6 +689,25 @@ export class CLIClient extends BaseInteractiveLayer {
   }
 
   private async sendUserMessage(content: string): Promise<void> {
+    if (this.config.enableConversationHistory) {
+      try {
+        await this.sendUserMessageWithHistory(content, 'question');
+        
+        logger.debug(`CLIClient: User message sent with conversation history`, {
+          contentLength: content.length,
+          userId: this.userId,
+          sessionId: this.currentSession
+        });
+      } catch (error) {
+        logger.error('CLIClient: Failed to send user message with history', error);
+        await this.sendUserMessageFallback(content);
+      }
+    } else {
+      await this.sendUserMessageFallback(content);
+    }
+  }
+
+  private async sendUserMessageFallback(content: string): Promise<void> {
     const message: InteractiveMessage = {
       id: '',
       timestamp: 0,
@@ -332,7 +718,9 @@ export class CLIClient extends BaseInteractiveLayer {
         content,
         messageType: 'question',
         context: {
-          currentTask: 'user_interaction'
+          currentTask: 'user_interaction',
+          inputMethod: 'cli',
+          fallback: true
         }
       }
     };
@@ -903,56 +1291,156 @@ export class CLIClient extends BaseInteractiveLayer {
     });
   }
 
-  private displayMessage(message: InteractiveMessage): void {
-    const timestamp = new Date(message.timestamp).toLocaleTimeString();
-    const sourceIcon = this.getSourceIcon(message.source);
-    
-    console.log(chalk.gray(`[${timestamp}] ${sourceIcon} ${message.type}`));
-  }
-
   private displayWelcome(): void {
-    console.log(chalk.green('🤖 HHH-AGI Interactive CLI'));
+    console.log(chalk.green('🤖 HHH-AGI Enhanced Interactive CLI'));
+    console.log(chalk.cyan('✨ Enhanced Input Experience with Conversation History'));
     console.log(chalk.gray('Type /help for available commands'));
     console.log(chalk.gray('Use Ctrl+C to exit'));
     console.log('');
-    console.log(chalk.yellow('💡 Quick Start:'));
-    console.log(chalk.gray('  • For simple messages: Just type and press Enter'));
-    console.log(chalk.gray('  • For multi-line messages: Type ### → Enter → your message → ### → Enter'));
-    console.log(chalk.gray('  • For help: Type /help'));
+    
+    if (this.config.enableConversationHistory) {
+      console.log(chalk.magenta('🧠 Conversation History: ENABLED'));
+      console.log(chalk.gray(`   User ID: ${this.userId}`));
+      console.log(chalk.gray(`   Session: ${this.currentSession.substring(0, 8)}...`));
+      console.log('');
+    }
+    
+    if (this.config.enableRichInput) {
+      console.log(chalk.yellow('🚀 Enhanced Features Active:'));
+      
+      if (this.config.enableInputPreview) {
+        console.log(chalk.gray('  ✓ Input preview and analysis'));
+      }
+      
+      if (this.config.enableSmartPrompts) {
+        console.log(chalk.gray('  ✓ Smart prompts and suggestions'));
+      }
+      
+      if (this.config.enableKeyboardShortcuts) {
+        console.log(chalk.gray('  ✓ Keyboard shortcuts (Ctrl+H for help)'));
+      }
+      
+      if (this.config.enableMultilineInput) {
+        console.log(chalk.gray('  ✓ Enhanced multi-line input'));
+      }
+      
+      if (this.config.enableConversationHistory) {
+        console.log(chalk.gray('  ✓ Automatic conversation history integration'));
+      }
+      
+      console.log('');
+    }
+    
+    console.log(chalk.yellow('💡 Quick Start Guide:'));
+    console.log(chalk.gray('  🔸 Simple messages: Just type and press Enter'));
+    console.log(chalk.gray('  🔸 Multi-line messages: Type ### → Enter → your message → ### → Enter'));
+    console.log(chalk.gray('  🔸 Commands: Start with / (try /help)'));
+    console.log(chalk.gray('  🔸 File input: Use /file <path>'));
+    
+    if (this.config.enableConversationHistory) {
+      console.log(chalk.gray('  🔸 Conversation history: Automatically included in all messages'));
+    }
+    
+    if (this.config.enableKeyboardShortcuts) {
+      console.log(chalk.gray('  🔸 Quick shortcuts: Ctrl+H (help), Ctrl+L (clear), Ctrl+M (multi-line)'));
+    }
+    
     console.log('');
   }
 
   private displayHelp(): void {
-    console.log(chalk.cyan('\nAvailable Commands:'));
-    console.log(chalk.white('/help - Show this help message'));
-    console.log(chalk.white('/mode [auto|manual|supervised] - Set or view execution mode'));
-    console.log(chalk.white('/multiline - Start multi-line input mode'));
-    console.log(chalk.white('/file <path> - Load and send file content'));
-    console.log(chalk.white('/history [n] - Show last n commands (default: 10)'));
-    console.log(chalk.white('/clear - Clear the screen'));
-    console.log(chalk.white('/events - Show active events'));
-    console.log(chalk.white('/stats - Show event bus statistics'));
-    console.log(chalk.white('/plan - Show plan execution status and info'));
-    console.log(chalk.white('/exit, /quit - Exit the application'));
-    console.log('');
+    console.log(chalk.cyan('\n📖 Enhanced CLI Help Guide'));
+    console.log(chalk.cyan('=' .repeat(50)));
+    
+    console.log(chalk.yellow('\n🔧 Available Commands:'));
+    console.log(chalk.white('  /help                    - Show this help message'));
+    console.log(chalk.white('  /mode [auto|manual|supervised] - Set or view execution mode'));
+    console.log(chalk.white('  /multiline              - Start multi-line input mode'));
+    console.log(chalk.white('  /file <path>            - Load and send file content'));
+    console.log(chalk.white('  /history [n]            - Show last n commands (default: 10)'));
+    console.log(chalk.white('  /clear                  - Clear the screen'));
+    console.log(chalk.white('  /events                 - Show active events'));
+    console.log(chalk.white('  /stats                  - Show event bus statistics'));
+    console.log(chalk.white('  /plan                   - Show plan execution status and info'));
+    console.log(chalk.white('  /features               - Show enhanced CLI features status'));
+    console.log(chalk.white('  /toggle <feature>       - Toggle enhanced features on/off'));
+    console.log(chalk.white('  /exit, /quit            - Exit the application'));
+    
+    if (this.config.enableConversationHistory) {
+      console.log(chalk.yellow('\n🧠 Conversation History Commands:'));
+      console.log(chalk.white('  /conversation [n]       - Show last n conversation messages'));
+      console.log(chalk.white('  /conv [n]               - Alias for /conversation'));
+      console.log(chalk.white('  /session                - Show current session information'));
+      console.log(chalk.white('  /user [id]              - Set or view current user ID'));
+      console.log(chalk.white('  /memory                 - Show memory usage statistics'));
+      console.log(chalk.white('  /search <query>         - Search conversation history'));
+    }
+    
+    if (this.config.enableKeyboardShortcuts) {
+      console.log(chalk.yellow('\n⌨️  Keyboard Shortcuts:'));
+      console.log(chalk.white('  Ctrl+H                  - Show help'));
+      console.log(chalk.white('  Ctrl+L                  - Clear screen'));
+      console.log(chalk.white('  Ctrl+R                  - Show command history'));
+      console.log(chalk.white('  Ctrl+M                  - Toggle multi-line mode'));
+      console.log(chalk.white('  Ctrl+S                  - Show input statistics'));
+      console.log(chalk.white('  Ctrl+C                  - Cancel/Exit'));
+      console.log(chalk.white('  ↑/↓ Arrow Keys          - Navigate command history'));
+      console.log(chalk.white('  Tab                     - Smart completion'));
+    }
     
     if (this.config.enableMultilineInput) {
       const delimiter = this.config.multilineDelimiter || '###';
-      console.log(chalk.cyan('📝 Multi-line Input Guide:'));
-      console.log(chalk.white(`1. Type '${delimiter}' and press Enter to start multi-line mode`));
-      console.log(chalk.white(`2. Type your message with line breaks (Enter creates new lines)`));
-      console.log(chalk.white(`3. Type '${delimiter}' and press Enter to finish and send`));
-      console.log(chalk.gray('   Note: In multi-line mode, Enter will NOT send the message'));
-      console.log(chalk.gray('   Only the closing delimiter will send the complete message'));
-      console.log('');
+      console.log(chalk.yellow('\n📝 Multi-line Input Guide:'));
+      console.log(chalk.white(`  1. Type '${delimiter}' and press Enter to start multi-line mode`));
+      console.log(chalk.white(`  2. Type your message with line breaks (Enter creates new lines)`));
+      console.log(chalk.white(`  3. Type '${delimiter}' and press Enter to finish and send`));
+      console.log(chalk.white(`  4. Or press Ctrl+M to toggle multi-line mode`));
+      console.log(chalk.gray('     Note: In multi-line mode, Enter will NOT send the message'));
+      console.log(chalk.gray('     Only the closing delimiter will send the complete message'));
     }
     
     if (this.config.enableFileInput) {
-      console.log(chalk.cyan('File Input:'));
-      console.log(chalk.white('Use /file <path> to load file content'));
-      console.log(chalk.white('Supports text files up to 1MB'));
-      console.log('');
+      console.log(chalk.yellow('\n📁 File Input:'));
+      console.log(chalk.white('  /file <path>            - Load file content and send to agent'));
+      console.log(chalk.white('  Supports text files up to 1MB'));
+      console.log(chalk.gray('  Example: /file ./config.json'));
     }
+    
+    if (this.config.enableConversationHistory) {
+      console.log(chalk.yellow('\n🧠 Conversation History Features:'));
+      console.log(chalk.white('  • Automatic conversation recording'));
+      console.log(chalk.white('  • Agent responses include full conversation context'));
+      console.log(chalk.white('  • Search through past conversations'));
+      console.log(chalk.white('  • Session-based history management'));
+      console.log(chalk.white('  • Memory usage tracking and statistics'));
+      console.log(chalk.gray('  Example: /search "React component" to find related discussions'));
+    }
+    
+    if (this.config.enableInputPreview) {
+      console.log(chalk.yellow('\n📊 Smart Features:'));
+      console.log(chalk.white('  • Input preview for long messages'));
+      console.log(chalk.white('  • Real-time input analysis and type detection'));
+      console.log(chalk.white('  • Smart suggestions based on context'));
+      console.log(chalk.white('  • Input statistics tracking'));
+      console.log(chalk.white('  • Enhanced multi-line preview'));
+      if (this.config.enableConversationHistory) {
+        console.log(chalk.white('  • Conversation-aware intelligent prompts'));
+      }
+    }
+    
+    console.log(chalk.yellow('\n💡 Pro Tips:'));
+    console.log(chalk.gray('  • Use Tab for command completion'));
+    console.log(chalk.gray('  • Long inputs will show preview automatically'));
+    console.log(chalk.gray('  • History navigation with arrow keys'));
+    console.log(chalk.gray('  • Type partial commands for suggestions'));
+    console.log(chalk.gray('  • Multi-line mode shows live preview'));
+    if (this.config.enableConversationHistory) {
+      console.log(chalk.gray('  • All your messages automatically include conversation context'));
+      console.log(chalk.gray('  • Agent remembers the full conversation flow'));
+    }
+    
+    console.log(chalk.cyan('\n' + '=' .repeat(50)));
+    console.log('');
   }
 
   private displayHistory(count: number): void {
@@ -1005,6 +1493,153 @@ export class CLIClient extends BaseInteractiveLayer {
     console.log('');
   }
 
+  private displayFeatures(): void {
+    console.log(chalk.cyan('\n🚀 Enhanced CLI Features Status'));
+    console.log(chalk.cyan('=' .repeat(45)));
+    
+    const features = [
+      {
+        name: 'Rich Input Experience',
+        key: 'enableRichInput',
+        icon: '✨',
+        description: 'Enhanced input processing and feedback'
+      },
+      {
+        name: 'Input Preview',
+        key: 'enableInputPreview',
+        icon: '👁️',
+        description: 'Shows preview and analysis of input content'
+      },
+      {
+        name: 'Smart Prompts',
+        key: 'enableSmartPrompts',
+        icon: '🧠',
+        description: 'Intelligent prompts with context information'
+      },
+      {
+        name: 'Keyboard Shortcuts',
+        key: 'enableKeyboardShortcuts',
+        icon: '⌨️',
+        description: 'Hotkeys for quick actions and navigation'
+      },
+      {
+        name: 'Multi-line Input',
+        key: 'enableMultilineInput',
+        icon: '📝',
+        description: 'Enhanced multi-line text input with preview'
+      },
+      {
+        name: 'File Input',
+        key: 'enableFileInput',
+        icon: '📁',
+        description: 'Load and send file content directly'
+      },
+      {
+        name: 'Auto Completion',
+        key: 'enableAutoComplete',
+        icon: '🔮',
+        description: 'Smart command and path completion'
+      },
+      {
+        name: 'Input Statistics',
+        key: 'showInputStats',
+        icon: '📊',
+        description: 'Track and display input usage statistics'
+      }
+    ];
+
+    features.forEach(feature => {
+      const enabled = (this.config as any)[feature.key];
+      const status = enabled ? chalk.green('✓ ENABLED') : chalk.red('✗ DISABLED');
+      const toggleCommand = feature.key.replace('enable', '').replace('show', '').toLowerCase();
+      
+      console.log(`${feature.icon} ${chalk.white(feature.name.padEnd(20))} ${status}`);
+      console.log(chalk.gray(`   ${feature.description}`));
+      console.log(chalk.gray(`   Toggle with: /toggle ${toggleCommand}`));
+      console.log('');
+    });
+
+    console.log(chalk.yellow('💡 Tips:'));
+    console.log(chalk.gray('  • Use /toggle <feature> to enable/disable features'));
+    console.log(chalk.gray('  • Some features require restart to take full effect'));
+    console.log(chalk.gray('  • Type /help to see all available commands'));
+    console.log('');
+  }
+
+  private async toggleFeature(featureName: string): Promise<void> {
+    const featureMap: { [key: string]: string } = {
+      'richinput': 'enableRichInput',
+      'rich': 'enableRichInput',
+      'preview': 'enableInputPreview',
+      'smart': 'enableSmartPrompts',
+      'shortcuts': 'enableKeyboardShortcuts',
+      'keyboard': 'enableKeyboardShortcuts',
+      'multiline': 'enableMultilineInput',
+      'multi': 'enableMultilineInput',
+      'file': 'enableFileInput',
+      'completion': 'enableAutoComplete',
+      'autocomplete': 'enableAutoComplete',
+      'stats': 'showInputStats',
+      'statistics': 'showInputStats',
+      'history': 'enableConversationHistory',
+      'conversation': 'enableConversationHistory',
+      'memory': 'enableConversationHistory'
+    };
+
+    const configKey = featureMap[featureName.toLowerCase()];
+    
+    if (!configKey) {
+      console.log(chalk.red(`❌ Unknown feature: ${featureName}`));
+      console.log(chalk.yellow('Available features:'));
+      Object.keys(featureMap).forEach(key => {
+        console.log(chalk.gray(`  • ${key}`));
+      });
+      return;
+    }
+
+    const currentValue = (this.config as any)[configKey];
+    const newValue = !currentValue;
+    (this.config as any)[configKey] = newValue;
+
+    const status = newValue ? chalk.green('ENABLED') : chalk.red('DISABLED');
+    const featureDisplayName = configKey.replace(/^enable|^show/, '').replace(/([A-Z])/g, ' $1').trim();
+    
+    console.log(chalk.green(`✅ Feature toggled: ${featureDisplayName} is now ${status}`));
+    
+    if (configKey === 'enableKeyboardShortcuts') {
+      if (newValue) {
+        this.setupKeyboardShortcuts();
+        console.log(chalk.cyan('🔥 Keyboard shortcuts activated!'));
+      } else {
+        console.log(chalk.yellow('⚠️  Keyboard shortcuts disabled (restart recommended)'));
+      }
+    }
+    
+    if (configKey === 'enableRichInput') {
+      if (newValue) {
+        this.setupRichInput();
+        console.log(chalk.cyan('✨ Rich input experience activated!'));
+      } else {
+        console.log(chalk.yellow('⚠️  Rich input disabled'));
+      }
+    }
+
+    if (configKey === 'enableConversationHistory') {
+      if (newValue) {
+        console.log(chalk.cyan('🧠 Conversation history activated!'));
+        console.log(chalk.gray('   • All future messages will include conversation context'));
+        console.log(chalk.gray('   • Use /conversation to view history'));
+        console.log(chalk.gray('   • Use /search to find past conversations'));
+      } else {
+        console.log(chalk.yellow('⚠️  Conversation history disabled'));
+        console.log(chalk.gray('   • Messages will be sent without conversation context'));
+        console.log(chalk.gray('   • History commands will not be available'));
+      }
+    }
+
+    console.log(chalk.gray('💡 Some changes may require restart for full effect'));
+  }
+
   private startInteractiveLoop(): void {
     this.showPrompt();
   }
@@ -1018,21 +1653,99 @@ export class CLIClient extends BaseInteractiveLayer {
     
     if (this.isMultilineMode) {
       const lineNumber = this.multilineBuffer.length + 1;
-      this.rl.setPrompt(chalk.yellow(`📝 ${lineNumber.toString().padStart(2)} | `));
+      const delimiter = this.config.multilineDelimiter || '###';
+      
+      console.log(chalk.gray(`┌─ Multi-line mode (line ${lineNumber}) - Type '${delimiter}' to finish`));
+      this.rl.setPrompt(chalk.yellow(`├─ ${lineNumber.toString().padStart(2, '0')} │ `));
     } else {
-      this.rl.setPrompt(chalk.green(`${prefix} ${modeIndicator} > `));
+      let promptText = '';
+      
+      if (this.config.enableSmartPrompts) {
+        const sessionInfo = this.currentSession ? ` [${this.currentSession.substring(0, 8)}]` : '';
+        const historyInfo = this.commandHistory.length > 0 ? ` (${this.commandHistory.length})` : '';
+        
+        if (this.config.showInputStats && this.inputStats.totalInputs > 0) {
+          const avgLength = Math.round(this.inputStats.averageInputLength);
+          promptText += chalk.gray(`[${this.inputStats.totalInputs} inputs, avg: ${avgLength}] `);
+        }
+        
+        promptText += chalk.green(`${prefix} `);
+        promptText += chalk.blue(`${modeIndicator} `);
+        
+        if (sessionInfo) {
+          promptText += chalk.gray(`${sessionInfo} `);
+        }
+        
+        if (historyInfo && this.commandHistory.length > 0) {
+          promptText += chalk.gray(`${historyInfo} `);
+        }
+        
+        promptText += chalk.white(`> `);
+      } else {
+        promptText = chalk.green(`${prefix} ${modeIndicator} > `);
+      }
+      
+      this.rl.setPrompt(promptText);
     }
     
     this.rl.prompt();
+    
+    if (this.inputStats.totalInputs === 0 && this.config.enableSmartPrompts) {
+      setTimeout(() => {
+        console.log(chalk.gray('💡 First time? Try typing /help or ### for multi-line input'));
+      }, 100);
+    }
   }
 
   private completer(line: string): [string[], string] {
     const commands = [
-      '/help', '/mode', '/history', '/clear', '/events', '/stats', '/plan', '/exit', '/quit'
+      '/help', '/mode', '/history', '/clear', '/events', '/stats', '/plan', '/exit', '/quit', '/multiline', '/file'
     ];
     
-    const hits = commands.filter(cmd => cmd.startsWith(line));
-    return [hits.length ? hits : commands, line];
+    const modeCommands = ['auto', 'manual', 'supervised'];
+    
+    if (line.startsWith('/mode ')) {
+      const modeInput = line.substring(6);
+      const modeHits = modeCommands.filter(mode => mode.startsWith(modeInput));
+      return [modeHits.map(mode => `/mode ${mode}`), line];
+    }
+    
+    if (line.startsWith('/file ')) {
+      const filePath = line.substring(6);
+      try {
+        const basePath = path.dirname(filePath) || '.';
+        const fileName = path.basename(filePath);
+        
+        if (fs.existsSync(basePath)) {
+          const files = fs.readdirSync(basePath)
+            .filter(file => file.startsWith(fileName))
+            .slice(0, 10)
+            .map(file => `/file ${path.join(basePath, file)}`);
+          
+          return [files, line];
+        }
+      } catch (error) {
+        // 忽略文件系统错误
+      }
+    }
+    
+    if (line.startsWith('/')) {
+      const hits = commands.filter(cmd => cmd.startsWith(line));
+      return [hits.length ? hits : commands, line];
+    }
+    
+    if (this.commandHistory.length > 0) {
+      const recentHits = this.commandHistory
+        .filter(cmd => cmd.toLowerCase().includes(line.toLowerCase()))
+        .slice(-5)
+        .reverse();
+      
+      if (recentHits.length > 0) {
+        return [recentHits, line];
+      }
+    }
+    
+    return [[], line];
   }
 
   private addToHistory(command: string): void {
@@ -1147,6 +1860,123 @@ export class CLIClient extends BaseInteractiveLayer {
       const minutes = Math.floor(milliseconds / 60000);
       const seconds = Math.floor((milliseconds % 60000) / 1000);
       return `${minutes}m ${seconds}s`;
+    }
+  }
+
+  private async displayConversationHistory(limit: number): Promise<void> {
+    if (!this.config.enableConversationHistory) {
+      console.log(chalk.red('❌ Conversation history is not enabled.'));
+      return;
+    }
+
+    try {
+      const memory = this.getInteractiveMemory();
+      const history = await memory.getConversationHistory(this.currentSession, limit);
+
+      console.log(chalk.cyan(`\n💬 Conversation History (Last ${limit} messages):`));
+      console.log(chalk.cyan('=' .repeat(60)));
+
+      if (history.length === 0) {
+        console.log(chalk.gray('No conversation history found.'));
+        return;
+      }
+
+      history.forEach((record, index) => {
+        const timestamp = new Date(record.timestamp).toLocaleTimeString();
+        const roleIcon = record.role === 'user' ? '👤' : record.role === 'agent' ? '🤖' : '⚙️';
+        const content = record.content.length > 100 ? 
+          record.content.substring(0, 100) + '...' : record.content;
+
+        console.log(chalk.white(`${index + 1}. [${timestamp}] ${roleIcon} ${record.role}:`));
+        console.log(chalk.gray(`   ${content}`));
+        
+        if (record.metadata) {
+          console.log(chalk.gray(`   Metadata: ${JSON.stringify(record.metadata, null, 2)}`));
+        }
+        console.log('');
+      });
+
+      console.log(chalk.cyan('=' .repeat(60)));
+    } catch (error) {
+      console.log(chalk.red(`❌ Failed to retrieve conversation history: ${error}`));
+    }
+  }
+
+  private displaySessionInfo(): void {
+    console.log(chalk.cyan('\n📊 Session Information:'));
+    console.log(chalk.white(`Session ID: ${this.currentSession}`));
+    console.log(chalk.white(`User ID: ${this.userId}`));
+    console.log(chalk.white(`Execution Mode: ${this.executionMode}`));
+    console.log(chalk.white(`Conversation History: ${this.config.enableConversationHistory ? 'ENABLED' : 'DISABLED'}`));
+    
+    if (this.config.enableConversationHistory) {
+      console.log(chalk.gray(`Memory Instance: ${this.getInteractiveMemory().id}`));
+      console.log(chalk.gray(`Memory Name: ${this.getInteractiveMemory().name}`));
+    }
+    
+    console.log('');
+  }
+
+  private async displayMemoryStats(): Promise<void> {
+    if (!this.config.enableConversationHistory) {
+      console.log(chalk.red('❌ Conversation history is not enabled.'));
+      return;
+    }
+
+    try {
+      const memory = this.getInteractiveMemory();
+      
+      if ('getMemoryStats' in memory) {
+        const stats = (memory as any).getMemoryStats();
+        
+        console.log(chalk.cyan('\n📈 Memory Statistics:'));
+        console.log(chalk.white(`Total Conversations: ${stats.totalConversations || 0}`));
+        console.log(chalk.white(`Total Sessions: ${stats.totalSessions || 0}`));
+        console.log(chalk.white(`Average Messages/Session: ${stats.averageConversationsPerSession?.toFixed(1) || 0}`));
+        console.log(chalk.white(`Memory Usage: ${stats.memoryUsage || 'Unknown'}`));
+      } else {
+        console.log(chalk.yellow('Memory statistics not available in current implementation.'));
+      }
+      
+      console.log('');
+    } catch (error) {
+      console.log(chalk.red(`❌ Failed to retrieve memory statistics: ${error}`));
+    }
+  }
+
+  private async searchConversationHistory(query: string): Promise<void> {
+    if (!this.config.enableConversationHistory) {
+      console.log(chalk.red('❌ Conversation history is not enabled.'));
+      return;
+    }
+
+    try {
+      const memory = this.getInteractiveMemory();
+      const results = await memory.searchConversations(query, {
+        sessionId: this.currentSession,
+        limit: 10
+      });
+
+      console.log(chalk.cyan(`\n🔍 Search Results for "${query}":`));
+      console.log(chalk.cyan('=' .repeat(50)));
+
+      if (results.length === 0) {
+        console.log(chalk.gray('No matching conversations found.'));
+        return;
+      }
+
+      results.forEach((record, index) => {
+        const timestamp = new Date(record.timestamp).toLocaleTimeString();
+        const roleIcon = record.role === 'user' ? '👤' : record.role === 'agent' ? '🤖' : '⚙️';
+        
+        console.log(chalk.white(`${index + 1}. [${timestamp}] ${roleIcon} ${record.role}:`));
+        console.log(chalk.gray(`   ${record.content}`));
+        console.log('');
+      });
+
+      console.log(chalk.cyan('=' .repeat(50)));
+    } catch (error) {
+      console.log(chalk.red(`❌ Search failed: ${error}`));
     }
   }
 } 

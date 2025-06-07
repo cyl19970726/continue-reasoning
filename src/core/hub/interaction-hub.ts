@@ -25,7 +25,7 @@ export class InteractionHub implements IInteractionHub {
     /**
      * 注册智能体
      */
-    registerAgent(agent: IAgent): void {
+    async registerAgent(agent: IAgent): Promise<void> {
         if (this.agents.has(agent.id)) {
             logger.warn(`Agent ${agent.id} is already registered`);
             return;
@@ -39,28 +39,33 @@ export class InteractionHub implements IInteractionHub {
             (agent as any).eventBus = this.eventBus;
         }
 
-        // 设置事件处理器
-        agent.setupEventHandlers();
+        // 注意：延迟设置事件处理器，只有在系统启动后才设置
+        // 这样避免Agent在用户输入之前就开始响应事件
+        if (this.isRunning) {
+            agent.setupEventHandlers();
+        }
 
         // 发布agent注册事件
-        this.eventBus.publish({
-            type: 'agent_registered',
-            source: 'interaction_hub',
-            sessionId: 'system',
-            payload: {
-                agentId: agent.id,
-                agentName: agent.name,
-                timestamp: Date.now()
-            }
-        }).catch(error => {
+        try {
+            await this.eventBus.publish({
+                type: 'agent_registered',
+                source: 'interaction_hub',
+                sessionId: 'system',
+                payload: {
+                    agentId: agent.id,
+                    agentName: agent.name,
+                    timestamp: Date.now()
+                }
+            });
+        } catch (error) {
             logger.error('Error publishing agent_registered event:', error);
-        });
+        }
     }
 
     /**
      * 注册交互层
      */
-    registerInteractiveLayer(layer: IInteractiveLayer): void {
+    async registerInteractiveLayer(layer: IInteractiveLayer): Promise<void> {
         if (this.interactiveLayers.has(layer.id)) {
             logger.warn(`InteractiveLayer ${layer.id} is already registered`);
             return;
@@ -82,18 +87,20 @@ export class InteractionHub implements IInteractionHub {
         });
 
         // 发布交互层注册事件
-        this.eventBus.publish({
-            type: 'interactive_layer_registered',
-            source: 'interaction_hub',
-            sessionId: 'system',
-            payload: {
-                layerId: layer.id,
-                capabilities: layer.getCapabilities(),
-                timestamp: Date.now()
-            }
-        }).catch(error => {
+        try {
+            await this.eventBus.publish({
+                type: 'interactive_layer_registered',
+                source: 'interaction_hub',
+                sessionId: 'system',
+                payload: {
+                    layerId: layer.id,
+                    capabilities: layer.getCapabilities(),
+                    timestamp: Date.now()
+                }
+            });
+        } catch (error) {
             logger.error('Error publishing interactive_layer_registered event:', error);
-        });
+        }
     }
 
     /**
@@ -129,6 +136,17 @@ export class InteractionHub implements IInteractionHub {
 
             this.isRunning = true;
             logger.info('InteractionHub started successfully');
+
+            // 现在为所有已注册的Agent设置事件处理器
+            // 这样确保Agent只在系统完全启动后才开始监听事件
+            for (const [id, agent] of this.agents) {
+                try {
+                    agent.setupEventHandlers();
+                    logger.info(`Agent event handlers setup completed: ${id}`);
+                } catch (error) {
+                    logger.error(`Failed to setup event handlers for Agent ${id}:`, error);
+                }
+            }
 
             // 发布系统启动事件
             await this.eventBus.publish({

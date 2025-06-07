@@ -5,8 +5,11 @@ import {
   SubscriptionConfig 
 } from './types';
 import { IEventBus } from './eventBus';
+// 🆕 导入新的简化版 InteractiveMemory
+import { IInteractiveMemory, InteractiveMemory } from './interactiveMemory';
 
 export interface IInteractiveLayer {
+  id: string; // 🆕 添加 id 属性
   sendMessage(message: InteractiveMessage): Promise<void>;
   receiveMessage(): Promise<InteractiveMessage>;
   subscribe(eventType: string | string[], handler: MessageHandler, config?: SubscriptionConfig): string;
@@ -20,6 +23,10 @@ export interface IInteractiveLayer {
   getCurrentSession(): string;
   getActiveEvents(): InteractiveMessage[];
   clearEventHistory(): void;
+  
+  // 🆕 InteractiveMemory 集成
+  getInteractiveMemory(): IInteractiveMemory;
+  sendUserMessageWithHistory(content: string, messageType?: 'question' | 'command' | 'request' | 'feedback'): Promise<void>;
 }
 
 export interface InteractiveLayerConfig {
@@ -32,6 +39,7 @@ export interface InteractiveLayerConfig {
 }
 
 export abstract class BaseInteractiveLayer implements IInteractiveLayer {
+  public abstract readonly id: string; // 🆕 抽象 id 属性
   protected config: InteractiveLayerConfig;
   protected currentSession: string;
   protected executionMode: 'auto' | 'manual' | 'supervised' = 'auto';
@@ -40,11 +48,27 @@ export abstract class BaseInteractiveLayer implements IInteractiveLayer {
   protected messageQueue: InteractiveMessage[] = [];
   protected messagePromiseResolvers: Array<(message: InteractiveMessage) => void> = [];
 
+  // 🆕 轻量化的 InteractiveMemory（无 MapMemoryManager 依赖）
+  protected interactiveMemory!: IInteractiveMemory;
+
   constructor(config: InteractiveLayerConfig) {
     this.config = config;
     // 使用已存在的 session 或创建新的，但优先使用已存在的
     const existingSessions = config.eventBus.getActiveSessions();
     this.currentSession = existingSessions.length > 0 ? existingSessions[0] : config.eventBus.createSession();
+    
+    // 🆕 简化的初始化
+    this.initializeInteractiveMemory();
+  }
+
+  // 🆕 简化的 InteractiveMemory 初始化
+  private initializeInteractiveMemory(): void {
+    // 直接创建轻量化的内存存储，无需 MapMemoryManager
+    this.interactiveMemory = new InteractiveMemory(
+      `interactive-memory-${this.id}`,
+      `Interactive Memory for ${this.id}`,
+      this.config.eventBus
+    );
   }
 
   abstract sendMessage(message: InteractiveMessage): Promise<void>;
@@ -98,6 +122,9 @@ export abstract class BaseInteractiveLayer implements IInteractiveLayer {
   async start(): Promise<void> {
     if (this.isRunning) return;
     
+    // 启动 InteractiveMemory
+    await this.interactiveMemory.start();
+    
     this.isRunning = true;
     await this.config.eventBus.start();
     await this.onStart();
@@ -109,6 +136,9 @@ export abstract class BaseInteractiveLayer implements IInteractiveLayer {
     this.isRunning = false;
     await this.onStop();
     
+    // 停止 InteractiveMemory
+    await this.interactiveMemory.stop();
+    
     // 清理订阅
     for (const subscriptionId of this.subscriptionIds.values()) {
       this.config.eventBus.unsubscribe(subscriptionId);
@@ -117,6 +147,51 @@ export abstract class BaseInteractiveLayer implements IInteractiveLayer {
     
     // 关闭会话
     this.config.eventBus.closeSession(this.currentSession);
+  }
+
+  // 🆕 获取 InteractiveMemory
+  getInteractiveMemory(): IInteractiveMemory {
+    return this.interactiveMemory;
+  }
+
+  // 🆕 发送包含历史的用户消息（简化版）
+  async sendUserMessageWithHistory(content: string, messageType: 'question' | 'command' | 'request' | 'feedback' = 'request'): Promise<void> {
+    // 获取最近的对话历史
+    const recentHistory = await this.interactiveMemory.getConversationHistory(this.currentSession, 5);
+    
+    // 构建包含历史的消息
+    const message: any = {
+      id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: Date.now(),
+      source: 'user',
+      sessionId: this.currentSession,
+      type: 'user_message',
+      payload: {
+        content,
+        messageType,
+        conversationHistory: recentHistory.map(record => ({
+          id: record.id,
+          role: record.role,
+          content: record.content,
+          timestamp: record.timestamp,
+          metadata: record.metadata
+        }))
+      }
+    };
+
+    // 记录用户消息
+    await this.interactiveMemory.recordConversation({
+      sessionId: this.currentSession,
+      userId: this.getUserId(),
+      agentId: 'pending', // 将在 Agent 响应时更新
+      type: 'user_message',
+      role: 'user',
+      content: content,
+      metadata: { messageType }
+    });
+
+    // 发送消息
+    await this.sendMessage(message);
   }
 
   async setExecutionMode(mode: 'auto' | 'manual' | 'supervised'): Promise<void> {
@@ -253,6 +328,35 @@ export abstract class BaseInteractiveLayer implements IInteractiveLayer {
       resolver(message);
     }
   }
+
+  // 🆕 自动记录对话的 sendMessage 实现
+  protected async sendMessageWithAutoRecord(message: InteractiveMessage): Promise<void> {
+    // 对于 agent_reply，记录到 InteractiveMemory
+    if (message.type === 'agent_reply') {
+      await this.interactiveMemory.recordConversation({
+        sessionId: message.sessionId,
+        userId: this.getUserId(),
+        agentId: this.extractAgentId(message),
+        type: 'agent_reply',
+        role: 'agent',
+        content: this.extractContent(message),
+        metadata: {
+          originalMessage: message
+        }
+      });
+    }
+
+    // 继续原有的发送逻辑
+    const { id, timestamp, ...eventWithoutIdAndTimestamp } = message;
+    await this.config.eventBus.publish(eventWithoutIdAndTimestamp);
+    this.displayMessage(message);
+  }
+
+  // 抽象方法，需要子类实现
+  protected abstract getUserId(): string | undefined;
+  protected abstract extractAgentId(message: InteractiveMessage): string;
+  protected abstract extractContent(message: InteractiveMessage): string;
+  protected abstract displayMessage(message: InteractiveMessage): void;
 
   // 工具方法
   protected async publishEvent(
