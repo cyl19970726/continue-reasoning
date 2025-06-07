@@ -123,6 +123,89 @@ export interface UserMessageEvent extends BaseEvent {
       currentTask?: string;
       userIntent?: string;
     };
+    conversationHistory?: Array<{
+      id: string;
+      role: 'user' | 'agent' | 'system';
+      content: string;
+      timestamp: number;
+      metadata?: Record<string, any>;
+    }>;
+  };
+}
+
+// 新增：对话历史请求事件
+export interface ConversationHistoryRequestEvent extends BaseEvent {
+  type: 'conversation_history_request';
+  payload: {
+    requestId: string;
+    sessionId: string;
+    limit?: number;
+    agentId: string; // 请求的 Agent ID
+  };
+}
+
+// 新增：对话历史响应事件
+export interface ConversationHistoryResponseEvent extends BaseEvent {
+  type: 'conversation_history_response';
+  payload: {
+    requestId: string;
+    success: boolean;
+    conversations?: Array<{
+      id: string;
+      sessionId: string;
+      userId?: string;
+      agentId: string;
+      timestamp: number;
+      type: 'user_message' | 'agent_reply' | 'system_notification' | 'tool_execution';
+      role: 'user' | 'agent' | 'system';
+      content: string;
+      metadata?: Record<string, any>;
+    }>;
+    error?: string;
+  };
+}
+
+// 新增：对话搜索请求事件
+export interface ConversationSearchRequestEvent extends BaseEvent {
+  type: 'conversation_search_request';
+  payload: {
+    requestId: string;
+    query: string;
+    options?: {
+      sessionId?: string;
+      userId?: string;
+      agentId?: string;
+      type?: 'user_message' | 'agent_reply' | 'system_notification' | 'tool_execution';
+      role?: 'user' | 'agent' | 'system';
+      startTime?: number;
+      endTime?: number;
+      limit?: number;
+      includeMetadata?: boolean;
+      sortBy?: 'timestamp' | 'importance';
+      sortOrder?: 'asc' | 'desc';
+    };
+    agentId: string; // 请求的 Agent ID
+  };
+}
+
+// 新增：对话搜索响应事件
+export interface ConversationSearchResponseEvent extends BaseEvent {
+  type: 'conversation_search_response';
+  payload: {
+    requestId: string;
+    success: boolean;
+    results?: Array<{
+      id: string;
+      sessionId: string;
+      userId?: string;
+      agentId: string;
+      timestamp: number;
+      type: 'user_message' | 'agent_reply' | 'system_notification' | 'tool_execution';
+      role: 'user' | 'agent' | 'system';
+      content: string;
+      metadata?: Record<string, any>;
+    }>;
+    error?: string;
   };
 }
 
@@ -136,7 +219,11 @@ export type CrossComponentEvent =
   | InputResponseEvent
   | CollaborationRequestEvent
   | CollaborationResponseEvent
-  | UserMessageEvent;
+  | UserMessageEvent
+  | ConversationHistoryRequestEvent
+  | ConversationHistoryResponseEvent
+  | ConversationSearchRequestEvent
+  | ConversationSearchResponseEvent;
 
 // 所有事件类型的联合
 export type AllEventTypes = CrossComponentEvent; 

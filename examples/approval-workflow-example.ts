@@ -7,11 +7,6 @@ import { InteractiveLayerConfig } from '../src/core/events/interactiveLayer';
 import { InteractiveCapabilities } from '../src/core/events/types';
 
 // Import contexts
-import { ToolCallContext } from '../src/core/contexts/tool';
-import { ClientContext } from '../src/core/contexts/client';
-import { SystemToolContext } from '../src/core/contexts/system';
-import { ExecuteToolsContext } from '../src/core/contexts/execute';
-import { InteractiveContext } from '../src/core/contexts/interaction';
 import { OPENAI_MODELS } from '@/core/models';
 
 // Mock client for demonstration

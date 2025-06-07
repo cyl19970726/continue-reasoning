@@ -52,8 +52,8 @@ async function runInteractionHubDemo() {
         console.log('✅ CodingAgent created');
 
         // 5. 注册组件到 InteractionHub
-        interactionHub.registerAgent(codingAgent);
-        interactionHub.registerInteractiveLayer(cliClient);
+        await interactionHub.registerAgent(codingAgent);
+        await interactionHub.registerInteractiveLayer(cliClient);
         console.log('✅ Components registered to InteractionHub');
 
         // 6. 设置 CLI Client 的 InteractionHub 引用

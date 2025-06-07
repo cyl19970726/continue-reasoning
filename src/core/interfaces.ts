@@ -487,55 +487,35 @@ export interface Swarms{
 export type ClientSendFnType = (clientInfo: {clientId: string, userId: string}, incomingMessages: Message) => void;
 
 /**
- * 🎯 HHH-AGI 交互系统架构
- * 
- * 组件关系：
- * 
- * ┌─────────────────────────────────────────────────────────────┐
- * │                    IInteractionHub                          │
- * │                    (协调中心)                               │
- * │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
- * │  │   IAgent    │  │    Event    │  │  IInteractiveLayer  │  │
- * │  │  (智能体)   │  │     Bus     │  │   (用户交互层)      │  │
- * │  │             │  │  (事件总线)  │  │                     │  │
- * │  └─────────────┘  └─────────────┘  └─────────────────────┘  │
- * └─────────────────────────────────────────────────────────────┘
- * 
- * 职责分工：
- * - IInteractionHub: 系统协调器，管理所有组件生命周期
- * - EventBus: 事件传输层，负责事件路由和分发
- * - IAgent: 智能体，处理任务逻辑和工具执行
- * - IInteractiveLayer: 用户界面层，处理用户输入输出
+ * 🎯 交互中心接口 - 系统协调器
+ * 职责：协调多个Agent和InteractiveLayer之间的通信
  */
-
 export interface IInteractionHub {
     eventBus: IEventBus;
     
-    // 注册组件
-    registerAgent(agent: IAgent): void;
-    registerInteractiveLayer(layer: IInteractiveLayer): void;
+    // 组件注册
+    registerAgent(agent: IAgent): Promise<void>;
+    registerInteractiveLayer(layer: IInteractiveLayer): Promise<void>;
     
-    // 启动和停止
+    // 系统管理
     start(): Promise<void>;
     stop(): Promise<void>;
     
-    // 获取注册的组件
+    // 信息查询
     getAgents(): IAgent[];
     getInteractiveLayers(): IInteractiveLayer[];
+    getSystemStatus(): any;
     
-    // 🆕 系统协调功能
+    // 事件路由
     broadcastToAgents(eventType: string, payload: any): Promise<void>;
     broadcastToInteractiveLayers(eventType: string, payload: any): Promise<void>;
+    routeEvent(event: any, targetType: 'agent' | 'interactive_layer', targetId?: string): Promise<void>;
     
-    // 🆕 组件状态管理
-    getSystemStatus(): {
-        agents: Array<{ id: string; status: string; isRunning: boolean }>;
-        interactiveLayers: Array<{ id: string; capabilities: any }>;
-        eventBusStatus: any;
+    // 健康检查
+    checkHealth(): {
+        status: 'healthy' | 'degraded' | 'unhealthy';
+        details: any;
     };
-    
-    // 事件路由（可选，用于复杂的多对多场景）
-    routeEvent?(event: any, targetType: 'agent' | 'interactive_layer', targetId?: string): Promise<void>;
 }
 
 /**
@@ -572,11 +552,22 @@ export interface IAgent{
 
     // 核心生命周期方法
     setup(): Promise<void>;
-    startWithUserInput(userInput: string, maxSteps: number, options?: {
+    startWithUserInput(
+        userInput: string, 
+        maxSteps: number, 
+        options?: {
         savePromptPerStep?: boolean;  // 是否每步保存prompt
         promptSaveDir?: string;       // prompt保存目录
         promptSaveFormat?: 'markdown' | 'json' | 'both';  // 保存格式
-    }): Promise<void>;
+            conversationHistory?: Array<{  // 🆕 添加对话历史参数
+                id: string;
+                role: 'user' | 'agent' | 'system';
+                content: string;
+                timestamp: number;
+                metadata?: Record<string, any>;
+            }>;
+        }
+    ): Promise<void>;
     stop(): void;
     
     getPrompt(): string | Promise<string>;
@@ -599,7 +590,13 @@ export interface IAgent{
     subscribeToExecutionModeChanges?(): void;
     
     // 用户交互方法
-    processUserInput(input: string, sessionId: string): Promise<void>;
+    processUserInput(input: string, sessionId: string, conversationHistory?: Array<{
+        id: string;
+        role: 'user' | 'agent' | 'system';
+        content: string;
+        timestamp: number;
+        metadata?: Record<string, any>;
+    }>): Promise<void>;
     
     // 🆕 事件发布能力
     publishEvent(eventType: string, payload: any, sessionId?: string): Promise<void>;

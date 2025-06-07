@@ -212,7 +212,15 @@ export class BaseAgent implements IAgent {
     }
 
     // 新增：使用思考系统处理步骤
-    private async processStepWithThinking(userInput: string): Promise<boolean> {
+    private async processStepWithThinking(
+        userInput: string,
+        conversationHistory?: Array<{
+            id: string;
+            role: 'user' | 'agent' | 'system';
+            content: string;
+            timestamp: number;
+            metadata?: Record<string, any>;
+      }>): Promise<boolean> {
         if (!this.thinkingSystem) {
             throw new Error('Thinking system is not initialized');
         }
@@ -228,7 +236,7 @@ export class BaseAgent implements IAgent {
             // 使用思考系统处理这一步
             // 注意：如果是第一步，使用processUserInput；否则使用continueReasoning
             const result: ProcessResult = this.currentStep === 0 
-                ? await this.thinkingSystem.processUserInput(userInput, sessionId, toolDefinitions)
+                ? await this.thinkingSystem.processUserInput(userInput, sessionId, toolDefinitions, conversationHistory)
                 : await this.thinkingSystem.continueReasoning(sessionId, toolDefinitions);
 
             logger.info(`Thinking step ${result.stepNumber} completed`);
@@ -464,6 +472,13 @@ export class BaseAgent implements IAgent {
             savePromptPerStep?: boolean;  // 是否每步保存prompt
             promptSaveDir?: string;       // prompt保存目录
             promptSaveFormat?: 'markdown' | 'json' | 'both';  // 保存格式
+            conversationHistory?: Array<{  // 🆕 添加对话历史参数
+                id: string;
+                role: 'user' | 'agent' | 'system';
+                content: string;
+                timestamp: number;
+                metadata?: Record<string, any>;
+            }>;
         }
     ): Promise<void> {
         if (this.isRunning) {
@@ -506,6 +521,13 @@ export class BaseAgent implements IAgent {
         savePromptPerStep?: boolean;  // 是否每步保存prompt
         promptSaveDir?: string;       // prompt保存目录
         promptSaveFormat?: 'markdown' | 'json' | 'both';  // 保存格式
+        conversationHistory?: Array<{
+            id: string;
+            role: 'user' | 'agent' | 'system';
+            content: string;
+            timestamp: number;
+            metadata?: Record<string, any>;
+        }>;
     }): Promise<void> {
         while (!this.shouldStop && this.currentStep < maxSteps) {
             logger.info(`==========Agent Current Step: ${this.currentStep} ==========`);
@@ -528,7 +550,7 @@ export class BaseAgent implements IAgent {
                 await this.taskQueue.addProcessStepTask(async () => {
                     // 根据是否启用思考系统选择不同的处理方法
                     if (this.enableThinking && this.thinkingSystem) {
-                        const continueThinking = await this.processStepWithThinking(userInput);
+                        const continueThinking = await this.processStepWithThinking(userInput,options?.conversationHistory);
                         if (!continueThinking) {
                             logger.info("The Thinking System is not able to continue reasoning, so the agent will stop");
                             this.stop();
@@ -687,16 +709,37 @@ export class BaseAgent implements IAgent {
      * 处理用户消息事件
      */
     async handleUserMessage(event: any): Promise<void> {
-        const { content, messageType, context } = event.payload;
+        // 安全检查：只有在Agent处于idle状态时才处理新的用户消息
+        if (this.currentState !== 'idle') {
+            logger.debug(`Agent ${this.id} is in ${this.currentState} state, ignoring user message`);
+            return;
+        }
+
+        // 检查消息是否为空或无效
+        if (!event.payload || !event.payload.content || !event.payload.content.trim()) {
+            logger.debug(`Agent ${this.id} received empty or invalid user message, ignoring`);
+            return;
+        }
+
+        const { content, messageType, context, conversationHistory } = event.payload;
         logger.info(`Agent handling user message: "${content}" (type: ${messageType})`);
+        
+        // 🆕 构建包含对话历史的选项
+        const startOptions: any = {
+            savePromptPerStep: true,
+            promptSaveDir: './step-prompts',
+            promptSaveFormat: 'markdown'
+        };
+        
+        // 🆕 如果事件中包含对话历史，添加到选项中
+        if (conversationHistory && conversationHistory.length > 0) {
+            logger.info(`User message event includes conversation history: ${conversationHistory.length} messages`);
+            startOptions.conversationHistory = conversationHistory;
+        }
         
         // 如果启用了思考系统，直接使用思考系统处理
         if (this.enableThinking && this.thinkingSystem) {
-            await this.startWithUserInput(content, this.maxSteps, {
-                savePromptPerStep: true,
-                promptSaveDir: './step-prompts',
-                promptSaveFormat: 'markdown'
-            });
+            await this.startWithUserInput(content, this.maxSteps, startOptions);
             return;
         }
     }
@@ -772,7 +815,13 @@ export class BaseAgent implements IAgent {
     /**
      * 🆕 处理用户输入的统一接口
      */
-    async processUserInput(input: string, sessionId: string): Promise<void> {
+    async processUserInput(input: string, sessionId: string, conversationHistory?: Array<{
+        id: string;
+        role: 'user' | 'agent' | 'system';
+        content: string;
+        timestamp: number;
+        metadata?: Record<string, any>;
+    }>): Promise<void> {
         logger.info(`Agent processing user input: "${input}" in session ${sessionId}`);
         
         // 调用 beforeStart 钩子（如果子类实现了的话）
@@ -780,9 +829,16 @@ export class BaseAgent implements IAgent {
             await (this as any).beforeStart();
         }
         
+        // 🆕 构建包含对话历史的选项
+        const startOptions: any = {};
+        if (conversationHistory && conversationHistory.length > 0) {
+            logger.info(`Processing user input with conversation history: ${conversationHistory.length} messages`);
+            startOptions.conversationHistory = conversationHistory;
+        }
+        
         // 使用思考系统处理输入
         if (this.enableThinking && this.thinkingSystem) {
-            await this.startWithUserInput(input, this.maxSteps);
+            await this.startWithUserInput(input, this.maxSteps, startOptions);
         }
     }
 
@@ -868,7 +924,11 @@ export class BaseAgent implements IAgent {
     }
 
     public async getPrompt(): Promise<string> {
-        return await this.contextManager.renderPrompt();
+        if (!this.thinkingSystem) {
+            throw new Error('Thinking system is not available. Enable thinking system first.');
+        }
+        
+        return this.thinkingSystem.getCurrentPrompt();
     }
 
     /**
