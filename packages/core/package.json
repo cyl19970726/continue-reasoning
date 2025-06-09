@@ -1,0 +1,38 @@
+{
+  "name": "@continue-reasoning/core",
+  "version": "0.1.0",
+  "description": "Core functionality for continue-reasoning agent framework",
+  "main": "index.ts",
+  "types": "index.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.40.1",
+    "@google/genai": "0.12.0",
+    "@modelcontextprotocol/sdk": "^1.10.1",
+    "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.18.1",
+    "body-parser": "^2.2.0",
+    "chalk": "^5.4.1",
+    "chromadb": "^2.3.0",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "openai": "^4.91.1",
+    "uuid": "^11.1.0",
+    "ws": "^8.18.2",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/body-parser": "^1.19.5",
+    "@types/express": "^5.0.1",
+    "@types/node": "^20",
+    "typescript": "^5",
+    "vitest": "^3.1.1"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+} 

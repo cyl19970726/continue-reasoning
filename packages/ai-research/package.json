@@ -1,0 +1,23 @@
+{
+  "name": "@continue-reasoning/ai-research",
+  "version": "0.1.0",
+  "description": "AI research and thinking components for continue-reasoning framework",
+  "main": "index.ts",
+  "types": "index.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@continue-reasoning/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5",
+    "vitest": "^3.1.1"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+} 
