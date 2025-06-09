@@ -1,9 +1,5 @@
-import { InteractionHub } from '../src/core/hub/interaction-hub';
-import { CodingAgent } from '../src/agents/coding-agent';
-import { createThinkingContext } from '../src/core/thinking/thinking-context';
-import { globalEventBus } from '../src/core/events/eventBus';
-import { logger, LogLevel } from '../src/core/utils/logger';
-import { OPENAI_MODELS } from '../src/core/models';
+import { InteractionHub, createThinkingContext, globalEventBus, logger, LogLevel, OPENAI_MODELS } from '@continue-reasoning/core';
+import { CodingAgent } from '@continue-reasoning/agents';
 import path from 'path';
 import fs from 'fs';
 
@@ -34,6 +30,8 @@ async function demonstrateNewArchitecture() {
     // ═══════════════════════════════════════════════════════════
 
     console.log('🔧 Initializing core components...');
+
+    await globalEventBus.start();
     
     // 创建交互中心
     const hub = new InteractionHub(globalEventBus);

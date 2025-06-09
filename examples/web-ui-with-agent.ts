@@ -6,16 +6,10 @@
  * Updated for the new event-driven architecture.
  */
 
-import { EventBus } from '../src/core/events/eventBus';
-import { WebUIClient } from '../src/web/client/webUIClient';
-import { BaseAgent } from '../src/core/agent';
-import { ContextManager } from '../src/core/context';
-import { MapMemoryManager } from '../src/core/memory/baseMemory';
+import { EventBus, BaseAgent, ContextManager, MapMemoryManager, LogLevel, OPENAI_MODELS } from '@continue-reasoning/core';
+import { WebUIClient } from '@continue-reasoning/web/client/webUIClient';
 import { z } from 'zod';
-import { LogLevel } from '../src/core/utils/logger';
-import { LLMModel } from '../src/core/interfaces';
 import path from 'path';
-import { OPENAI_MODELS } from '@/core/models';
 
 async function startWebUIWithAgent() {
   console.log('=== Starting Web UI + Agent Integration (Event-Driven Architecture) ===\n');

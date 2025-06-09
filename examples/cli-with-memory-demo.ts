@@ -4,9 +4,7 @@
  * 演示增强的 CLI 客户端对话历史功能
  */
 
-import { CLIClient } from '../src/core/interactive/cliClient';
-import { EventBus } from '../src/core/events/eventBus';
-import { logger } from '../src/core/utils/logger';
+import { CLIClient, EventBus, logger } from '@continue-reasoning/core';
 
 async function demonstrateEnhancedCLI() {
   console.log('🎬 Enhanced CLI with Conversation History - Demo');

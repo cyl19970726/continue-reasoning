@@ -8,14 +8,9 @@
  * - 完整的事件驱动通信
  */
 
-import { EventBus } from '../src/core/events/eventBus';
-import { InteractionHub } from '../src/core/hub/interaction-hub'; // 🆕 使用新的 InteractionHub
-import { CLIClient } from '../src/core/interactive/cliClient';
-import { CodingAgent } from '../src/agents/coding-agent';
-import { LogLevel } from '../src/core/utils/logger';
-import { OPENAI_MODELS } from '../src/core/models';
+import { EventBus, LogLevel, logger, OPENAI_MODELS, CLIClient, InteractionHub } from '@continue-reasoning/core';
+import { CodingAgent } from '@continue-reasoning/agents';
 import path from 'path';
-import { logger } from '../src/core/utils/logger';
 
 async function runInteractionHubDemo() {
     console.log('🚀 Starting InteractionHub Demo...');
