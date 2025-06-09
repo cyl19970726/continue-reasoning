@@ -1,9 +1,5 @@
-import { LogLevel } from '../src/core/utils/logger';
-import { createThinkingContext } from '../src/core/thinking/thinking-context';
-import { globalEventBus } from '../src/core/events/eventBus';
-import { logger } from '../src/core/utils/logger';
-import { OPENAI_MODELS } from '../src/core/models';
-import { CodingAgent } from '../src/agents/coding-agent';
+import { LogLevel, createThinkingContext, globalEventBus, logger, OPENAI_MODELS } from '@continue-reasoning/core';
+import { CodingAgent } from '@continue-reasoning/agents';
 import path from 'path';
 import fs from 'fs';
 

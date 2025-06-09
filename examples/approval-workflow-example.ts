@@ -1,38 +1,4 @@
-import { BaseAgent } from '../src/core/agent';
-import { ContextManager } from '../src/core/context';
-import { MapMemoryManager } from '../src/core/memory/baseMemory';
-import { EventBus } from '../src/core/events/eventBus';
-import { CLIClient } from '../src/core/interactive/cliClient';
-import { InteractiveLayerConfig } from '../src/core/events/interactiveLayer';
-import { InteractiveCapabilities } from '../src/core/events/types';
-
-// Import contexts
-import { OPENAI_MODELS } from '@/core/models';
-
-// Mock client for demonstration
-class MockClient {
-  public id: string = 'mock-client';
-  public description: string = 'Mock client for testing';
-  public input: any = null;
-  public output: any = null;
-  
-  constructor() {
-    this.output = {
-      responseTool: {
-        id: 'mock-response',
-        name: 'mock-response',
-        description: 'Mock response tool',
-        inputSchema: {} as any,
-        outputSchema: {} as any,
-        async: false,
-        execute: (params: any) => {
-          console.log('Mock Client Response:', params.message);
-          return { success: true, text: params.message };
-        }
-      }
-    };
-  }
-}
+import { EventBus, CLIClient, InteractiveCapabilities, OPENAI_MODELS } from '@continue-reasoning/core';
 
 async function demonstrateApprovalWorkflow() {
   console.log('=== Interactive Approval Workflow Example ===\n');
@@ -42,96 +8,26 @@ async function demonstrateApprovalWorkflow() {
   await eventBus.start();
   
   // 2. 创建 Interactive Layer (CLI Client)
-  const cliCapabilities: InteractiveCapabilities = {
-    supportsRealTimeUpdates: true,
-    supportsFilePreview: true,
-    supportsCodeHighlighting: false,
-    supportsInteractiveApproval: true,
-    supportsCollaboration: true,
-    maxConcurrentSessions: 1,
-    supportedEventTypes: [
-      'approval_request',
-      'approval_response',
-      'collaboration_request',
-      'collaboration_response',
-      'input_request',
-      'input_response',
-      'status_update',
-      'error'
-    ]
-  };
-
-  const cliConfig: InteractiveLayerConfig = {
-    name: 'CLI Client',
-    capabilities: cliCapabilities,
-    eventBus: eventBus,
-    sessionTimeout: 300000, // 5 minutes
-    messageQueueSize: 100,
-    enablePersistence: false
-  };
-
-  const cliClient = new CLIClient(cliConfig);
-  
-  // 3. 创建 Agent with EventBus
-  const contextManager = new ContextManager(
-    'demo-context-manager',
-    'Demo Context Manager',
-    'Context manager for approval demo',
-    {}
-  );
-  const memoryManager = new MapMemoryManager(
-    'demo-memory-manager',
-    'Demo Memory Manager',
-    'Memory manager for approval demo'
-  );
-  const mockClient = new MockClient();
-  
-  const agent = new BaseAgent(
-    'approval-demo-agent',
-    'Approval Demo Agent',
-    'An agent that demonstrates the approval workflow',
-    contextManager,
-    memoryManager,
-    [mockClient],
-    10, // maxSteps
-    undefined, // logLevel
-    {
-      model: OPENAI_MODELS.GPT_4O,
-      enableParallelToolCalls: false,
-      temperature: 0.7
-    },
-    [
-      ToolCallContext,
-      ClientContext,
-      SystemToolContext,
-      ExecuteToolsContext,
-      InteractiveContext // 添加 InteractiveContext
-    ],
-    eventBus // 传入 EventBus
-  );
-
-  // 4. 设置 Agent
-  await agent.setup();
-  
-  // 5. 启动 CLI Client
-  await cliClient.start();
+  const cliClient = CLIClient.createDefault(eventBus);
   
   console.log('System initialized. Starting approval workflow demonstration...\n');
   
-  // 6. 模拟 Agent 使用 approval_request tool
+  // 3. 启动 CLI Client
+  await cliClient.start();
+  
+  // 4. 模拟 approval request 事件
   setTimeout(async () => {
     console.log('🤖 Agent: I need to create a configuration file. Requesting approval...\n');
     
-    // 模拟 Agent 调用 approval_request tool
-    try {
-      const approvalTool = agent.getActiveTools().find(tool => tool.name === 'approval_request');
-      
-      if (!approvalTool) {
-        console.error('❌ Approval tool not found!');
-        return;
-      }
-
-      const result = await approvalTool.execute({
+    const sessionId = eventBus.getActiveSessions()[0] || eventBus.createSession();
+    
+    // 发布 approval request 事件
+    await eventBus.publish({
+      type: 'approval_request',
+      source: 'agent',
+      sessionId,
+      payload: {
+        requestId: 'demo-123',
         actionType: 'file_write',
         description: 'Create database configuration file',
         details: {
@@ -145,20 +41,10 @@ async function demonstrateApprovalWorkflow() {
           }, null, 2)
         },
         timeout: 30000
-      }, agent);
-
-      console.log('\n🎯 Approval Result:', result);
-      
-      if (result.approved) {
-        console.log('✅ Action approved! Proceeding with file creation...');
-        // 这里可以继续执行文件创建逻辑
-      } else {
-        console.log('❌ Action rejected or failed. Will not proceed.');
       }
-      
-    } catch (error) {
-      console.error('❌ Error in approval workflow:', error);
-    }
+    });
+
+    console.log('📤 Approval request sent to CLI client\n');
     
     // 清理
     setTimeout(async () => {
@@ -166,11 +52,11 @@ async function demonstrateApprovalWorkflow() {
       await eventBus.stop();
       console.log('\n=== Demo completed ===');
       process.exit(0);
-    }, 2000);
+    }, 10000); // 10秒后自动退出
     
   }, 2000);
   
-  return { agent, cliClient, eventBus };
+  return { cliClient, eventBus };
 }
 
 // 更简单的示例：直接事件发布

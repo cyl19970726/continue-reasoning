@@ -19,7 +19,11 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@continue-reasoning/core": ["./packages/core"],
+      "@continue-reasoning/agents": ["./packages/agents"],
+      "@continue-reasoning/web": ["./packages/web"],
+      "@continue-reasoning/ai-research": ["./packages/ai-research"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

@@ -8,10 +8,8 @@
  * - 验证事件系统和生命周期钩子
  */
 
-import { CodingAgent } from '../src/agents/coding-agent';
-import { EventBus } from '../src/core/events/eventBus';
-import { LogLevel } from '../src/core/utils/logger';
-import { OPENAI_MODELS } from '../src/core/models';
+import { CodingAgent } from '@continue-reasoning/agents';
+import { EventBus, LogLevel, OPENAI_MODELS } from '@continue-reasoning/core';
 import path from 'path';
 
 async function testCodingAgent() {
