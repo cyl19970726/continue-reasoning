@@ -13,8 +13,6 @@ async function stepPromptSavingExample() {
         fs.mkdirSync(workspacePath, { recursive: true });
     }
 
-    // 创建thinking context
-    const thinkingContext = createThinkingContext(logger, globalEventBus);
 
     // 🆕 使用 CodingAgent
     const agent = new CodingAgent(
@@ -28,23 +26,19 @@ async function stepPromptSavingExample() {
             model: OPENAI_MODELS.GPT_4O_MINI,
             enableParallelToolCalls: false,
             temperature: 0.1,
-            enableThinkingSystem: true,
-            thinkingOptions: {
-                maxConversationHistory: 3,
-                maxExecutionHistory: 2  // 较小的历史以观察演化
-            }
         },
-        [thinkingContext],
+        [],
         globalEventBus
     );
 
     await agent.setup();
+    agent.setEnableToolCallsForStep((stepIndex) => {
+        if(stepIndex === 0){
+            return false;
+        }
+        return true;
+    });
 
-    if (!agent.isThinkingEnabled()) {
-        console.error('❌ Thinking system not enabled');
-        return;
-    }
-    
     try {
         console.log('🎯 Demo: Creating a Python web scraper with step-by-step prompt saving\n');
 
@@ -61,11 +55,39 @@ async function stepPromptSavingExample() {
         console.log(`   ⚡ Real-time: Save after each step completion\n`);
 
         // 执行任务
-        const task = 'Create a simple Python web scraper that extracts news headlines from a website';
+        const task = `刚刚以下任务执行到一半，请继续完成：
+
+Task:创建一个Python网页爬虫项目，具体要求如下：
+
+1. **目标网站**: https://news.ycombinator.com (Hacker News首页)
+2. **提取内容**: 提取首页前20条新闻的标题和链接
+3. **技术栈**: 使用 requests 和 BeautifulSoup 库
+4. **输出格式**: 将结果保存到 news_headlines.json 文件
+5. **文件结构**: 
+   - news_scraper.py (主爬虫脚本)
+   - requirements.txt (依赖列表)
+   - README.md (使用说明)
+6. **功能要求**: 
+   - 添加错误处理和重试机制
+   - 添加用户代理头部避免被屏蔽
+   - 添加适当的延时避免过于频繁请求
+   - 代码要有详细注释
+
+任务状态：
+爬虫测试成功执行，输出文件 news_headlines.json，并且但是程序没有成功提取并保存了前20条新闻到 news_headlines.json 文件
+
+项目总结：
+- 创建了以下文件: news_scraper.py, requirements.txt, README.md
+- 实现了爬虫功能: 使用 requests 和 BeautifulSoup 进行网页爬取
+- 提取了Hacker News首页前20条新闻的标题和链接
+- 添加了错误处理、用户代理头部、请求延时等功能
+- 测试结果: 生成了 news_headlines.json 文件,但是没有数据
+
+在你给出最终结果前，请你阅读下 news_headlines.json 文件，确保你已经成功提取了前20条新闻的标题和链接。`;
         
         console.log('🚀 Starting task with step-by-step prompt saving...\n');
         
-        await agent.startWithUserInput(task, 10, promptSaveOptions);
+        await agent.startWithUserInput(task, 20, promptSaveOptions);
 
         console.log('\n✅ Task completed! Analyzing saved prompts...\n');
 

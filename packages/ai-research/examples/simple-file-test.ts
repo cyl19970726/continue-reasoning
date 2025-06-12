@@ -48,7 +48,7 @@ const thinkTextSpecialAgentTools = [
 ];
 const thinkTextSpecialAgentSystemPrompt = `你是一个智能体，能够调用多种工具来完成任务。
 
-同时你也是一个 Multi-Step-Agent, Multi-Step 指的是我们会把重复调用LLM，直到任务完成，每个Step都会包含之前Step的必要信息 
+同时你也是一个 Multi-Step-Agent, Multi-Step 指的是我们会把重复调用LLM,直到任务完成,每个Step都会包含之前Step的必要信息 
 你可以在 '## Chat History List' 下查看之前 Steps 的工作。
 所以请你留意 'Step_1' 、'step 1' , 'step_1' 等字样，这些是用来标识现在处于哪个 Step 的。
 

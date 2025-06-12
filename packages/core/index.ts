@@ -24,6 +24,7 @@ export type {
   InteractiveCapabilities
 } from './events/types';
 export { BaseInteractiveLayer } from './events/interactiveLayer';
+export { AgentEventManager } from './events/agent-event-manager';
 
 // Interactive layers
 export { CLIClient } from './interactive/cliClient';

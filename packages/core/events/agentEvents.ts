@@ -1,5 +1,7 @@
 // Agent内部事件类型定义
 
+import { AgentStep } from '../interfaces';
+
 // 基础事件接口
 export interface BaseEvent {
   id: string;
@@ -11,12 +13,19 @@ export interface BaseEvent {
 // Agent执行步骤事件
 export interface AgentStepEvent extends BaseEvent {
   type: 'agent_step';
-  payload: {
-    stepNumber: number;
+  payload: AgentStep & {
+    // 额外的元数据
+    agentId: string;
     action: 'start' | 'complete' | 'error';
-    prompt?: string;
-    toolCalls?: any[];
-    error?: string;
+  };
+}
+
+// Agent执行步骤开始事件（专门的简化结构）
+export interface AgentStepStartEvent extends BaseEvent {
+  type: 'agent_step_start';
+  payload: {
+    stepIndex: number;
+    agentId: string;
   };
 }
 
@@ -223,6 +232,7 @@ export interface DiffReversedEvent extends BaseEvent {
 // Agent内部事件联合类型
 export type AgentInternalEvent = 
   | AgentStepEvent
+  | AgentStepStartEvent
   | ToolExecutionResultEvent
   | AgentStateChangeEvent
   | ContextUpdateEvent

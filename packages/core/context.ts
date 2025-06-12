@@ -41,137 +41,38 @@ export class ContextManager implements IContextManager {
     }
 
     async renderPrompt(): Promise<string> {
-        logger.debug(`Starting prompt rendering for ${this.contexts.length} contexts in ${this.promptOptimization?.mode} mode`);
+        logger.debug(`Rendering prompt for ${this.contexts.length} contexts`);
         
+        // 选择header
         let header: string;
         
-        // 使用 systemPromptOverride 如果提供了
         if (this.promptOptimization?.customSystemPrompt && this.promptOptimization.mode === 'custom') {
             header = this.promptOptimization.customSystemPrompt;
-            logger.info('Using custom system prompt for header');
-        } else if (this.promptOptimization?.mode === 'minimal' || this.promptOptimization?.mode === 'standard' || this.promptOptimization?.mode === 'detailed') {
-            // 使用默认的 headers
-            header = this.promptOptimization.mode === 'minimal' ? minimalHeader
-                : this.promptOptimization.mode === 'standard' ? standardHeader
-                : detailHeader;
-        }else if(this.promptOptimization?.mode === 'custom' && !this.promptOptimization?.customSystemPrompt) {
-            throw new Error(`if set custom, you must set customSystemPrompt`);
-        }else if(this.promptOptimization?.mode !== 'custom' && this.promptOptimization?.customSystemPrompt){
-            throw new Error(`if not set custom, you must not set customSystemPrompt`);
-        }else {
-            throw new Error(`Invalid prompt config: ${this.promptOptimization?.mode}, must be one of: minimal, standard, detailed, custom`);
+        } else if (this.promptOptimization?.mode === 'minimal') {
+            header = minimalHeader;
+        } else if (this.promptOptimization?.mode === 'standard') {
+            header = standardHeader;
+        } else if (this.promptOptimization?.mode === 'detailed') {
+            header = detailHeader;
+        } else {
+            throw new Error(`Invalid prompt mode: ${this.promptOptimization?.mode}`);
         }
 
-        // 计算 header 的 token 大小
-        const headerTokens = Math.round(header.length / 4);
-        logger.info(`Header size: ~${headerTokens} tokens (${header.length} chars)`);
-
-        // 2. Compile and format all contexts with detailed size tracking
-        const contextSizeMap = new Map<string, { chars: number, tokens: number, renderTime: number }>();
-        
-        const contextsPromises = this.contexts.map(
-            async (context) => {
-                const contextName = context.id;
-                const contextDesc = context.description || "";
-                
-                try {
-                    // Start timing context rendering
-                    const startTime = Date.now();
-                    const content = await context.renderPrompt();
-                    const renderTime = Date.now() - startTime;
-                    
-                    // Calculate size metrics
-                    const contentStr = String(content);
-                    const chars = contentStr.length;
-                    const tokens = Math.round(chars / 4); // 粗略估算
-                    
-                    // Store size information
-                    contextSizeMap.set(contextName, { chars, tokens, renderTime });
-                    
-                    // Log the context content for debugging
-                    logger.debug(`Rendered context ${contextName} in ${renderTime}ms: ~${tokens} tokens (${chars} chars)`);
-                    logger.logPrompt(contextName, contentStr);
-                    
-                    return `
-<context name="${contextName}">
-/* ${contextName} - ${contextDesc} */
-${content}
-</context>
-`;
-                 
-                } catch (error) {
-                    logger.error(`Error rendering context ${contextName}:`, error);
-                    const errorContent = `<context name="${contextName}">
-/* ${contextName} - ERROR RENDERING CONTEXT */
-${error instanceof Error ? error.message : `${error}`}
-</context>`;
-                    
-                    // Record error context size
-                    contextSizeMap.set(contextName, { 
-                        chars: errorContent.length, 
-                        tokens: Math.round(errorContent.length / 4), 
-                        renderTime: 0 
-                    });
-                    
-                    return errorContent;
-                }
+        // 渲染所有contexts
+        const contextPromises = this.contexts.map(async (context) => {
+            try {
+                const content = await context.renderPrompt();
+                return `<context name="${context.id}">\n${content}\n</context>`;
+            } catch (error) {
+                logger.error(`Error rendering context ${context.id}:`, error);
+                return `<context name="${context.id}">\nError: ${error instanceof Error ? error.message : String(error)}\n</context>`;
             }
-        );
-        
-        // Wait for all contexts to render
-        const prompts = await Promise.all(contextsPromises);
-        
-        // 详细的大小分析
-        let totalContextTokens = 0;
-        const contextSizes = Array.from(contextSizeMap.entries()).map(([name, metrics]) => {
-            totalContextTokens += metrics.tokens;
-            return { name, ...metrics };
         });
         
-        // 按 token 大小排序，找出最大的 contexts
-        contextSizes.sort((a, b) => b.tokens - a.tokens);
-        
-        // 计算总大小
-        const totalTokens = headerTokens + totalContextTokens;
-        const totalChars = header.length + contextSizes.reduce((sum, ctx) => sum + ctx.chars, 0);
-        
-        // 详细的大小报告
-        logger.info(`=== Prompt Size Analysis ===`);
-        logger.info(`Header: ~${headerTokens} tokens (${header.length} chars)`);
-        logger.info(`Contexts total: ~${totalContextTokens} tokens`);
-        logger.info(`Grand total: ~${totalTokens} tokens (${totalChars} chars)`);
-        
-        // 显示最大的 contexts
-        logger.info(`=== Top Context Sizes ===`);
-        contextSizes.slice(0, 5).forEach((ctx, index) => {
-            const percentage = Math.round((ctx.tokens / totalTokens) * 100);
-            logger.info(`${index + 1}. ${ctx.name}: ~${ctx.tokens} tokens (${percentage}%) - ${ctx.renderTime}ms`);
-        });
-        
-        // 警告大型 contexts
-        const largeContexts = contextSizes.filter(ctx => ctx.tokens > 1000);
-        if (largeContexts.length > 0) {
-            logger.warn(`Large contexts (>1000 tokens): ${largeContexts.map(c => `${c.name}(${c.tokens})`).join(', ')}`);
-        }
-        
-        // 检查是否超过 token 限制
-        if (this.promptOptimization.maxTokens && totalTokens > this.promptOptimization.maxTokens) {
-            logger.error(`Prompt size (${totalTokens}) exceeds limit (${this.promptOptimization.maxTokens})`);
-            
-            // 建议优化措施
-            logger.warn(`Optimization suggestions:`);
-            largeContexts.forEach(ctx => {
-                logger.warn(`- Consider optimizing ${ctx.name} (currently ${ctx.tokens} tokens)`);
-            });
-        }
-        
-        // 3. Combine header and contexts with clear separation
-        const contextSection = this.promptOptimization.mode === 'minimal' ? 
-            prompts.join("\n\n") : 
-            "\n\n## Context Blocks\n\n" + prompts.join("\n\n");
-        const fullPrompt = header + contextSection;
+        const contexts = await Promise.all(contextPromises);
+        const fullPrompt = header + '\n\n' + contexts.join('\n\n');
 
-        logger.debug("Agent prompt rendered successfully");
+        logger.debug(`Prompt rendered: ${fullPrompt.length} characters`);
         
         return fullPrompt;
     }
@@ -283,25 +184,14 @@ ${error instanceof Error ? error.message : `${error}`}
                 let promptCtx: PromptCtx;
                 
                 if (typeof result === 'string') {
-                    // 如果是 string，尝试从 context.promptCtx 获取结构化版本
-                    if (context.promptCtx) {
-                        promptCtx = {
-                            workflow: context.promptCtx.workflow,
-                            status: context.promptCtx.status,
-                            guideline: context.promptCtx.guideline,
-                            examples: context.promptCtx.examples
-                        };
-                        logger.debug(`Using static promptCtx for context: ${context.id}`);
-                    } else {
-                        // 如果没有 promptCtx，将整个 string 放在 status 中
-                        promptCtx = {
-                            workflow: '',
-                            status: result,
-                            guideline: '',
-                            examples: ''
-                        };
-                        logger.warn(`Context ${context.id} returned string without promptCtx, putting content in status`);
-                    }
+                    // 如果是 string，创建简单的 PromptCtx 结构
+                    promptCtx = {
+                        workflow: '',
+                        status: result,
+                        guideline: '',
+                        examples: ''
+                    };
+                    logger.warn(`Context ${context.id} returned string, putting content in status`);
                 } else {
                     // 如果是 PromptCtx，直接使用
                     promptCtx = result;

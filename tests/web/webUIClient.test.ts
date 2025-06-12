@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { WebUIClient } from '../../src/web/client/webUIClient';
-import { EventBus } from '../../src/core/events/eventBus';
+import { WebUIClient } from '@continue-reasoning/web/client/webUIClient';
+import { EventBus } from '@continue-reasoning/core/events/eventBus';
 
 describe('WebUIClient', () => {
   let eventBus: EventBus;

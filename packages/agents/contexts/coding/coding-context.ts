@@ -109,314 +109,58 @@ export function createCodingContext(workspacePath: string, initialData?: Partial
   // Create the base RAG context
   const baseContext = ContextHelper.createRAGContext({
     id: 'coding-context',
-    description: 'Manages state and tools for coding tasks, powered by Gemini models.',
+    description: 'Manages file operations and code modifications using diff-driven development workflow with comprehensive editing tools.',
     dataSchema: CodingContextDataSchema,
     initialData: parsedInitialData,
-    promptCtx: {
-      workflow: `
-## 🔧 DIFF-DRIVEN DEVELOPMENT WORKFLOW
-
-### CRITICAL RULES:
-1. **File Modifications**: ONLY use EditingStrategyToolSet
-   - Creating files → ApplyWholeFileEditTool
-   - Modifying code → ApplyEditBlockTool or ApplyRangedEditTool
-   - Deleting files → DeleteTool
-
-2. **File Reading**: Use bash_command Tool
-   - Simple reading → \`cat filename.txt\`
-   - Partial reading → \`head -20 file.txt\` or \`tail -10 file.txt\`
-   - Search content → \`grep pattern file.txt\`
-
-3. **NEVER use bash for**:
-   - Creating files (no \`echo > file.txt\`)
-   - Modifying files (no \`sed -i\`)
-   - Deleting files (no \`rm\`)
-
-### WHY THIS MATTERS:
-- Every edit operation generates a diff for tracking
-- All changes can be rolled back with ReverseDiffTool
-- Complete audit trail of all modifications
-
-### PRIMARY EDITING TOOLS (Choose the right tool for each task)
-
-🥇 **ApplyWholeFileEditTool** - PRIMARY FILE CREATION
-• Use for: Creating new files, complete file replacement
-• Best for: New components, modules, config files, initial implementations
-• Auto-features: Directory creation, comprehensive diff generation
-
-🎯 **ApplyEditBlockTool** - TARGETED CODE MODIFICATION
-• Use for: Replacing exact code blocks in existing files
-• Best for: Function updates, refactoring specific methods, targeted fixes
-• Requirement: Know the exact code to replace
-
-📍 **ApplyRangedEditTool** - PRECISE LINE EDITING
-• Use for: Line-based modifications with known line numbers
-• Best for: Configuration files, known-position edits, appending content
-• Requirement: Know specific line numbers or use -1 for append
-
-⚙️ **ApplyUnifiedDiffTool** - COMPLEX OPERATIONS
-• Use for: Multi-file changes, applying existing diffs
-• Best for: Large refactoring, coordinated multi-file updates
-• Features: Supports both single and multi-file diffs
-
-🔄 **ReverseDiffTool** - ROLLBACK & RECOVERY
-• Use for: Undoing changes, error recovery, A/B testing
-• Best for: Emergency rollbacks, feature toggling
-• Features: Selective file filtering, dry-run support
-
-🗑️ **DeleteTool** - FILE & DIRECTORY REMOVAL
-• Files: Always generates deletion diff
-• Empty directories: No diff generated
-• Non-empty directories: Multi-file diff for all contained files (requires recursive=true)
-
-📁 **CreateDirectoryTool** - STRUCTURE SETUP
-• Use for: Creating project structure
-• Note: No diff generated (directories are metadata, not content)
-`,
-      status: `Operating in workspace: ${parsedInitialData.current_workspace}
-Current default editing strategy: ${parsedInitialData.selected_editing_strategy}
-Sandbox type: ${sandbox.type}`,
-      guideline: `
-## 🎯 DEVELOPMENT BEST PRACTICES
-
-1. **Always Read First**: Use \`cat\` to understand current file content
-2. **File Creation**: ONLY use ApplyWholeFileEditTool for new files
-3. **Code Changes**: Use ApplyEditBlockTool for targeted modifications
-4. **Never Mix Tools**: DON'T use bash for file creation/modification/deletion
-5. **Track Changes**: Every edit generates a diff automatically
-6. **Test After Changes**: Use bash to run tests and verify changes
-7. **Rollback When Needed**: Use ReverseDiffTool to undo any changes
-
-## 💡 QUICK DECISION GUIDE
-
-**Creating a new file?** → ApplyWholeFileEditTool
-**Modifying existing code?** → ApplyEditBlockTool (exact code) or ApplyRangedEditTool (line numbers)
-**Multiple files at once?** → ApplyUnifiedDiffTool
-**Need to undo changes?** → ReverseDiffTool
-**Just reading files?** → bash: cat, head, tail, grep
-**Running tests/commands?** → bash: npm test, node script.js, etc.
-`,
-      examples: `
-## 📚 COMPLETE DIFF-DRIVEN EXAMPLE
-
-### Initial State:
-\`\`\`typescript
-// File: src/calculator.ts
-function add(a: number, b: number): number {
-  return a + b;
-}
-\`\`\`
-
-### Step 1: Read Current File
-\`\`\`bash
-Tool: BashCommandTool
-Input: { command: "cat src/calculator.ts" }
-Output: {
-  stdout: "function add(a: number, b: number): number {\\n  return a + b;\\n}\\n",
-  exit_code: 0,
-  success: true
-}
-\`\`\`
-
-### Step 2: Add Error Handling
-\`\`\`typescript
-Tool: ApplyEditBlockTool
-Input: {
-  path: "src/calculator.ts",
-  searchBlock: "function add(a: number, b: number): number {\\n  return a + b;\\n}",
-  replaceBlock: "function add(a: number, b: number): number {\\n  if (typeof a !== 'number' || typeof b !== 'number') {\\n    throw new Error('Parameters must be numbers');\\n  }\\n  return a + b;\\n}"
-}
-Output: {
-  success: true,
-  message: "Edit block successfully applied",
-  diff: "--- a/src/calculator.ts\\n+++ b/src/calculator.ts\\n@@ -1,3 +1,6 @@\\n function add(a: number, b: number): number {\\n+  if (typeof a !== 'number' || typeof b !== 'number') {\\n+    throw new Error('Parameters must be numbers');\\n+  }\\n   return a + b;\\n }",
-  changesApplied: 1
-}
-\`\`\`
-
-### Step 3: Create Test File
-\`\`\`typescript
-Tool: ApplyWholeFileEditTool
-Input: {
-  path: "src/calculator.test.ts",
-  content: "import { add } from './calculator';\\n\\ntest('add numbers', () => {\\n  expect(add(2, 3)).toBe(5);\\n});\\n\\ntest('throw error for non-numbers', () => {\\n  expect(() => add('2' as any, 3)).toThrow('Parameters must be numbers');\\n});"
-}
-Output: {
-  success: true,
-  message: "File src/calculator.test.ts created successfully",
-  diff: "--- /dev/null\\n+++ b/src/calculator.test.ts\\n@@ -0,0 +1,9 @@\\n+import { add } from './calculator';\\n+\\n+test('add numbers', () => {\\n+  expect(add(2, 3)).toBe(5);\\n+});\\n+\\n+test('throw error for non-numbers', () => {\\n+  expect(() => add('2' as any, 3)).toThrow('Parameters must be numbers');\\n+});"
-}
-\`\`\`
-`
-    },
     renderPromptFn: (data: CodingContextData): PromptCtx => {
-      // 动态构建 status 信息
-      let dynamicStatus = `Operating in workspace: ${data.current_workspace}
-Current default editing strategy: ${data.selected_editing_strategy}
-Sandbox type: ${sandbox.type}`;
+      // 工作流程：详细但简洁的编程流程
+      const workflow = `**编程工作流程**：
+1. **分析需求** → 确定要创建/修改的文件和功能
+2. **读取现有代码** → 使用 ReadFile 或者 BashCommand 了解当前状态
+3. **选择编辑策略** → 根据修改范围选择合适的编辑工具
+4. **实施修改** → 应用代码变更并生成差异
+5. **测试验证** → 运行代码确保功能正确`;
 
-      // 添加当前工作区状态
+      // 状态信息：包含更多上下文
+      let status = `**工作目录**: ${data.current_workspace}
+**编辑策略**: ${data.selected_editing_strategy}`;
+
+      // 文件上下文详细信息
       if (data.open_files && Object.keys(data.open_files).length > 0) {
-        dynamicStatus += `\n\n## 📂 CURRENT WORKSPACE STATE\n\nFiles in focus:\n`;
-        for (const [filePath, meta] of Object.entries(data.open_files)) {
-          dynamicStatus += `• ${filePath}`;
-          if (meta.last_read_content) {
-            const lineCount = meta.last_read_content.split('\n').length;
-            dynamicStatus += ` (${lineCount} lines available for context)\n`;
-          } else {
-            dynamicStatus += ` (metadata only)\n`;
-          }
+        const fileList = Object.keys(data.open_files).slice(0, 5); // 最多显示5个文件
+        const fileCount = Object.keys(data.open_files).length;
+        status += `\n**活跃文件** (${fileCount}个): ${fileList.join(', ')}`;
+        if (fileCount > 5) {
+          status += ` ...等${fileCount - 5}个`;
         }
       }
 
+      // 变更信息
       if (data.active_diffs && Object.keys(data.active_diffs).length > 0) {
-        dynamicStatus += `\nRecent changes (active diffs):\n`;
-        for (const [filePath, diff] of Object.entries(data.active_diffs)) {
-          const changeCount = (diff.match(/^[+-]/gm) || []).length;
-          dynamicStatus += `• ${filePath}: ${changeCount} line changes\n`;
-          // Only show diff details for small changes to avoid overwhelming the prompt
-          if (changeCount <= 10) {
-            dynamicStatus += `\`\`\`diff\n${diff}\n\`\`\`\n`;
-          } else {
-            dynamicStatus += `  (Large diff - ${changeCount} lines changed)\n`;
-          }
-        }
+        const diffFiles = Object.keys(data.active_diffs);
+        status += `\n**待处理变更**: ${diffFiles.join(', ')}`;
       }
+
+      // 指导原则：具体的最佳实践
+      const guideline = `**编程最佳实践**：
+• 修改前先用 ReadFile 了解代码结构
+• 优先使用 ApplyWholeFileEdit 进行完整文件操作
+• 小范围修改使用 ApplyEditBlock 或 ApplyRangedEdit
+• 修改后用 BashCommand 测试功能
+• 出现错误时用 ReverseDiff 回滚变更`;
+
+      // 示例：常见的工作模式
+      const examples = `**常见工作模式**：
+创建新文件: ApplyWholeFileEdit → BashCommand(测试)
+修改现有代码: ReadFile → ApplyEditBlock → BashCommand(验证)
+重构代码: ReadFile → ApplyWholeFileEdit → CompareFiles → BashCommand
+处理错误: ReverseDiff → ReadFile → ApplyEditBlock → BashCommand`;
 
       return {
-        workflow: `
-## 🔧 DIFF-DRIVEN DEVELOPMENT WORKFLOW
-
-### CRITICAL RULES:
-1. **File Modifications**: ONLY use EditingStrategyToolSet
-   - Creating files → ApplyWholeFileEditTool
-   - Modifying code → ApplyEditBlockTool or ApplyRangedEditTool
-   - Deleting files → DeleteTool
-
-2. **File Reading**: Use bash_command Tool
-   - Simple reading → \`cat filename.txt\`
-   - Partial reading → \`head -20 file.txt\` or \`tail -10 file.txt\`
-   - Search content → \`grep pattern file.txt\`
-
-3. **NEVER use bash for**:
-   - Creating files (no \`echo > file.txt\`)
-   - Modifying files (no \`sed -i\`)
-   - Deleting files (no \`rm\`)
-
-### WHY THIS MATTERS:
-- Every edit operation generates a diff for tracking
-- All changes can be rolled back with ReverseDiffTool
-- Complete audit trail of all modifications
-
-### PRIMARY EDITING TOOLS (Choose the right tool for each task)
-
-🥇 **ApplyWholeFileEditTool** - PRIMARY FILE CREATION
-• Use for: Creating new files, complete file replacement
-• Best for: New components, modules, config files, initial implementations
-• Auto-features: Directory creation, comprehensive diff generation
-
-🎯 **ApplyEditBlockTool** - TARGETED CODE MODIFICATION
-• Use for: Replacing exact code blocks in existing files
-• Best for: Function updates, refactoring specific methods, targeted fixes
-• Requirement: Know the exact code to replace
-
-📍 **ApplyRangedEditTool** - PRECISE LINE EDITING
-• Use for: Line-based modifications with known line numbers
-• Best for: Configuration files, known-position edits, appending content
-• Requirement: Know specific line numbers or use -1 for append
-
-⚙️ **ApplyUnifiedDiffTool** - COMPLEX OPERATIONS
-• Use for: Multi-file changes, applying existing diffs
-• Best for: Large refactoring, coordinated multi-file updates
-• Features: Supports both single and multi-file diffs
-
-🔄 **ReverseDiffTool** - ROLLBACK & RECOVERY
-• Use for: Undoing changes, error recovery, A/B testing
-• Best for: Emergency rollbacks, feature toggling
-• Features: Selective file filtering, dry-run support
-
-🗑️ **DeleteTool** - FILE & DIRECTORY REMOVAL
-• Files: Always generates deletion diff
-• Empty directories: No diff generated
-• Non-empty directories: Multi-file diff for all contained files (requires recursive=true)
-
-📁 **CreateDirectoryTool** - STRUCTURE SETUP
-• Use for: Creating project structure
-• Note: No diff generated (directories are metadata, not content)
-`,
-        status: dynamicStatus,
-        guideline: `
-## 🎯 DEVELOPMENT BEST PRACTICES
-
-1. **Always Read First**: Use \`cat\` to understand current file content
-2. **File Creation**: ONLY use ApplyWholeFileEditTool for new files
-3. **Code Changes**: Use ApplyEditBlockTool for targeted modifications
-4. **Never Mix Tools**: DON'T use bash for file creation/modification/deletion
-5. **Track Changes**: Every edit generates a diff automatically
-6. **Test After Changes**: Use bash to run tests and verify changes
-7. **Rollback When Needed**: Use ReverseDiffTool to undo any changes
-
-## 💡 QUICK DECISION GUIDE
-
-**Creating a new file?** → ApplyWholeFileEditTool
-**Modifying existing code?** → ApplyEditBlockTool (exact code) or ApplyRangedEditTool (line numbers)
-**Multiple files at once?** → ApplyUnifiedDiffTool
-**Need to undo changes?** → ReverseDiffTool
-**Just reading files?** → bash: cat, head, tail, grep
-**Running tests/commands?** → bash: npm test, node script.js, etc.
-`,
-        examples: `
-## 📚 COMPLETE DIFF-DRIVEN EXAMPLE
-
-### Initial State:
-\`\`\`typescript
-// File: src/calculator.ts
-function add(a: number, b: number): number {
-  return a + b;
-}
-\`\`\`
-
-### Step 1: Read Current File
-\`\`\`bash
-Tool: BashCommandTool
-Input: { command: "cat src/calculator.ts" }
-Output: {
-  stdout: "function add(a: number, b: number): number {\\n  return a + b;\\n}\\n",
-  exit_code: 0,
-  success: true
-}
-\`\`\`
-
-### Step 2: Add Error Handling
-\`\`\`typescript
-Tool: ApplyEditBlockTool
-Input: {
-  path: "src/calculator.ts",
-  searchBlock: "function add(a: number, b: number): number {\\n  return a + b;\\n}",
-  replaceBlock: "function add(a: number, b: number): number {\\n  if (typeof a !== 'number' || typeof b !== 'number') {\\n    throw new Error('Parameters must be numbers');\\n  }\\n  return a + b;\\n}"
-}
-Output: {
-  success: true,
-  message: "Edit block successfully applied",
-  diff: "--- a/src/calculator.ts\\n+++ b/src/calculator.ts\\n@@ -1,3 +1,6 @@\\n function add(a: number, b: number): number {\\n+  if (typeof a !== 'number' || typeof b !== 'number') {\\n+    throw new Error('Parameters must be numbers');\\n+  }\\n   return a + b;\\n }",
-  changesApplied: 1
-}
-\`\`\`
-
-### Step 3: Create Test File
-\`\`\`typescript
-Tool: ApplyWholeFileEditTool
-Input: {
-  path: "src/calculator.test.ts",
-  content: "import { add } from './calculator';\\n\\ntest('add numbers', () => {\\n  expect(add(2, 3)).toBe(5);\\n});\\n\\ntest('throw error for non-numbers', () => {\\n  expect(() => add('2' as any, 3)).toThrow('Parameters must be numbers');\\n});"
-}
-Output: {
-  success: true,
-  message: "File src/calculator.test.ts created successfully",
-  diff: "--- /dev/null\\n+++ b/src/calculator.test.ts\\n@@ -0,0 +1,9 @@\\n+import { add } from './calculator';\\n+\\n+test('add numbers', () => {\\n+  expect(add(2, 3)).toBe(5);\\n+});\\n+\\n+test('throw error for non-numbers', () => {\\n+  expect(() => add('2' as any, 3)).toThrow('Parameters must be numbers');\\n+});"
-}
-\`\`\`
-`
+        workflow: workflow,
+        status: status,
+        guideline: guideline,
+        examples: examples
       };
     },
     toolSetFn: () => ({

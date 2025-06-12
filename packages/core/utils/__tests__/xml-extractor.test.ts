@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { XmlExtractor, createXmlExtractor, quickExtract, quickExtractMultiple } from '../xml-extractor';
+import { XmlExtractor, createXmlExtractor, quickExtract, quickExtractMultiple } from '../../thinking/xml-extractor';
 
 describe('XmlExtractor', () => {
   let extractor: XmlExtractor;

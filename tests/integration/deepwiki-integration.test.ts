@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { ContextManager } from '../../src/core/context';
-import { DeepWikiContext } from '../../src/core/contexts/deepwiki';
-import { BaseAgent } from '../../src/core/agent';
-import { Logger, LogLevel } from '../../src/core/utils/logger';
-import { MCPContext } from '../../src/core/contexts/mcp';
+import { ContextManager } from '@continue-reasoning/core/context';
+import { DeepWikiContext } from '@continue-reasoning/core/contexts/deepwiki';
+import { BaseAgent } from '@continue-reasoning/core/agent';
+import { Logger, LogLevel } from '@continue-reasoning/core/utils/logger';
+import { MCPContext } from '@continue-reasoning/core/contexts/mcp';
 import path from 'path';
 import fs from 'fs';
 
