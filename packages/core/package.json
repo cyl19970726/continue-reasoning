@@ -10,6 +10,7 @@
       "import": "./index.ts",
       "require": "./index.ts"
     },
+    "./context": "./context.ts",
     "./events/*": "./events/*",
     "./interactive/*": "./interactive/*",
     "./models/*": "./models/*",
@@ -26,7 +27,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "vitest",
+    "test": "vitest __tests__/ --watch=false",
+    "test:watch": "vitest __tests__/",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

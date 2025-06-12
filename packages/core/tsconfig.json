@@ -9,7 +9,8 @@
   },
   "include": [
     "**/*.ts",
-    "**/*.tsx"
+    "**/*.tsx",
+    "__tests__/**/*.ts"
   ],
   "exclude": [
     "node_modules",
