@@ -15,6 +15,26 @@ import {
 import { BaseInteractiveLayer, InteractiveLayerConfig } from '../events/interactiveLayer';
 import { IInteractionHub } from '../interfaces';
 import { logger } from '../utils/logger';
+import { 
+  AgentInternalEvent, 
+  AgentStepEvent, 
+  AgentThinkingEvent, 
+  AgentReplyEvent,
+  ToolExecutionResultEvent,
+  AgentStateChangeEvent,
+  PlanCreatedEvent,
+  PlanStepStartedEvent,
+  PlanStepCompletedEvent,
+  PlanProgressUpdateEvent,
+  PlanCompletedEvent,
+  PlanErrorEvent,
+  FileCreatedEvent,
+  FileModifiedEvent,
+  FileDeletedEvent,
+  DirectoryCreatedEvent,
+  DiffReversedEvent
+} from '../events/agentEvents';
+import { EnhancedMultilineInput, createEnhancedMultilineInput } from './enhancedMultilineInput';
 
 export interface CLIClientConfig extends InteractiveLayerConfig {
   enableSyntaxHighlighting?: boolean;
@@ -33,6 +53,26 @@ export interface CLIClientConfig extends InteractiveLayerConfig {
   showInputStats?: boolean;
   enableConversationHistory?: boolean;
   defaultUserId?: string;
+  showDiffs?: boolean;
+  enableStepTracking?: boolean;
+  enablePerformanceMonitoring?: boolean;
+}
+
+// 新增：多行编辑器相关接口
+interface EditorState {
+  lines: string[];
+  cursorRow: number;
+  cursorCol: number;
+  scrollTop: number;
+  isActive: boolean;
+}
+
+interface EditorConfig {
+  maxLines: number;
+  maxLineLength: number;
+  showLineNumbers: boolean;
+  enableSyntaxHighlight: boolean;
+  theme: 'light' | 'dark';
 }
 
 export class CLIClient extends BaseInteractiveLayer {
@@ -63,7 +103,45 @@ export class CLIClient extends BaseInteractiveLayer {
     multilineInputs: 0
   };
 
+  private agentStats = {
+    totalSteps: 0,
+    averageStepDuration: 0,
+    totalToolCalls: 0,
+    toolCallStats: new Map<string, { count: number; totalTime: number; successRate: number }>(),
+    currentPlan: null as any,
+    planHistory: [] as any[]
+  };
+
   private userId: string;
+
+  // 新增粘贴检测相关属性
+  private lastInputTime: number = 0;
+  private inputBuffer: string[] = [];
+  private pasteDetectionTimer?: NodeJS.Timeout;
+  private isPasteMode: boolean = false;
+  private pasteThreshold: number = 50; // 50ms内多行输入视为粘贴
+  private autoMultilineThreshold: number = 3; // 3行以上自动进入多行模式
+  private isRichInputSetup: boolean = false;
+
+  // 新增：多行编辑器状态
+  private editorState: EditorState = {
+    lines: [''],
+    cursorRow: 0,
+    cursorCol: 0,
+    scrollTop: 0,
+    isActive: false
+  };
+
+  private editorConfig: EditorConfig = {
+    maxLines: 50,
+    maxLineLength: 120,
+    showLineNumbers: true,
+    enableSyntaxHighlight: true,
+    theme: 'dark'
+  };
+
+  private isInAdvancedEditor: boolean = false;
+  private savedRawMode: boolean = false;
 
   constructor(config: CLIClientConfig) {
     super(config);
@@ -76,6 +154,9 @@ export class CLIClient extends BaseInteractiveLayer {
       showInputStats: false,
       enableConversationHistory: true,
       defaultUserId: 'cli-user',
+      showDiffs: true,
+      enableStepTracking: true,
+      enablePerformanceMonitoring: true,
       ...config
     };
     this.userId = this.config.defaultUserId || 'cli-user';
@@ -135,12 +216,27 @@ export class CLIClient extends BaseInteractiveLayer {
         'user_message',
         'agent_reply',
         'agent_thinking',
-        'think'
+        'think',
+        'agent_step',
+        'agent_step_start',
+        'agent_state_change',
+        'tool_execution_result',
+        'plan_created',
+        'plan_step_started',
+        'plan_step_completed',
+        'plan_progress_update',
+        'plan_completed',
+        'plan_error',
+        'file_created',
+        'file_modified',
+        'file_deleted',
+        'directory_created',
+        'diff_reversed'
       ]
     };
 
     return new CLIClient({
-      name: 'Enhanced CLI Client with Conversation History',
+      name: 'Enhanced CLI Client with Agent Event Support',
       capabilities,
       eventBus,
       enableSyntaxHighlighting: true,
@@ -158,7 +254,10 @@ export class CLIClient extends BaseInteractiveLayer {
       maxPreviewLength: 150,
       showInputStats: true,
       enableConversationHistory: true,
-      defaultUserId: 'cli-user'
+      defaultUserId: 'cli-user',
+      showDiffs: true,
+      enableStepTracking: true,
+      enablePerformanceMonitoring: true
     });
   }
 
@@ -177,14 +276,16 @@ export class CLIClient extends BaseInteractiveLayer {
     this.subscribe(['agent_reply'], this.handleAgentReply.bind(this));
     this.subscribe(['agent_thinking'], this.handleAgentThinking.bind(this));
     this.subscribe(['think'], this.handleThinkEvent.bind(this));
-    
+    this.subscribe(['agent_step'], this.handleAgentStep.bind(this));
+    this.subscribe(['agent_step_start'], this.handleAgentStepStart.bind(this));
+    this.subscribe(['agent_state_change'], this.handleAgentStateChange.bind(this));
+    this.subscribe(['tool_execution_result'], this.handleToolExecutionResult.bind(this));
     this.subscribe(['plan_created'], this.handlePlanCreated.bind(this));
     this.subscribe(['plan_step_started'], this.handlePlanStepStarted.bind(this));
     this.subscribe(['plan_step_completed'], this.handlePlanStepCompleted.bind(this));
     this.subscribe(['plan_progress_update'], this.handlePlanProgressUpdate.bind(this));
     this.subscribe(['plan_completed'], this.handlePlanCompleted.bind(this));
     this.subscribe(['plan_error'], this.handlePlanError.bind(this));
-    
     this.subscribe(['file_created'], this.handleFileCreated.bind(this));
     this.subscribe(['file_modified'], this.handleFileModified.bind(this));
     this.subscribe(['file_deleted'], this.handleFileDeleted.bind(this));
@@ -306,6 +407,32 @@ export class CLIClient extends BaseInteractiveLayer {
 
   private async handleUserInput(input: string): Promise<void> {
     const trimmedInput = input.trim();
+    const currentTime = Date.now();
+    
+    // 粘贴检测逻辑
+    const timeSinceLastInput = currentTime - this.lastInputTime;
+    this.lastInputTime = currentTime;
+    
+    // 检测是否为粘贴操作
+    if (timeSinceLastInput < this.pasteThreshold && !this.isPasteMode) {
+      this.startPasteMode();
+    }
+    
+    // 如果在粘贴模式下，收集输入行
+    if (this.isPasteMode) {
+      this.inputBuffer.push(input);
+      
+      // 重置粘贴检测计时器
+      if (this.pasteDetectionTimer) {
+        clearTimeout(this.pasteDetectionTimer);
+      }
+      
+      this.pasteDetectionTimer = setTimeout(() => {
+        this.processPastedContent();
+      }, this.pasteThreshold * 2); // 100ms后处理粘贴内容
+      
+      return;
+    }
     
     this.updateInputStats(input);
     
@@ -392,17 +519,198 @@ export class CLIClient extends BaseInteractiveLayer {
       this.inputStats.multilineInputs++;
       this.addToHistory(multilineContent);
       
-      console.log(chalk.green('\n✅ Multi-line input completed!'));
-      console.log(chalk.gray(`📊 Content: ${multilineContent.length} characters, ${multilineContent.split('\n').length} lines`));
+      console.log(chalk.cyan('└─ Multi-line input completed!'));
+      console.log('');
       
-      if (this.config.enableInputPreview) {
-        this.showInputPreview(multilineContent);
+      // Claude风格的内容预览
+      const lines = multilineContent.split('\n');
+      console.log(chalk.yellow('📋 ') + chalk.bold('Content Preview:'));
+      console.log(chalk.gray(`   ${lines.length} lines, ${multilineContent.length} characters`));
+      
+      if (this.config.enableInputPreview && multilineContent.length <= 200) {
+        console.log('');
+        console.log(chalk.gray('┌─ Content:'));
+        lines.slice(0, 5).forEach((line, index) => {
+          const lineNum = (index + 1).toString().padStart(2, '0');
+          const displayLine = line.length > 60 ? line.substring(0, 60) + '...' : line;
+          console.log(chalk.gray(`│ ${lineNum} │ `) + chalk.white(displayLine));
+        });
+        
+        if (lines.length > 5) {
+          console.log(chalk.gray(`│ .. │ ... (${lines.length - 5} more lines)`));
+        }
+        
+        console.log(chalk.gray('└────'));
       }
+      
+      console.log('');
+      console.log(chalk.green('✨ Sending to agent...'));
+      console.log('');
       
       this.sendUserMessage(multilineContent);
     } else {
-      console.log(chalk.yellow('\n📝 Multi-line input cancelled (empty content)'));
+      console.log(chalk.cyan('└─ Multi-line input cancelled (empty content)'));
+      console.log('');
     }
+  }
+
+  private startPasteMode(): void {
+    this.isPasteMode = true;
+    this.inputBuffer = [];
+    console.log(chalk.cyan('\n📋 Paste mode detected! Collecting input...'));
+  }
+
+  private async processPastedContent(): Promise<void> {
+    this.isPasteMode = false;
+    
+    if (this.pasteDetectionTimer) {
+      clearTimeout(this.pasteDetectionTimer);
+      this.pasteDetectionTimer = undefined;
+    }
+    
+    if (this.inputBuffer.length === 0) {
+      this.showPrompt();
+      return;
+    }
+    
+    const pastedContent = this.inputBuffer.join('\n');
+    const lineCount = this.inputBuffer.length;
+    const charCount = pastedContent.length;
+    
+    console.log(chalk.green(`\n✅ Paste completed!`));
+    console.log(chalk.gray(`📊 Content: ${charCount} characters, ${lineCount} lines`));
+    
+    // 自动判断是否需要特殊处理
+    if (lineCount >= this.autoMultilineThreshold) {
+      console.log(chalk.cyan(`🤖 Large content detected (${lineCount} lines). Processing as multi-line input...`));
+      
+      // 显示内容预览
+      if (this.config.enableInputPreview) {
+        this.showPastePreview(pastedContent);
+      }
+      
+      // 询问用户是否要编辑内容
+      const shouldEdit = await this.promptPasteAction(pastedContent);
+      if (shouldEdit === 'edit') {
+        await this.enterEditMode(pastedContent);
+        return;
+      } else if (shouldEdit === 'cancel') {
+        console.log(chalk.yellow('📝 Paste cancelled'));
+        this.inputBuffer = [];
+        this.showPrompt();
+        return;
+      }
+    }
+    
+    // 统计更新
+    this.updateInputStats(pastedContent);
+    this.inputStats.multilineInputs++;
+    this.addToHistory(pastedContent);
+    
+    // 发送内容
+    await this.sendUserMessage(pastedContent);
+    this.inputBuffer = [];
+    this.showPrompt();
+  }
+
+  private showPastePreview(content: string): void {
+    const maxPreviewLength = 300;
+    const lines = content.split('\n');
+    
+    console.log('');
+    console.log(chalk.yellow('📋 ') + chalk.bold('Pasted Content Preview:'));
+    console.log(chalk.gray(`   ${lines.length} lines, ${content.length} characters`));
+    console.log('');
+    
+    console.log(chalk.gray('┌─ Content:'));
+    
+    if (content.length <= maxPreviewLength) {
+      lines.forEach((line, index) => {
+        if (index < 8) { // 最多显示8行
+          const lineNum = (index + 1).toString().padStart(2, '0');
+          const displayLine = line.length > 60 ? line.substring(0, 60) + '...' : line;
+          console.log(chalk.gray(`│ ${lineNum} │ `) + chalk.white(displayLine));
+        }
+      });
+      
+      if (lines.length > 8) {
+        console.log(chalk.gray(`│ .. │ ... (${lines.length - 8} more lines)`));
+      }
+    } else {
+      // 显示前几行和后几行
+      const preview = content.substring(0, maxPreviewLength);
+      const previewLines = preview.split('\n');
+      
+      previewLines.forEach((line, index) => {
+        if (index < 6) {
+          const lineNum = (index + 1).toString().padStart(2, '0');
+          const displayLine = line.length > 60 ? line.substring(0, 60) + '...' : line;
+          console.log(chalk.gray(`│ ${lineNum} │ `) + chalk.white(displayLine));
+        }
+      });
+      
+      if (lines.length > 6) {
+        console.log(chalk.gray(`│ .. │ ... (${lines.length - 6} more lines) ...`));
+        console.log(chalk.gray(`│    │ ${chalk.yellow(`[Content truncated - showing first ${maxPreviewLength} characters]`)}`));
+      }
+    }
+    
+    console.log(chalk.gray('└────'));
+    console.log('');
+  }
+
+  private async promptPasteAction(content: string): Promise<'send' | 'edit' | 'cancel'> {
+    console.log(chalk.cyan('🤔 ') + chalk.bold('How would you like to proceed?'));
+    console.log('');
+    console.log(chalk.white('  ') + chalk.green('s') + chalk.gray(' - ') + chalk.white('Send as-is'));
+    console.log(chalk.white('  ') + chalk.yellow('e') + chalk.gray(' - ') + chalk.white('Edit before sending'));
+    console.log(chalk.white('  ') + chalk.red('c') + chalk.gray(' - ') + chalk.white('Cancel'));
+    console.log('');
+    
+    const response = await this.promptUser(chalk.bold('Choose action: '));
+    
+    switch (response.toLowerCase()) {
+      case 's':
+      case 'send':
+        return 'send';
+      case 'e':
+      case 'edit':
+        return 'edit';
+      case 'c':
+      case 'cancel':
+        return 'cancel';
+      default:
+        console.log(chalk.yellow('⚠️  Invalid choice, sending as-is...'));
+        return 'send';
+    }
+  }
+
+  private async enterEditMode(content: string): Promise<void> {
+    console.log(chalk.cyan('✏️  ') + chalk.bold('Edit Mode - Enhanced Multi-line Input'));
+    console.log('');
+    console.log(chalk.gray('Your pasted content has been loaded into edit mode.'));
+    console.log(chalk.gray('You can now modify it before sending.'));
+    console.log('');
+    console.log(chalk.yellow('💡 Instructions:'));
+    console.log(chalk.gray('  • Continue typing to add more content'));
+    console.log(chalk.gray('  • Type ### on a new line to finish editing and send'));
+    console.log(chalk.gray('  • Press Ctrl+C to cancel without sending'));
+    console.log('');
+    
+    // 进入多行模式并预填充内容
+    this.isMultilineMode = true;
+    this.multilineBuffer = content.split('\n');
+    
+    // 显示当前内容状态
+    const lines = this.multilineBuffer.length;
+    const chars = content.length;
+    console.log(chalk.blue('📝 ') + chalk.bold('Current content:'));
+    console.log(chalk.gray(`   ${lines} lines, ${chars} characters loaded`));
+    console.log('');
+    
+    console.log(chalk.cyan('┌─ Edit Mode Active'));
+    console.log(chalk.cyan('│  ') + chalk.gray('Continue typing below to modify your content...'));
+    console.log(chalk.cyan('│'));
     
     this.showPrompt();
   }
@@ -601,7 +909,7 @@ export class CLIClient extends BaseInteractiveLayer {
         if (args[0]) {
           await this.toggleFeature(args[0]);
         } else {
-          console.log(chalk.yellow('Available features to toggle: preview, shortcuts, smart, stats, history'));
+          console.log(chalk.yellow('Available features to toggle: preview, shortcuts, smart, stats, history, diffs, tracking, monitoring'));
           console.log(chalk.gray('Usage: /toggle <feature>'));
         }
         return true;
@@ -636,6 +944,103 @@ export class CLIClient extends BaseInteractiveLayer {
           console.log(chalk.yellow('Usage: /search <query>'));
           console.log(chalk.gray('Example: /search React component'));
         }
+        return true;
+
+      case '/performance':
+      case '/perf':
+        this.displayPerformanceStats();
+        return true;
+
+      case '/tools':
+        this.displayToolStats();
+        return true;
+
+      case '/agent':
+        this.displayAgentInfo();
+        return true;
+
+      case '/reset':
+        this.resetStats();
+        console.log(chalk.green('✅ Statistics reset successfully'));
+        return true;
+
+      case '/paste':
+        console.log(chalk.cyan('\n📋 Enhanced Paste Mode'));
+        console.log(chalk.gray('This mode provides intelligent handling of large pasted content.'));
+        console.log(chalk.white('Features:'));
+        console.log(chalk.gray('  • Automatic detection of multi-line paste operations'));
+        console.log(chalk.gray('  • Content preview with syntax highlighting'));
+        console.log(chalk.gray('  • Edit-before-send option for large content'));
+        console.log(chalk.gray('  • Smart formatting and structure detection'));
+        console.log('');
+        console.log(chalk.yellow('💡 Tips:'));
+        console.log(chalk.gray('  • Just paste your content directly - no special commands needed'));
+        console.log(chalk.gray('  • Large content (3+ lines) will trigger enhanced handling'));
+        console.log(chalk.gray('  • You can choose to edit, send, or cancel after pasting'));
+        console.log(chalk.gray('  • Use /paste-settings to configure paste behavior'));
+        return true;
+
+      case '/paste-settings':
+        await this.showPasteSettings();
+        return true;
+
+      case '/smart-input':
+        if (args[0]) {
+          await this.toggleSmartInput(args[0]);
+        } else {
+          this.showSmartInputStatus();
+        }
+        return true;
+
+      case '/claude-mode':
+        await this.toggleClaudeMode();
+        return true;
+
+      case '/shortcuts':
+      case '?':
+        this.displayShortcuts();
+        return true;
+
+      case '/status':
+        this.displayStatus();
+        return true;
+
+      case '/editor':
+      case '/edit':
+        await this.openAdvancedEditor();
+        return true;
+
+      case '/editor-paste':
+        await this.openAdvancedEditorWithPaste();
+        return true;
+
+      case '/sys-editor':
+        await this.openSystemEditor();
+        return true;
+
+      case '/sys-code':
+        if (args[0]) {
+          await this.openSystemCodeEditor(args[0]);
+        } else {
+          await this.openSystemCodeEditor('typescript');
+        }
+        return true;
+
+      case '/sys-interactive':
+        await this.openSystemInteractiveEditor();
+        return true;
+
+      case '/sys-help':
+        SystemEditor.displayEditorHelp();
+        return true;
+
+      case '/enhanced-edit':
+      case '/enhanced-multiline':
+        await this.openEnhancedMultilineEditor();
+        return true;
+
+      case '/enhanced-paste':
+        await this.openEnhancedMultilineEditorWithPaste();
         return true;
 
       case '/exit':
@@ -1292,59 +1697,83 @@ export class CLIClient extends BaseInteractiveLayer {
   }
 
   private displayWelcome(): void {
-    console.log(chalk.green('🤖 HHH-AGI Enhanced Interactive CLI'));
-    console.log(chalk.cyan('✨ Enhanced Input Experience with Conversation History'));
-    console.log(chalk.gray('Type /help for available commands'));
-    console.log(chalk.gray('Use Ctrl+C to exit'));
+    console.clear(); // 清屏获得更好的体验
+    
+    // Claude风格的欢迎框 - 修复格式问题
+    console.log('');
+    console.log(chalk.yellow('┌────────────────────────────────────────────────────────────────────┐'));
+    console.log(chalk.yellow('│ ') + chalk.bold(chalk.cyan('✨ Welcome to Continue Reasoning!')) + chalk.yellow('                              │'));
+    console.log(chalk.yellow('│                                                                    │'));
+    console.log(chalk.yellow('│ ') + chalk.gray('/help for help, /status for your current setup') + chalk.yellow('               │'));
+    console.log(chalk.yellow('│                                                                    │'));
+    
+    // 工作目录信息
+    const cwd = process.cwd();
+    const cwdLine = `cwd: ${cwd}`;
+    const padding = 68 - cwdLine.length;
+    console.log(chalk.yellow('│ ') + chalk.gray(cwdLine) + ' '.repeat(Math.max(0, padding)) + chalk.yellow('│'));
+    console.log(chalk.yellow('│ ') + chalk.gray('─'.repeat(66)) + chalk.yellow(' │'));
+    console.log(chalk.yellow('│                                                                    │'));
+    
+    // 检查是否启用了Claude模式
+    const isClaudeMode = this.config.enableRichInput && 
+                        this.config.enableInputPreview && 
+                        this.config.enableSmartPrompts && 
+                        this.pasteThreshold <= 50 && 
+                        this.autoMultilineThreshold <= 3;
+    
+    // API Key信息
+    const apiKeyInfo = process.env.OPENAI_API_KEY ? 
+      `sk-${process.env.OPENAI_API_KEY.substring(3, 7)}...${process.env.OPENAI_API_KEY.slice(-6)}` : 
+      'Not configured';
+    
+    console.log(chalk.yellow('│ ') + chalk.gray('Overrides (via env):') + chalk.yellow('                                        │'));
+    console.log(chalk.yellow('│                                                                    │'));
+    
+    const apiLine = `• API Key: ${apiKeyInfo}`;
+    const apiPadding = 68 - apiLine.length;
+    console.log(chalk.yellow('│ ') + chalk.gray(apiLine) + ' '.repeat(Math.max(0, apiPadding)) + chalk.yellow('│'));
+    
+    if (isClaudeMode) {
+      const claudeLine = '• Claude Mode: ENABLED (Enhanced paste handling)';
+      const claudePadding = 68 - claudeLine.length;
+      console.log(chalk.yellow('│ ') + chalk.green(claudeLine) + ' '.repeat(Math.max(0, claudePadding)) + chalk.yellow('│'));
+    } else {
+      const claudeLine = '• Claude Mode: DISABLED';
+      const claudePadding = 68 - claudeLine.length;
+      console.log(chalk.yellow('│ ') + chalk.gray(claudeLine) + ' '.repeat(Math.max(0, claudePadding)) + chalk.yellow('│'));
+    }
+    
+    if (this.config.enableConversationHistory) {
+      const historyLine = '• Conversation History: ENABLED';
+      const historyPadding = 68 - historyLine.length;
+      console.log(chalk.yellow('│ ') + chalk.green(historyLine) + ' '.repeat(Math.max(0, historyPadding)) + chalk.yellow('│'));
+    }
+    
+    console.log(chalk.yellow('└────────────────────────────────────────────────────────────────────┘'));
     console.log('');
     
-    if (this.config.enableConversationHistory) {
-      console.log(chalk.magenta('🧠 Conversation History: ENABLED'));
-      console.log(chalk.gray(`   User ID: ${this.userId}`));
-      console.log(chalk.gray(`   Session: ${this.currentSession.substring(0, 8)}...`));
+    // 使用提示（简化版本）
+    console.log(chalk.bold(chalk.white('Tips for getting started:')));
+    console.log('');
+    console.log(chalk.white('1. ') + chalk.gray('Type your message and press Enter for single-line input'));
+    console.log(chalk.white('2. ') + chalk.gray('Use ### to start multi-line input mode'));  
+    console.log(chalk.white('3. ') + chalk.gray('Paste large content directly - smart detection enabled'));
+    console.log(chalk.white('4. ') + chalk.gray('Use /editor or /edit for advanced multi-line editor'));
+    console.log(chalk.white('5. ') + chalk.gray('Use /enhanced-edit for Claude Code-like line navigation'));
+    console.log(chalk.white('6. ') + chalk.gray('Use /claude-mode to enable enhanced input experience'));
+    console.log(chalk.white('7. ') + chalk.gray('Use /help to see all available commands'));
+    
+    if (isClaudeMode) {
       console.log('');
+      console.log(chalk.cyan('🎯 ') + chalk.bold(chalk.cyan('Claude Mode Active:')));
+      console.log(chalk.gray('  • Large pastes will show preview & edit options'));
+      console.log(chalk.gray('  • Smart content detection and formatting'));
+      console.log(chalk.gray('  • Enhanced multi-line editing experience'));
     }
     
-    if (this.config.enableRichInput) {
-      console.log(chalk.yellow('🚀 Enhanced Features Active:'));
-      
-      if (this.config.enableInputPreview) {
-        console.log(chalk.gray('  ✓ Input preview and analysis'));
-      }
-      
-      if (this.config.enableSmartPrompts) {
-        console.log(chalk.gray('  ✓ Smart prompts and suggestions'));
-      }
-      
-      if (this.config.enableKeyboardShortcuts) {
-        console.log(chalk.gray('  ✓ Keyboard shortcuts (Ctrl+H for help)'));
-      }
-      
-      if (this.config.enableMultilineInput) {
-        console.log(chalk.gray('  ✓ Enhanced multi-line input'));
-      }
-      
-      if (this.config.enableConversationHistory) {
-        console.log(chalk.gray('  ✓ Automatic conversation history integration'));
-      }
-      
-      console.log('');
-    }
-    
-    console.log(chalk.yellow('💡 Quick Start Guide:'));
-    console.log(chalk.gray('  🔸 Simple messages: Just type and press Enter'));
-    console.log(chalk.gray('  🔸 Multi-line messages: Type ### → Enter → your message → ### → Enter'));
-    console.log(chalk.gray('  🔸 Commands: Start with / (try /help)'));
-    console.log(chalk.gray('  🔸 File input: Use /file <path>'));
-    
-    if (this.config.enableConversationHistory) {
-      console.log(chalk.gray('  🔸 Conversation history: Automatically included in all messages'));
-    }
-    
-    if (this.config.enableKeyboardShortcuts) {
-      console.log(chalk.gray('  🔸 Quick shortcuts: Ctrl+H (help), Ctrl+L (clear), Ctrl+M (multi-line)'));
-    }
-    
+    console.log('');
+    console.log(chalk.gray('💡 Tip: Use /shortcuts to view keyboard shortcuts'));
     console.log('');
   }
 
@@ -1365,6 +1794,48 @@ export class CLIClient extends BaseInteractiveLayer {
     console.log(chalk.white('  /features               - Show enhanced CLI features status'));
     console.log(chalk.white('  /toggle <feature>       - Toggle enhanced features on/off'));
     console.log(chalk.white('  /exit, /quit            - Exit the application'));
+    
+    console.log(chalk.yellow('\n📊 Performance & Monitoring:'));
+    console.log(chalk.white('  /performance, /perf     - Show agent performance statistics'));
+    console.log(chalk.white('  /tools                  - Show detailed tool usage statistics'));
+    console.log(chalk.white('  /agent                  - Show current agent information'));
+    console.log(chalk.white('  /reset                  - Reset all statistics and counters'));
+    
+    console.log(chalk.yellow('\n📋 Enhanced Paste & Input:'));
+    console.log(chalk.white('  /paste                  - Show enhanced paste mode information'));
+    console.log(chalk.white('  /paste-settings         - Configure paste detection settings'));
+    console.log(chalk.white('  /smart-input <feature>  - Configure smart input features'));
+    console.log(chalk.white('  /claude-mode            - Toggle Claude-style enhanced input mode'));
+    
+    console.log(chalk.yellow('\n🖋️  Advanced Editor:'));
+    console.log(chalk.white('  /editor, /edit          - Open advanced multi-line editor'));
+    console.log(chalk.white('  /editor-paste           - Open advanced editor with paste content'));
+    console.log(chalk.gray('    • Full multi-line editing with line numbers'));
+    console.log(chalk.gray('    • Arrow key navigation between lines'));
+    console.log(chalk.gray('    • Ctrl+S to send, Ctrl+C to cancel'));
+    console.log(chalk.gray('    • Perfect for code, documentation, or long text'));
+    
+    console.log(chalk.yellow('\n🖋️  System Editor (Recommended):'));
+    console.log(chalk.white('  /sys-editor             - Open your default system editor'));
+    console.log(chalk.white('  /sys-code <lang>        - Open system editor with language syntax'));
+    console.log(chalk.white('  /sys-interactive        - Interactive editor mode with choices'));
+    console.log(chalk.white('  /sys-help               - Show system editor help and setup'));
+    console.log(chalk.gray('    • Uses your preferred editor (VS Code, Vim, Nano, etc.)'));
+    console.log(chalk.gray('    • Full editor features and extensions'));
+    console.log(chalk.gray('    • No terminal compatibility issues'));
+    console.log(chalk.gray('    • Perfect for all content types'));
+    console.log(chalk.gray('    • Set EDITOR env var: export EDITOR="code --wait"'));
+    
+    console.log(chalk.yellow('\n🖋️  Enhanced Multiline Editor (NEW):'));
+    console.log(chalk.white('  /enhanced-edit          - Open enhanced multiline editor'));
+    console.log(chalk.white('  /enhanced-multiline     - Same as enhanced-edit'));
+    console.log(chalk.white('  /enhanced-paste         - Open enhanced editor with paste content'));
+    console.log(chalk.gray('    • True arrow key navigation (↑↓ between lines, ←→ within line)'));
+    console.log(chalk.gray('    • Real-time cursor positioning with visual indicator'));
+    console.log(chalk.gray('    • Line numbers and professional editor layout'));
+    console.log(chalk.gray('    • Ctrl+M/Ctrl+S to submit, Ctrl+C to cancel'));
+    console.log(chalk.gray('    • Claude Code-like editing experience'));
+    console.log(chalk.gray('    • No external dependencies or compatibility issues'));
     
     if (this.config.enableConversationHistory) {
       console.log(chalk.yellow('\n🧠 Conversation History Commands:'));
@@ -1388,52 +1859,11 @@ export class CLIClient extends BaseInteractiveLayer {
       console.log(chalk.white('  Tab                     - Smart completion'));
     }
     
-    if (this.config.enableMultilineInput) {
-      const delimiter = this.config.multilineDelimiter || '###';
-      console.log(chalk.yellow('\n📝 Multi-line Input Guide:'));
-      console.log(chalk.white(`  1. Type '${delimiter}' and press Enter to start multi-line mode`));
-      console.log(chalk.white(`  2. Type your message with line breaks (Enter creates new lines)`));
-      console.log(chalk.white(`  3. Type '${delimiter}' and press Enter to finish and send`));
-      console.log(chalk.white(`  4. Or press Ctrl+M to toggle multi-line mode`));
-      console.log(chalk.gray('     Note: In multi-line mode, Enter will NOT send the message'));
-      console.log(chalk.gray('     Only the closing delimiter will send the complete message'));
-    }
-    
-    if (this.config.enableFileInput) {
-      console.log(chalk.yellow('\n📁 File Input:'));
-      console.log(chalk.white('  /file <path>            - Load file content and send to agent'));
-      console.log(chalk.white('  Supports text files up to 1MB'));
-      console.log(chalk.gray('  Example: /file ./config.json'));
-    }
-    
-    if (this.config.enableConversationHistory) {
-      console.log(chalk.yellow('\n🧠 Conversation History Features:'));
-      console.log(chalk.white('  • Automatic conversation recording'));
-      console.log(chalk.white('  • Agent responses include full conversation context'));
-      console.log(chalk.white('  • Search through past conversations'));
-      console.log(chalk.white('  • Session-based history management'));
-      console.log(chalk.white('  • Memory usage tracking and statistics'));
-      console.log(chalk.gray('  Example: /search "React component" to find related discussions'));
-    }
-    
-    if (this.config.enableInputPreview) {
-      console.log(chalk.yellow('\n📊 Smart Features:'));
-      console.log(chalk.white('  • Input preview for long messages'));
-      console.log(chalk.white('  • Real-time input analysis and type detection'));
-      console.log(chalk.white('  • Smart suggestions based on context'));
-      console.log(chalk.white('  • Input statistics tracking'));
-      console.log(chalk.white('  • Enhanced multi-line preview'));
-      if (this.config.enableConversationHistory) {
-        console.log(chalk.white('  • Conversation-aware intelligent prompts'));
-      }
-    }
-    
-    console.log(chalk.yellow('\n💡 Pro Tips:'));
-    console.log(chalk.gray('  • Use Tab for command completion'));
-    console.log(chalk.gray('  • Long inputs will show preview automatically'));
-    console.log(chalk.gray('  • History navigation with arrow keys'));
-    console.log(chalk.gray('  • Type partial commands for suggestions'));
-    console.log(chalk.gray('  • Multi-line mode shows live preview'));
+    console.log(chalk.yellow('\n💡 Enhanced Pro Tips:'));
+    console.log(chalk.gray('  • Monitor agent performance with /performance'));
+    console.log(chalk.gray('  • Track tool usage patterns with /tools'));
+    console.log(chalk.gray('  • Reset statistics with /reset for fresh start'));
+    console.log(chalk.gray('  • Toggle monitoring features with /toggle'));
     if (this.config.enableConversationHistory) {
       console.log(chalk.gray('  • All your messages automatically include conversation context'));
       console.log(chalk.gray('  • Agent remembers the full conversation flow'));
@@ -1583,7 +2013,14 @@ export class CLIClient extends BaseInteractiveLayer {
       'statistics': 'showInputStats',
       'history': 'enableConversationHistory',
       'conversation': 'enableConversationHistory',
-      'memory': 'enableConversationHistory'
+      'memory': 'enableConversationHistory',
+      'diffs': 'showDiffs',
+      'diff': 'showDiffs',
+      'tracking': 'enableStepTracking',
+      'steps': 'enableStepTracking',
+      'monitoring': 'enablePerformanceMonitoring',
+      'performance': 'enablePerformanceMonitoring',
+      'perf': 'enablePerformanceMonitoring'
     };
 
     const configKey = featureMap[featureName.toLowerCase()];
@@ -1637,6 +2074,28 @@ export class CLIClient extends BaseInteractiveLayer {
       }
     }
 
+    if (configKey === 'enableStepTracking') {
+      if (newValue) {
+        console.log(chalk.cyan('📊 Step tracking activated!'));
+        console.log(chalk.gray('   • Agent steps will be displayed in real-time'));
+        console.log(chalk.gray('   • Use /performance to view detailed statistics'));
+      } else {
+        console.log(chalk.yellow('⚠️  Step tracking disabled'));
+      }
+    }
+
+    if (configKey === 'enablePerformanceMonitoring') {
+      if (newValue) {
+        console.log(chalk.cyan('📈 Performance monitoring activated!'));
+        console.log(chalk.gray('   • Track tool execution times and success rates'));
+        console.log(chalk.gray('   • Monitor agent step durations and efficiency'));
+        console.log(chalk.gray('   • View detailed performance analytics'));
+        console.log(chalk.gray('   • Use /performance or /tools for detailed stats'));
+      } else {
+        console.log(chalk.yellow('⚠️  Performance monitoring disabled'));
+      }
+    }
+
     console.log(chalk.gray('💡 Some changes may require restart for full effect'));
   }
 
@@ -1647,54 +2106,56 @@ export class CLIClient extends BaseInteractiveLayer {
   private showPrompt(): void {
     if (this.isWaitingForInput) return;
     
-    const prefix = this.config.promptPrefix || '🤖';
-    const modeIndicator = this.executionMode === 'auto' ? '⚡' : 
-                         this.executionMode === 'manual' ? '✋' : '👁️';
-    
+    // Claude风格的输入提示
     if (this.isMultilineMode) {
       const lineNumber = this.multilineBuffer.length + 1;
       const delimiter = this.config.multilineDelimiter || '###';
       
-      console.log(chalk.gray(`┌─ Multi-line mode (line ${lineNumber}) - Type '${delimiter}' to finish`));
-      this.rl.setPrompt(chalk.yellow(`├─ ${lineNumber.toString().padStart(2, '0')} │ `));
-    } else {
-      let promptText = '';
-      
-      if (this.config.enableSmartPrompts) {
-        const sessionInfo = this.currentSession ? ` [${this.currentSession.substring(0, 8)}]` : '';
-        const historyInfo = this.commandHistory.length > 0 ? ` (${this.commandHistory.length})` : '';
-        
-        if (this.config.showInputStats && this.inputStats.totalInputs > 0) {
-          const avgLength = Math.round(this.inputStats.averageInputLength);
-          promptText += chalk.gray(`[${this.inputStats.totalInputs} inputs, avg: ${avgLength}] `);
-        }
-        
-        promptText += chalk.green(`${prefix} `);
-        promptText += chalk.blue(`${modeIndicator} `);
-        
-        if (sessionInfo) {
-          promptText += chalk.gray(`${sessionInfo} `);
-        }
-        
-        if (historyInfo && this.commandHistory.length > 0) {
-          promptText += chalk.gray(`${historyInfo} `);
-        }
-        
-        promptText += chalk.white(`> `);
-      } else {
-        promptText = chalk.green(`${prefix} ${modeIndicator} > `);
+      if (lineNumber === 1) {
+        console.log(chalk.cyan('┌─ Multi-line Input Mode'));
+        console.log(chalk.cyan('│  ') + chalk.gray(`Type '${delimiter}' on a new line to finish and send`));
+        console.log(chalk.cyan('│  ') + chalk.gray('Press Ctrl+C to cancel and exit multi-line mode'));
+        console.log(chalk.cyan('│'));
       }
       
-      this.rl.setPrompt(promptText);
+      const linePrefix = chalk.cyan(`│ ${lineNumber.toString().padStart(2, '0')} │ `);
+      this.rl.setPrompt(linePrefix);
+    } else {
+      // 检查是否是Claude模式
+      const isClaudeMode = this.config.enableRichInput && 
+                          this.config.enableInputPreview && 
+                          this.config.enableSmartPrompts;
+      
+      if (isClaudeMode) {
+        // Claude风格的输入提示
+        const sessionInfo = this.currentSession ? chalk.gray(`[${this.currentSession.substring(0, 8)}]`) : '';
+        const modeIndicator = this.executionMode === 'auto' ? chalk.green('●') : 
+                             this.executionMode === 'manual' ? chalk.yellow('●') : chalk.blue('●');
+        
+        console.log(chalk.gray('────────────────────────────────────────────────────────────────────'));
+        this.rl.setPrompt(chalk.bold(chalk.white('> ')) + chalk.dim('Type your message... '));
+        
+        // 在第一次输入时显示快捷键提示
+        if (this.inputStats.totalInputs === 0) {
+          setTimeout(() => {
+            console.log(chalk.gray('\n💡 Pro tips:'));
+            console.log(chalk.gray('  • ### for multi-line input'));
+            console.log(chalk.gray('  • /help for commands'));
+            console.log(chalk.gray('  • /claude-mode to toggle enhanced features'));
+            console.log(chalk.gray('  • ? for shortcuts\n'));
+            this.rl.prompt();
+          }, 500);
+        }
+      } else {
+        // 标准模式的简单提示
+        const prefix = this.config.promptPrefix || '🤖';
+        const modeIndicator = this.executionMode === 'auto' ? '⚡' : 
+                             this.executionMode === 'manual' ? '✋' : '👁️';
+        this.rl.setPrompt(chalk.green(`${prefix} ${modeIndicator} > `));
+      }
     }
     
     this.rl.prompt();
-    
-    if (this.inputStats.totalInputs === 0 && this.config.enableSmartPrompts) {
-      setTimeout(() => {
-        console.log(chalk.gray('💡 First time? Try typing /help or ### for multi-line input'));
-      }, 100);
-    }
   }
 
   private completer(line: string): [string[], string] {
@@ -1977,6 +2438,634 @@ export class CLIClient extends BaseInteractiveLayer {
       console.log(chalk.cyan('=' .repeat(50)));
     } catch (error) {
       console.log(chalk.red(`❌ Search failed: ${error}`));
+    }
+  }
+
+  private async handleAgentStep(message: AllEventMessages): Promise<void> {
+    const event = message as any;
+    const step = event.payload;
+
+    if (!this.config.enableStepTracking) return;
+
+    const stepIcon = this.getStepStatusIcon(step.status);
+    const durationText = step.duration ? ` (${step.duration}ms)` : '';
+    
+    console.log(chalk.blue(`\n${stepIcon} Step ${step.stepIndex}: ${step.status}${durationText}`));
+    
+    if (step.extractorResult) {
+      if (step.extractorResult.thinking) {
+        console.log(chalk.magenta(`💭 Thinking: ${step.extractorResult.thinking.substring(0, 200)}${step.extractorResult.thinking.length > 200 ? '...' : ''}`));
+      }
+      
+      if (step.extractorResult.finalAnswer) {
+        console.log(chalk.green(`✅ Final Answer: ${step.extractorResult.finalAnswer}`));
+      }
+    }
+    
+    if (step.toolCalls && step.toolCalls.length > 0) {
+      console.log(chalk.yellow(`🔧 Tools Called: ${step.toolCalls.map((tc: any) => tc.name).join(', ')}`));
+    }
+    
+    if (step.toolCallResults && step.toolCallResults.length > 0) {
+      const successCount = step.toolCallResults.filter((r: any) => r.status === 'succeed').length;
+      const totalCount = step.toolCallResults.length;
+      console.log(chalk.cyan(`📊 Tool Results: ${successCount}/${totalCount} successful`));
+      
+      if (this.config.enablePerformanceMonitoring) {
+        step.toolCallResults.forEach((result: any) => {
+          const timeText = result.executionTime ? ` (${result.executionTime}ms)` : '';
+          const statusIcon = result.status === 'succeed' ? '✅' : result.status === 'failed' ? '❌' : '⏳';
+          console.log(chalk.gray(`  ${statusIcon} ${result.name}${timeText}`));
+        });
+      }
+    }
+    
+    this.updateAgentStats(step);
+    
+    console.log('');
+  }
+
+  private async handleAgentStepStart(message: AllEventMessages): Promise<void> {
+    const event = message as any;
+    const { stepIndex, agentId } = event.payload;
+
+    if (!this.config.enableStepTracking) return;
+
+    console.log(chalk.blue(`\n🚀 Starting Step ${stepIndex}...`));
+    console.log('');
+  }
+
+  private async handleAgentStateChange(message: AllEventMessages): Promise<void> {
+    const event = message as any;
+    const { fromState, toState, reason, currentStep } = event.payload;
+
+    const stateIcon = this.getStateIcon(toState);
+    console.log(chalk.yellow(`\n${stateIcon} Agent State: ${fromState} → ${toState}`));
+    
+    if (reason) {
+      console.log(chalk.gray(`   Reason: ${reason}`));
+    }
+    
+    if (currentStep !== undefined) {
+      console.log(chalk.gray(`   Current Step: ${currentStep}`));
+    }
+    
+    console.log('');
+  }
+
+  private async handleToolExecutionResult(message: AllEventMessages): Promise<void> {
+    const event = message as any;
+    const { toolName, callId, success, result, error, executionTime, stepNumber } = event.payload;
+
+    if (!this.config.enablePerformanceMonitoring) return;
+
+    const statusIcon = success ? '✅' : '❌';
+    const timeText = executionTime ? ` (${executionTime}ms)` : '';
+    const stepText = stepNumber !== undefined ? ` [Step ${stepNumber}]` : '';
+    
+    console.log(chalk.cyan(`🔧 ${statusIcon} Tool: ${toolName}${timeText}${stepText}`));
+    
+    if (!success && error) {
+      console.log(chalk.red(`   Error: ${error}`));
+    }
+    
+    this.updateToolStats(toolName, success, executionTime);
+  }
+
+  private getStepStatusIcon(status: string): string {
+    switch (status) {
+      case 'running': return '⏳';
+      case 'completed': return '✅';
+      case 'failed': return '❌';
+      case 'pending': return '🔄';
+      default: return '📝';
+    }
+  }
+
+  private getStateIcon(state: string): string {
+    switch (state) {
+      case 'idle': return '💤';
+      case 'running': return '🚀';
+      case 'stopping': return '🛑';
+      case 'error': return '💥';
+      default: return '❓';
+    }
+  }
+
+  private updateAgentStats(step: any): void {
+    this.agentStats.totalSteps++;
+    
+    if (step.duration) {
+      const totalDuration = this.agentStats.averageStepDuration * (this.agentStats.totalSteps - 1) + step.duration;
+      this.agentStats.averageStepDuration = totalDuration / this.agentStats.totalSteps;
+    }
+    
+    if (step.toolCallResults) {
+      this.agentStats.totalToolCalls += step.toolCallResults.length;
+    }
+  }
+
+  private updateToolStats(toolName: string, success: boolean, executionTime?: number): void {
+    if (!this.agentStats.toolCallStats.has(toolName)) {
+      this.agentStats.toolCallStats.set(toolName, {
+        count: 0,
+        totalTime: 0,
+        successRate: 0
+      });
+    }
+    
+    const stats = this.agentStats.toolCallStats.get(toolName)!;
+    stats.count++;
+    
+    if (executionTime) {
+      stats.totalTime += executionTime;
+    }
+    
+    const allCalls = Array.from(this.agentStats.toolCallStats.values());
+    const successfulCalls = allCalls.filter(s => s.successRate > 0).length;
+    stats.successRate = success ? 1 : 0;
+  }
+
+  private displayPerformanceStats(): void {
+    console.log(chalk.cyan('\n📊 Agent Performance Statistics:'));
+    console.log(chalk.white(`Total Steps Executed: ${this.agentStats.totalSteps}`));
+    
+    if (this.agentStats.totalSteps > 0) {
+      console.log(chalk.white(`Average Step Duration: ${this.agentStats.averageStepDuration.toFixed(1)}ms`));
+    }
+    
+    console.log(chalk.white(`Total Tool Calls: ${this.agentStats.totalToolCalls}`));
+    
+    if (this.agentStats.toolCallStats.size > 0) {
+      console.log(chalk.cyan('\n🔧 Tool Usage Statistics:'));
+      for (const [toolName, stats] of this.agentStats.toolCallStats) {
+        const avgTime = stats.count > 0 ? (stats.totalTime / stats.count).toFixed(1) : '0';
+        console.log(chalk.white(`  ${toolName}: ${stats.count} calls, avg ${avgTime}ms`));
+      }
+    }
+    
+    console.log('');
+  }
+
+  private displayToolStats(): void {
+    if (this.agentStats.toolCallStats.size === 0) {
+      console.log(chalk.yellow('\n📊 No tool usage statistics available yet.'));
+      return;
+    }
+
+    console.log(chalk.cyan('\n🛠️  Detailed Tool Statistics:'));
+    console.log(chalk.cyan('=' .repeat(50)));
+    
+    for (const [toolName, stats] of this.agentStats.toolCallStats) {
+      const avgTime = stats.count > 0 ? (stats.totalTime / stats.count).toFixed(1) : '0';
+      const totalTime = stats.totalTime.toFixed(1);
+      
+      console.log(chalk.white(`📋 ${toolName}:`));
+      console.log(chalk.gray(`   Calls: ${stats.count}`));
+      console.log(chalk.gray(`   Total Time: ${totalTime}ms`));
+      console.log(chalk.gray(`   Average Time: ${avgTime}ms`));
+      console.log('');
+    }
+  }
+
+  private displayAgentInfo(): void {
+    console.log(chalk.cyan('\n🤖 Agent Information:'));
+    console.log(chalk.white(`User ID: ${this.userId}`));
+    console.log(chalk.white(`Session ID: ${this.currentSession.substring(0, 8)}...`));
+    console.log(chalk.white(`Execution Mode: ${this.executionMode}`));
+    
+    console.log(chalk.cyan('\n📈 Session Statistics:'));
+    console.log(chalk.white(`Steps Executed: ${this.agentStats.totalSteps}`));
+    console.log(chalk.white(`Tool Calls Made: ${this.agentStats.totalToolCalls}`));
+    console.log(chalk.white(`Tools Used: ${this.agentStats.toolCallStats.size}`));
+    
+    if (this.agentStats.currentPlan) {
+      console.log(chalk.cyan('\n📋 Current Plan:'));
+      console.log(chalk.white(`Title: ${this.agentStats.currentPlan.title}`));
+      console.log(chalk.white(`Progress: ${this.agentStats.currentPlan.progress || 0}%`));
+    }
+    
+    console.log('');
+  }
+
+  private resetStats(): void {
+    this.agentStats = {
+      totalSteps: 0,
+      averageStepDuration: 0,
+      totalToolCalls: 0,
+      toolCallStats: new Map(),
+      currentPlan: null,
+      planHistory: []
+    };
+    
+    this.inputStats = {
+      totalInputs: 0,
+      totalCharacters: 0,
+      averageInputLength: 0,
+      multilineInputs: 0
+    };
+  }
+
+  private async showPasteSettings(): Promise<void> {
+    console.log(chalk.cyan('\n⚙️  Paste Settings Configuration'));
+    console.log(chalk.cyan('=' .repeat(45)));
+    
+    console.log(chalk.yellow('\n📋 Current Settings:'));
+    console.log(chalk.white(`Paste Detection Threshold: ${this.pasteThreshold}ms`));
+    console.log(chalk.white(`Auto Multi-line Threshold: ${this.autoMultilineThreshold} lines`));
+    console.log(chalk.white(`Input Preview: ${this.config.enableInputPreview ? 'ENABLED' : 'DISABLED'}`));
+    console.log(chalk.white(`Smart Prompts: ${this.config.enableSmartPrompts ? 'ENABLED' : 'DISABLED'}`));
+    
+    console.log(chalk.yellow('\n🔧 Available Commands:'));
+    console.log(chalk.gray('  /paste-threshold <ms>  - Set paste detection threshold (default: 50ms)'));
+    console.log(chalk.gray('  /multiline-threshold <lines> - Set auto multi-line threshold (default: 3)'));
+    console.log(chalk.gray('  /toggle preview        - Toggle input preview'));
+    console.log(chalk.gray('  /toggle smart          - Toggle smart prompts'));
+    
+    console.log(chalk.yellow('\n💡 Tips:'));
+    console.log(chalk.gray('  • Lower paste threshold = more sensitive paste detection'));
+    console.log(chalk.gray('  • Higher multi-line threshold = less automatic handling'));
+    console.log(chalk.gray('  • Enable preview for better paste experience'));
+    console.log('');
+  }
+
+  private async toggleSmartInput(feature: string): Promise<void> {
+    switch (feature.toLowerCase()) {
+      case 'threshold':
+      case 'paste-threshold':
+        const thresholdInput = await this.promptUser('Enter paste threshold in milliseconds (10-200): ');
+        const threshold = parseInt(thresholdInput);
+        if (threshold >= 10 && threshold <= 200) {
+          this.pasteThreshold = threshold;
+          console.log(chalk.green(`✅ Paste threshold set to ${threshold}ms`));
+        } else {
+          console.log(chalk.red('❌ Invalid threshold. Must be between 10-200ms'));
+        }
+        break;
+
+      case 'multiline':
+      case 'multiline-threshold':
+        const multilineInput = await this.promptUser('Enter auto multi-line threshold (1-10 lines): ');
+        const multilineThreshold = parseInt(multilineInput);
+        if (multilineThreshold >= 1 && multilineThreshold <= 10) {
+          this.autoMultilineThreshold = multilineThreshold;
+          console.log(chalk.green(`✅ Auto multi-line threshold set to ${multilineThreshold} lines`));
+        } else {
+          console.log(chalk.red('❌ Invalid threshold. Must be between 1-10 lines'));
+        }
+        break;
+
+      default:
+        console.log(chalk.red(`❌ Unknown smart input feature: ${feature}`));
+        console.log(chalk.yellow('Available features: threshold, multiline'));
+    }
+  }
+
+  private showSmartInputStatus(): void {
+    console.log(chalk.cyan('\n🧠 Smart Input Status'));
+    console.log(chalk.cyan('=' .repeat(35)));
+    
+    console.log(chalk.yellow('\n📊 Configuration:'));
+    console.log(chalk.white(`Paste Detection: ${this.pasteThreshold}ms threshold`));
+    console.log(chalk.white(`Auto Multi-line: ${this.autoMultilineThreshold}+ lines`));
+    console.log(chalk.white(`Rich Input: ${this.config.enableRichInput ? '✓' : '✗'}`));
+    console.log(chalk.white(`Input Preview: ${this.config.enableInputPreview ? '✓' : '✗'}`));
+    console.log(chalk.white(`Smart Prompts: ${this.config.enableSmartPrompts ? '✓' : '✗'}`));
+    
+    console.log(chalk.yellow('\n📈 Usage Statistics:'));
+    console.log(chalk.white(`Total Inputs: ${this.inputStats.totalInputs}`));
+    console.log(chalk.white(`Multi-line Inputs: ${this.inputStats.multilineInputs}`));
+    console.log(chalk.white(`Average Length: ${this.inputStats.averageInputLength.toFixed(1)} chars`));
+    
+    if (this.inputStats.totalInputs > 0) {
+      const multilinePercent = (this.inputStats.multilineInputs / this.inputStats.totalInputs * 100).toFixed(1);
+      console.log(chalk.gray(`Multi-line Usage: ${multilinePercent}%`));
+    }
+    
+    console.log(chalk.yellow('\n🔧 Commands:'));
+    console.log(chalk.gray('  /smart-input threshold  - Configure paste detection'));
+    console.log(chalk.gray('  /smart-input multiline  - Configure auto multi-line'));
+    console.log(chalk.gray('  /toggle <feature>       - Toggle specific features'));
+    console.log('');
+  }
+
+  private async toggleClaudeMode(): Promise<void> {
+    // Claude模式：优化配置以获得最佳体验
+    const isClaudeMode = this.config.enableRichInput && 
+                        this.config.enableInputPreview && 
+                        this.config.enableSmartPrompts && 
+                        this.pasteThreshold <= 50 && 
+                        this.autoMultilineThreshold <= 3;
+
+    if (isClaudeMode) {
+      // 切换到标准模式
+      this.config.enableRichInput = false;
+      this.config.enableInputPreview = false;
+      this.config.enableSmartPrompts = false;
+      this.pasteThreshold = 100;
+      this.autoMultilineThreshold = 5;
+      
+      console.log(chalk.yellow('\n📝 Standard Mode Activated'));
+      console.log(chalk.gray('Switched to basic input handling for performance.'));
+    } else {
+      // 切换到Claude模式
+      this.config.enableRichInput = true;
+      this.config.enableInputPreview = true;
+      this.config.enableSmartPrompts = true;
+      this.config.enableMultilineInput = true;
+      this.config.showDiffs = true;
+      this.pasteThreshold = 50;
+      this.autoMultilineThreshold = 3;
+      
+      console.log(chalk.cyan('\n🚀 Claude Mode Activated!'));
+      console.log(chalk.white('Enhanced features enabled:'));
+      console.log(chalk.gray('  ✓ Intelligent paste detection (50ms threshold)'));
+      console.log(chalk.gray('  ✓ Smart multi-line handling (3+ lines)'));
+      console.log(chalk.gray('  ✓ Rich input preview and analysis'));
+      console.log(chalk.gray('  ✓ Smart prompts and suggestions'));
+      console.log(chalk.gray('  ✓ Diff display for file operations'));
+      console.log(chalk.gray('  ✓ Enhanced edit-before-send workflow'));
+      
+      console.log(chalk.yellow('\n💡 Claude Mode Features:'));
+      console.log(chalk.gray('  • Paste large content directly - it will be auto-detected'));
+      console.log(chalk.gray('  • Choose to edit, send, or cancel after pasting'));
+      console.log(chalk.gray('  • Rich preview with line numbers and formatting'));
+      console.log(chalk.gray('  • Smart content type detection and handling'));
+      
+      // 设置富输入体验
+      if (!this.isRichInputSetup) {
+        this.setupRichInput();
+        this.isRichInputSetup = true;
+      }
+    }
+    
+    console.log(chalk.green(`\n✅ Mode switched successfully! ${isClaudeMode ? 'Standard' : 'Claude'} mode is now active.`));
+    console.log('');
+  }
+
+  private displayShortcuts(): void {
+    console.log(chalk.cyan('\n🔧 Keyboard Shortcuts:'));
+    console.log(chalk.white('  Ctrl+H                  - Show help'));
+    console.log(chalk.white('  Ctrl+L                  - Clear screen'));
+    console.log(chalk.white('  Ctrl+R                  - Show command history'));
+    console.log(chalk.white('  Ctrl+M                  - Toggle multi-line mode'));
+    console.log(chalk.white('  Ctrl+S                  - Show input statistics'));
+    console.log(chalk.white('  Ctrl+C                  - Cancel/Exit'));
+    console.log(chalk.white('  ↑/↓ Arrow Keys          - Navigate command history'));
+    console.log(chalk.white('  Tab                     - Smart completion'));
+    console.log(chalk.white('  ?                       - Show shortcuts'));
+    console.log(chalk.white('  /status                 - Show status'));
+    console.log(chalk.white('  /exit, /quit            - Exit the application'));
+    console.log('');
+  }
+
+  private displayStatus(): void {
+    console.log(chalk.cyan('\n📊 Session Information:'));
+    console.log(chalk.white(`Session ID: ${this.currentSession}`));
+    console.log(chalk.white(`User ID: ${this.userId}`));
+    console.log(chalk.white(`Execution Mode: ${this.executionMode}`));
+    console.log(chalk.white(`Conversation History: ${this.config.enableConversationHistory ? 'ENABLED' : 'DISABLED'}`));
+    
+    if (this.config.enableConversationHistory) {
+      console.log(chalk.gray(`Memory Instance: ${this.getInteractiveMemory().id}`));
+      console.log(chalk.gray(`Memory Name: ${this.getInteractiveMemory().name}`));
+    }
+    
+    console.log('');
+  }
+
+  private async openAdvancedEditor(): Promise<void> {
+    try {
+      console.log(chalk.cyan('\n🖋️  Opening Advanced Editor...'));
+      console.log(chalk.gray('Use Ctrl+S to send, Ctrl+C to cancel'));
+      console.log('');
+
+      const result = await ClaudeStyleEditor.edit(
+        'Enter your message (advanced editor with line numbers):',
+        '',
+        {
+          theme: 'dark',
+          showLineNumbers: true,
+          maxHeight: 15,
+          border: true
+        }
+      );
+
+      if (result.cancelled) {
+        console.log(chalk.yellow('📝 Editor cancelled'));
+        return;
+      }
+
+      if (result.content.trim()) {
+        console.log(chalk.green('✅ Content from advanced editor:'));
+        console.log(chalk.gray(`📊 ${result.lines.length} lines, ${result.content.length} characters`));
+        console.log('');
+        
+        this.addToHistory(result.content);
+        await this.sendUserMessage(result.content);
+      } else {
+        console.log(chalk.yellow('📝 No content entered'));
+      }
+    } catch (error) {
+      console.log(chalk.red('❌ Advanced editor error:'), error);
+    }
+  }
+
+  private async openAdvancedEditorWithPaste(): Promise<void> {
+    try {
+      console.log(chalk.cyan('\n🖋️  Opening Advanced Editor for Paste Content...'));
+      console.log(chalk.gray('Perfect for editing large pasted content'));
+      console.log('');
+
+      // 检查是否有粘贴的内容
+      let pasteContent = '';
+      if (this.inputBuffer.length > 0) {
+        pasteContent = this.inputBuffer.join('\n');
+        this.inputBuffer = []; // 清空buffer
+        console.log(chalk.blue('📋 Found pasted content, loading into editor...'));
+      }
+
+      const result = await ClaudeStyleEditor.edit(
+        'Edit your pasted content (advanced editor):',
+        pasteContent,
+        {
+          theme: 'dark',
+          showLineNumbers: true,
+          maxHeight: 20,
+          border: true
+        }
+      );
+
+      if (result.cancelled) {
+        console.log(chalk.yellow('📝 Editor cancelled'));
+        return;
+      }
+
+      if (result.content.trim()) {
+        console.log(chalk.green('✅ Content from advanced editor:'));
+        console.log(chalk.gray(`📊 ${result.lines.length} lines, ${result.content.length} characters`));
+        console.log('');
+        
+        this.inputStats.multilineInputs++;
+        this.addToHistory(result.content);
+        await this.sendUserMessage(result.content);
+      } else {
+        console.log(chalk.yellow('📝 No content entered'));
+      }
+    } catch (error) {
+      console.log(chalk.red('❌ Advanced editor error:'), error);
+    }
+  }
+
+  private async openSystemEditor(): Promise<void> {
+    try {
+      console.log(chalk.cyan('\n🖋️  Opening System Editor...'));
+      console.log(chalk.gray('Your default editor will open. Save and close to continue.'));
+      console.log('');
+
+      const result = await SystemEditor.quickEdit('Enter your message (system editor):');
+
+      if (result.cancelled) {
+        console.log(chalk.yellow('📝 Editor cancelled'));
+        return;
+      }
+
+      if (result.content.trim()) {
+        console.log(chalk.green('✅ Content from system editor:'));
+        console.log(chalk.gray(`📊 ${result.lines.length} lines, ${result.content.length} characters`));
+        console.log('');
+        
+        this.addToHistory(result.content);
+        await this.sendUserMessage(result.content);
+      } else {
+        console.log(chalk.yellow('📝 No content entered'));
+      }
+    } catch (error) {
+      console.log(chalk.red('❌ System editor error:'), error);
+    }
+  }
+
+  private async openSystemCodeEditor(language: string): Promise<void> {
+    try {
+      console.log(chalk.cyan(`\n🖋️  Opening System Code Editor for ${language}...`));
+      console.log(chalk.gray('Your default editor will open with syntax highlighting.'));
+      console.log('');
+
+      const result = await SystemEditor.codeEdit(language);
+
+      if (result.cancelled) {
+        console.log(chalk.yellow('📝 Editor cancelled'));
+        return;
+      }
+
+      if (result.content.trim()) {
+        console.log(chalk.green('✅ Code from system code editor:'));
+        console.log(chalk.gray(`📊 ${result.lines.length} lines, ${result.content.length} characters`));
+        console.log('');
+        
+        this.inputStats.multilineInputs++;
+        this.addToHistory(result.content);
+        await this.sendUserMessage(result.content);
+      } else {
+        console.log(chalk.yellow('📝 No content entered'));
+      }
+    } catch (error) {
+      console.log(chalk.red('❌ System code editor error:'), error);
+    }
+  }
+
+  private async openSystemInteractiveEditor(): Promise<void> {
+    try {
+      console.log(chalk.cyan('\n🖋️  Opening System Interactive Editor...'));
+      console.log(chalk.gray('Interactive mode with content type selection.'));
+      console.log('');
+
+      const result = await SystemEditor.interactiveEdit();
+
+      if (result.cancelled) {
+        console.log(chalk.yellow('📝 Editor cancelled'));
+        return;
+      }
+
+      if (result.content.trim()) {
+        console.log(chalk.green('✅ Content from system interactive editor:'));
+        console.log(chalk.gray(`📊 ${result.lines.length} lines, ${result.content.length} characters`));
+        console.log('');
+        
+        this.inputStats.multilineInputs++;
+        this.addToHistory(result.content);
+        await this.sendUserMessage(result.content);
+      } else {
+        console.log(chalk.yellow('📝 No content entered'));
+      }
+    } catch (error) {
+      console.log(chalk.red('❌ System interactive editor error:'), error);
+    }
+  }
+
+  private async openEnhancedMultilineEditor(): Promise<void> {
+    try {
+      console.log(chalk.cyan('\n🖋️  Opening Enhanced Multiline Editor...'));
+      console.log(chalk.gray('Use ↑↓ for line navigation, Ctrl+M to submit, Ctrl+C to cancel'));
+      console.log('');
+
+      const content = await createEnhancedMultilineInput(this.rl, {
+        initialContent: '',
+        showLineNumbers: true,
+        enableSyntaxHighlight: true,
+        promptPrefix: '📝'
+      });
+
+      if (content.trim()) {
+        console.log(chalk.green('✅ Content from enhanced multiline editor:'));
+        console.log(chalk.gray(`📊 ${content.split('\n').length} lines, ${content.length} characters`));
+        console.log('');
+        
+        this.inputStats.multilineInputs++;
+        this.addToHistory(content);
+        await this.sendUserMessage(content);
+      } else {
+        console.log(chalk.yellow('📝 No content entered'));
+      }
+    } catch (error) {
+      console.log(chalk.yellow('📝 Enhanced multiline editor cancelled'));
+    }
+  }
+
+  private async openEnhancedMultilineEditorWithPaste(): Promise<void> {
+    try {
+      console.log(chalk.cyan('\n🖋️  Opening Enhanced Multiline Editor for Paste Content...'));
+      console.log(chalk.gray('Perfect for editing large pasted content with line navigation'));
+      console.log('');
+
+      // 检查是否有粘贴的内容
+      let pasteContent = '';
+      if (this.inputBuffer.length > 0) {
+        pasteContent = this.inputBuffer.join('\n');
+        this.inputBuffer = []; // 清空buffer
+        console.log(chalk.blue('📋 Found pasted content, loading into editor...'));
+      }
+
+      const content = await createEnhancedMultilineInput(this.rl, {
+        initialContent: pasteContent,
+        showLineNumbers: true,
+        enableSyntaxHighlight: true,
+        promptPrefix: '📝'
+      });
+
+      if (content.trim()) {
+        console.log(chalk.green('✅ Content from enhanced multiline editor:'));
+        console.log(chalk.gray(`📊 ${content.split('\n').length} lines, ${content.length} characters`));
+        console.log('');
+        
+        this.inputStats.multilineInputs++;
+        this.addToHistory(content);
+        await this.sendUserMessage(content);
+      } else {
+        console.log(chalk.yellow('📝 No content entered'));
+      }
+    } catch (error) {
+      console.log(chalk.yellow('📝 Enhanced multiline editor cancelled'));
     }
   }
 } 

@@ -3,7 +3,7 @@ import { CodingAgent } from '@continue-reasoning/agents';
 import path from 'path';
 
 async function demonstrateTaskProcessing() {
-    console.log('🎯 Demonstrating Task Processing System with Thinking...\n');
+    console.log('🎯 Demonstrating Task Processing System...\n');
 
     // 启动全局事件总线
     await globalEventBus.start();
@@ -36,12 +36,6 @@ async function demonstrateTaskProcessing() {
             promptOptimization: {
                 mode: 'standard',
                 maxTokens: 8192
-            },
-            // 启用思考系统
-            enableThinkingSystem: true,
-            thinkingOptions: {
-                maxConversationHistory: 10,
-                maxExecutionHistory: 5
             }
         },
         [thinkingContext],  // 额外的contexts（coding context 会自动添加）
@@ -50,14 +44,7 @@ async function demonstrateTaskProcessing() {
 
     console.log('🔧 Setting up agent...');
     await agent.setup();
-
-    // 检查思考系统是否启用
-    if (agent.isThinkingEnabled()) {
-        console.log('✅ Agent is ready with thinking system enabled!');
-    } else {
-        console.error('❌ Agent thinking system is not enabled');
-        return;
-    }
+    console.log('✅ Agent is ready!');
 
     // 订阅思考事件
     let thinkingEventCount = 0;
@@ -129,7 +116,7 @@ async function demonstrateTaskProcessing() {
 The project should be production-ready with proper code organization, error handling, and documentation. Use modern Python practices and include type hints where appropriate.`;
 
     // const task = `Create a simple Python script that calculates the factorial of a number in our test workspace. Please include proper error handling and comments.`;
-    console.log('\n📋 Processing complex multi-step task with thinking system...\n');
+    console.log('\n📋 Processing complex multi-step task...\n');
 
     try {
         console.log(`🚀 Starting complex task:\n"${task}"\n`);
@@ -139,7 +126,7 @@ The project should be production-ready with proper code organization, error hand
         
         // 🆕 启用每步保存 prompt 功能
         const promptSaveOptions = {
-            savePromptPerStep: true,                    // 启用每步保存
+            savePromptPerStep: true,                    // 启用prompt文件保存
             promptSaveDir: '.prompt-saving/task-step-prompts',       // 保存目录
             promptSaveFormat: 'both' as const           // 同时保存 markdown 和 json
         };
@@ -147,7 +134,7 @@ The project should be production-ready with proper code organization, error hand
         console.log('📝 Prompt saving enabled:');
         console.log(`   📁 Save directory: ${promptSaveOptions.promptSaveDir}`);
         console.log(`   📋 Save format: ${promptSaveOptions.promptSaveFormat}`);
-        console.log('   ⏱️  Will save prompt after each step for real-time analysis\n');
+        console.log('   💾 Will save all prompts after completion for analysis\n');
         
         // 使用更多的步骤来处理复杂任务，并启用 prompt 保存
         await agent.startWithUserInput(task, 40, promptSaveOptions);
@@ -158,136 +145,96 @@ The project should be production-ready with proper code organization, error hand
         console.log(`\n✅ Task processing completed!`);
         console.log(`⏱️  Execution time: ${executionTime}ms`);
         
-        // 显示思考系统统计信息
-        const thinkingStats = agent.getThinkingStats();
-        if (thinkingStats && !thinkingStats.error) {
-            console.log('\n📊 Thinking System Performance Analysis:');
-            console.log(`   🧠 Total thinking events: ${thinkingEventCount}`);
-            console.log(`   💬 Total reply events: ${replyEventCount}`);
-            console.log(`   📈 Execution steps: ${thinkingStats.execution?.totalSteps || 0}`);
-            console.log(`   💬 Conversation messages: ${thinkingStats.conversation?.totalMessages || 0}`);
-            console.log(`   ⚡ Average thinking per step: ${thinkingEventCount > 0 ? (thinkingEventCount / Math.max(thinkingStats.execution?.totalSteps || 1, 1)).toFixed(2) : 0}`);
-            console.log(`   💭 Communication ratio: ${thinkingEventCount > 0 ? (replyEventCount / thinkingEventCount * 100).toFixed(1) : 0}%`);
-        }
+        // 显示基本统计信息
+        console.log('\n📊 Task Processing Performance Analysis:');
+        console.log(`   🧠 Total thinking events: ${thinkingEventCount}`);
+        console.log(`   💬 Total reply events: ${replyEventCount}`);
+        console.log(`   📈 Execution steps: ${agent.currentStep}`);
+        console.log(`   ⚡ Average thinking per step: ${thinkingEventCount > 0 ? (thinkingEventCount / Math.max(agent.currentStep, 1)).toFixed(2) : 0}`);
+        console.log(`   💭 Communication ratio: ${thinkingEventCount > 0 ? (replyEventCount / thinkingEventCount * 100).toFixed(1) : 0}%`);
         
         // 🆕 添加 Prompt 分析功能
         console.log('\n🔍 Analyzing Prompt Evolution...');
         try {
-            const thinkingSystem = (agent as any).thinkingSystem;
-            if (thinkingSystem) {
-                // 1. 获取 prompt 统计信息
-                const promptStats = thinkingSystem.getPromptStats();
-                console.log('\n📈 Prompt Statistics:');
-                console.log(`   📊 Total steps with prompts: ${promptStats.totalStepsWithPrompts}`);
-                console.log(`   📏 Average prompt length: ${promptStats.averagePromptLength} characters`);
-                console.log(`   📐 Prompt length range: ${promptStats.minPromptLength} - ${promptStats.maxPromptLength} characters`);
-                
-                if (promptStats.promptLengthTrend.length > 0) {
-                    console.log('   📈 Length trend by step:');
-                    promptStats.promptLengthTrend.forEach((trend: { stepNumber: number; length: number }) => {
-                        const lengthKB = (trend.length / 1024).toFixed(1);
-                        console.log(`      Step ${trend.stepNumber}: ${trend.length} chars (${lengthKB} KB)`);
-                    });
-                }
-
-                // 2. 分析 prompt 演化模式
-                const evolution = thinkingSystem.analyzePromptEvolution();
-                console.log('\n🔄 Prompt Evolution Analysis:');
-                console.log(`   📊 Growth pattern: ${evolution.lengthGrowthPattern}`);
-                console.log(`   📈 Average growth per step: ${evolution.averageGrowthPerStep} characters`);
-                
-                if (evolution.significantChanges.length > 0) {
-                    console.log('   🚨 Significant changes detected:');
-                    evolution.significantChanges.forEach((change: { fromStep: number; toStep: number; changePercent: number }) => {
-                        const direction = change.changePercent > 0 ? '📈' : '📉';
-                        console.log(`      ${direction} Step ${change.fromStep} → ${change.toStep}: ${change.changePercent > 0 ? '+' : ''}${change.changePercent}%`);
-                    });
-                } else {
-                    console.log('   ✅ No significant changes in prompt length detected');
-                }
-
-                // 3. 保存 prompt 历史到文件
-                console.log('\n💾 Saving prompt history for analysis...');
-                
-                // 创建输出目录
-                const outputDir = path.join(process.cwd(), 'task-analysis');
-                if (!require('fs').existsSync(outputDir)) {
-                    require('fs').mkdirSync(outputDir, { recursive: true });
-                }
-
-                const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-                
-                // 保存 Markdown 格式（便于阅读）
-                const markdownFile = path.join(outputDir, `task-prompts-${timestamp}.md`);
-                await thinkingSystem.savePromptHistory(markdownFile, {
-                    formatType: 'markdown',
-                    includeMetadata: true
-                });
-                console.log(`   📝 Full prompt history saved: ${markdownFile}`);
-
-                // 保存 JSON 格式（便于程序分析）
-                const jsonFile = path.join(outputDir, `task-prompts-${timestamp}.json`);
-                await thinkingSystem.savePromptHistory(jsonFile, {
-                    formatType: 'json',
-                    includeMetadata: true
-                });
-                console.log(`   🔗 JSON data saved: ${jsonFile}`);
-
-                // 保存最近的 prompt（用于快速查看）
-                const recentFile = path.join(outputDir, 'recent-task-prompts.md');
-                await thinkingSystem.saveRecentPrompts(recentFile, 3);
-                console.log(`   ⏰ Recent prompts saved: ${recentFile}`);
-
-                // 4. 提供分析建议
-                console.log('\n💡 Prompt Optimization Insights:');
-                
-                if (promptStats.averagePromptLength > 8000) {
-                    console.log('   ⚠️  Large prompts detected (avg > 8K chars) - consider optimizing context management');
-                }
-                
-                if (evolution.lengthGrowthPattern === 'increasing' && evolution.averageGrowthPerStep > 200) {
-                    console.log('   📈 Fast prompt growth detected - review history retention settings');
-                }
-                
-                if (evolution.lengthGrowthPattern === 'stable') {
-                    console.log('   ✅ Stable prompt length - good context management');
-                }
-                
-                if (promptStats.promptLengthTrend.length > 0) {
-                    const finalLength = promptStats.promptLengthTrend[promptStats.promptLengthTrend.length - 1].length;
-                    const tokenEstimate = Math.round(finalLength / 4); // Rough token estimation
-                    console.log(`   🎯 Final prompt estimated tokens: ~${tokenEstimate} tokens`);
-                    
-                    if (tokenEstimate > 6000) {
-                        console.log('   💰 High token usage - consider prompt compression techniques');
-                    }
-                }
-
-                console.log(`\n📁 All analysis files saved in: ${outputDir}`);
-                console.log('   🔍 Use the Markdown file to review prompt evolution');
-                console.log('   🔗 Use the JSON file for programmatic analysis');
-                console.log('   📊 Look for optimization opportunities in length trends');
-                
-                // 🆕 提供每步保存文件的信息
-                console.log(`\n📋 Step-by-step prompt files saved in: ${promptSaveOptions.promptSaveDir}`);
-                console.log('   📝 Each step has individual Markdown and JSON files');
-                console.log('   🔍 Review step-by-step prompt evolution');
-                console.log('   📊 Compare prompt changes between consecutive steps');
-                console.log('   💡 Identify specific points where prompt optimization is needed');
-                
-                // 检查每步文件是否存在
-                try {
-                    const stepFiles = require('fs').readdirSync(promptSaveOptions.promptSaveDir);
-                    const markdownFiles = stepFiles.filter((f: string) => f.endsWith('.md')).length;
-                    const jsonFiles = stepFiles.filter((f: string) => f.endsWith('.json')).length;
-                    console.log(`   📄 Generated files: ${markdownFiles} Markdown, ${jsonFiles} JSON`);
-                } catch (error) {
-                    console.log('   ℹ️  Step files directory not found or empty');
-                }
-                
-            } else {
-                console.log('   ℹ️  Thinking system not available for prompt analysis');
+            // 获取 prompt 处理器统计信息
+            const promptStats = agent.getPromptProcessorStats();
+            console.log('\n📈 Prompt Processor Statistics:');
+            console.log(`   📊 Total messages: ${promptStats.totalMessages}`);
+            console.log(`   📏 Current step: ${promptStats.currentStep}`);
+            console.log(`   📐 Has final answer: ${promptStats.hasFinalAnswer}`);
+            
+            if (promptStats.finalAnswer) {
+                console.log(`   ✅ Final answer: ${promptStats.finalAnswer.substring(0, 100)}${promptStats.finalAnswer.length > 100 ? '...' : ''}`);
             }
+
+            // 获取当前 prompt 内容用于分析
+            const currentPrompt = await agent.getPrompt();
+            const promptLength = currentPrompt.length;
+            const tokenEstimate = Math.round(promptLength / 4); // Rough token estimation
+            
+            console.log('\n💡 Prompt Analysis:');
+            console.log(`   📏 Current prompt length: ${promptLength} characters`);
+            console.log(`   🎯 Estimated tokens: ~${tokenEstimate} tokens`);
+            
+            if (tokenEstimate > 6000) {
+                console.log('   💰 High token usage - consider prompt compression techniques');
+            } else if (tokenEstimate > 4000) {
+                console.log('   ⚠️  Moderate token usage - monitor for efficiency');
+            } else {
+                console.log('   ✅ Reasonable token usage');
+            }
+
+            // 保存当前 prompt 到文件
+            console.log('\n💾 Saving prompt analysis...');
+            
+            // 创建输出目录
+            const outputDir = path.join(process.cwd(), 'task-analysis');
+            if (!require('fs').existsSync(outputDir)) {
+                require('fs').mkdirSync(outputDir, { recursive: true });
+            }
+
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+            
+            // 保存当前 prompt
+            const promptFile = path.join(outputDir, `task-prompt-${timestamp}.md`);
+            require('fs').writeFileSync(promptFile, `# Task Processing Prompt Analysis\n\n**Generated:** ${new Date().toISOString()}\n**Task:** ${task.substring(0, 200)}...\n**Steps:** ${agent.currentStep}\n**Prompt Length:** ${promptLength} characters\n\n## Current Prompt\n\n\`\`\`\n${currentPrompt}\n\`\`\``);
+            console.log(`   📝 Current prompt saved: ${promptFile}`);
+            
+            // 保存统计信息
+            const statsFile = path.join(outputDir, `task-stats-${timestamp}.json`);
+            const stats = {
+                timestamp: new Date().toISOString(),
+                task: task,
+                executionTime,
+                thinkingEventCount,
+                replyEventCount,
+                currentStep: agent.currentStep,
+                promptStats,
+                promptLength,
+                tokenEstimate
+            };
+            require('fs').writeFileSync(statsFile, JSON.stringify(stats, null, 2));
+            console.log(`   🔗 Statistics saved: ${statsFile}`);
+
+            console.log(`\n📁 All analysis files saved in: ${outputDir}`);
+            
+            // 🆕 提供每步保存文件的信息
+            console.log(`\n📋 Step prompt files saved in: ${promptSaveOptions.promptSaveDir}`);
+            console.log('   📝 Each step has individual Markdown and JSON files');
+            console.log('   🔍 Review step-by-step prompt evolution');
+            console.log('   📊 Compare prompt changes between consecutive steps');
+            console.log('   💡 Identify specific points where prompt optimization is needed');
+            
+            // 检查每步文件是否存在
+            try {
+                const stepFiles = require('fs').readdirSync(promptSaveOptions.promptSaveDir);
+                const markdownFiles = stepFiles.filter((f: string) => f.endsWith('.md')).length;
+                const jsonFiles = stepFiles.filter((f: string) => f.endsWith('.json')).length;
+                console.log(`   📄 Generated files: ${markdownFiles} Markdown, ${jsonFiles} JSON`);
+            } catch (error) {
+                console.log('   ℹ️  Step files directory not found or empty');
+            }
+            
         } catch (error) {
             console.error(`   ❌ Error during prompt analysis: ${error}`);
         }

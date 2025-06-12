@@ -4,6 +4,7 @@ import { render } from "./utils";
 import { IEventBus } from "./events/eventBus";
 import { SupportedModel } from "./models";
 import { InteractiveMessage, MessageHandler, SubscriptionConfig, InteractiveCapabilities } from "./events/types";
+import Logger, { logger } from "./utils/logger";
 
 // 从 agent.ts 导入类型定义
 export type LLMProvider = 'openai' | 'anthropic' | 'google';
@@ -126,12 +127,6 @@ export interface IContext<T extends z.ZodObject<any>>{
     data: z.infer<T>;
 
     /**
-     * 思考系统的 Prompt 上下文结构
-     * 包含工作流程、状态、指导原则和示例，用于结构化的 prompt 生成
-     */
-    promptCtx?: PromptCtx;
-
-    /**
      * MCP服务器配置，直接在Context中定义，而不是从配置文件加载。
      * 每个Context可以关联一个或多个MCP服务器，这些服务器的工具将自动注入到Context的toolSet中。
      * 
@@ -213,7 +208,7 @@ export interface IContext<T extends z.ZodObject<any>>{
      * 2. A PromptCtx structure for the thinking system
      * 
      * When returning PromptCtx, the structure should contain:
-     * - workflow: Step-by-step process description
+     * - workflow: Process description and methodology
      * - status: Current state and dynamic information
      * - guideline: Rules, best practices, and constraints
      * - examples: Usage examples and common scenarios
@@ -640,6 +635,220 @@ export interface IInteractiveLayer {
     onAgentStateChange?(agentId: string, state: any): Promise<void>;
 }
 
+// ===== Claude Code 专用接口扩展 =====
+
+/**
+ * Claude Code 风格的界面配置
+ * 借鉴 ModularCLIClient 的配置驱动模式
+ */
+export interface ClaudeCodeUIConfig {
+  // 布局配置
+  layout: {
+    showContextPanel: boolean;
+    contextPanelWidth: number;
+    inputAreaHeight: number;
+    statusBarVisible: boolean;
+    splitViewMode: 'horizontal' | 'vertical' | 'auto';
+  };
+  
+  // 主题配置 (借鉴 DisplayConfig)
+  theme: {
+    mode: 'dark' | 'light' | 'auto';
+    primaryColor: string;
+    accentColor: string;
+    enableAnimations: boolean;
+  };
+  
+  // vim模式配置 (借鉴 EditorConfig)
+  vim: {
+    enabled: boolean;
+    currentMode: 'normal' | 'insert' | 'command';
+    showModeInStatus: boolean;
+    keyBindings: Record<string, string>;
+  };
+  
+  // 状态栏配置
+  statusBar: {
+    showExecutionMode: boolean;
+    showContextInfo: boolean;
+    showShortcuts: boolean;
+    customMessages: string[];
+    position: 'top' | 'bottom';
+  };
+  
+  // 输入处理配置 (借鉴 InputProcessorConfig)
+  input: {
+    enableAutoComplete: boolean;
+    enablePasteDetection: boolean;
+    enableMultilineMode: boolean;
+    historySize: number;
+  };
+}
+
+/**
+ * Claude Code 特有的界面状态
+ */
+export interface ClaudeCodeState {
+  // 当前输入状态
+  inputMode: 'normal' | 'vim_normal' | 'vim_insert' | 'vim_command';
+  
+  // 上下文信息
+  contextInfo: {
+    usagePercent: number;
+    autoCompactThreshold: number;
+    activeMemorySize: string;
+    totalMessages: number;
+  };
+  
+  // 界面显示状态
+  uiState: {
+    contextPanelVisible: boolean;
+    commandPaletteVisible: boolean;
+    historyPanelVisible: boolean;
+    isProcessing: boolean;
+  };
+  
+  // 自动接受编辑设置
+  autoAcceptEdits: boolean;
+  
+  // 快捷键状态
+  shortcuts: {
+    enabled: boolean;
+    customBindings: Record<string, string>;
+  };
+}
+
+/**
+ * Claude Code 专用的管理器接口
+ * 借鉴 ModularCLIClient 的管理器分离模式
+ */
+export interface IClaudeCodeUIManager {
+  initialize(): Promise<void>;
+  cleanup(): Promise<void>;
+  
+  // UI 状态管理
+  updateUIConfig(config: Partial<ClaudeCodeUIConfig>): void;
+  getUIConfig(): ClaudeCodeUIConfig;
+  
+  updateState(state: Partial<ClaudeCodeState>): void;
+  getCurrentState(): ClaudeCodeState;
+  
+  // 组件控制
+  showContextPanel(show: boolean): void;
+  showCommandPalette(show: boolean): void;
+  updateContextInfo(info: Partial<ClaudeCodeState['contextInfo']>): void;
+}
+
+export interface IClaudeCodeVimManager {
+  initialize(): Promise<void>;
+  cleanup(): Promise<void>;
+  
+  // vim模式控制
+  setVimMode(enabled: boolean): void;
+  switchVimMode(mode: 'normal' | 'insert' | 'command'): void;
+  getCurrentVimMode(): 'normal' | 'insert' | 'command';
+  
+  // 键盘处理
+  handleVimKeypress(key: string, event: KeyboardEvent): boolean;
+  getVimStatusText(): string;
+}
+
+export interface IClaudeCodeStatusManager {
+  initialize(): Promise<void>;
+  cleanup(): Promise<void>;
+  
+  // 状态栏控制
+  updateStatusMessage(message: string): void;
+  setAutoAcceptEdits(enabled: boolean): void;
+  updateExecutionMode(mode: 'auto' | 'manual' | 'supervised'): void;
+  
+  // 快捷键显示
+  getAvailableShortcuts(): Array<{
+    key: string;
+    description: string;
+    action: string;
+  }>;
+  
+  // 上下文信息
+  updateContextUsage(percent: number): void;
+  updateMemoryInfo(info: string): void;
+}
+
+/**
+ * 🎨 Claude Code 风格的交互层接口
+ * 扩展标准 IInteractiveLayer，添加现代化UI特性
+ * 借鉴 ModularCLIClient 的架构模式
+ */
+export interface IClaudeCodeLayer extends IInteractiveLayer {
+  // 管理器访问 (借鉴 ModularCLIClient 的管理器访问模式)
+  getUIManager(): IClaudeCodeUIManager;
+  getVimManager(): IClaudeCodeVimManager;
+  getStatusManager(): IClaudeCodeStatusManager;
+  
+  // Claude Code 特有方法
+  getUIConfig(): ClaudeCodeUIConfig;
+  updateUIConfig(config: Partial<ClaudeCodeUIConfig>): void;
+  
+  getCurrentState(): ClaudeCodeState;
+  updateState(state: Partial<ClaudeCodeState>): void;
+  
+  // vim模式控制
+  setVimMode(enabled: boolean): void;
+  switchVimMode(mode: 'normal' | 'insert' | 'command'): void;
+  
+  // 界面元素控制
+  showContextPanel(show: boolean): void;
+  showCommandPalette(show: boolean): void;
+  updateContextInfo(info: Partial<ClaudeCodeState['contextInfo']>): void;
+  
+  // 状态栏控制
+  updateStatusMessage(message: string): void;
+  setAutoAcceptEdits(enabled: boolean): void;
+  
+  // 快捷键和操作提示
+  getAvailableShortcuts(): Array<{
+    key: string;
+    description: string;
+    action: string;
+  }>;
+  
+  // 主题控制
+  setTheme(theme: 'dark' | 'light' | 'auto'): void;
+  
+  // 🆕 配置管理 (借鉴 ModularCLIClient)
+  configure(config: ClaudeCodeLayerConfig): void;
+  getConfig(): ClaudeCodeLayerConfig;
+  
+  // 🆕 生命周期管理
+  restart(): Promise<void>;
+  getStatus(): {
+    isInitialized: boolean;
+    isRunning: boolean;
+    managersStatus: Record<string, boolean>;
+  };
+}
+
+/**
+ * Claude Code Layer 的配置接口
+ * 借鉴 ModularCLIClient 的配置结构
+ */
+export interface ClaudeCodeLayerConfig {
+  ui?: Partial<ClaudeCodeUIConfig>;
+  vim?: {
+    enabled?: boolean;
+    keyBindings?: Record<string, string>;
+  };
+  statusBar?: {
+    enabled?: boolean;
+    showShortcuts?: boolean;
+  };
+  general?: {
+    enableDebugMode?: boolean;
+    logLevel?: 'debug' | 'info' | 'warn' | 'error';
+    autoSave?: boolean;
+  };
+}
+
 // First define the schemas for tool calls
 export const ToolCallDefinitionSchema = z.object({
     type: z.literal("function"),
@@ -701,4 +910,180 @@ export interface IUserInputTool extends ITool<any, any, IAgent> {
  * Configuration for the agent
  */
 export interface Config {
+}
+
+// ===== PromptProcessor 相关接口定义 =====
+
+/**
+ * 聊天消息类型，用于 PromptProcessor 的历史管理
+ */
+export interface ChatMessage {
+    role: 'user' | 'agent' | 'system';
+    step: number;
+    content: string;
+    timestamp: string;
+}
+
+/**
+ * Agent 步骤类型，用于 PromptProcessor 的步骤处理
+ */
+export interface AgentStep<T extends StandardExtractorResult = StandardExtractorResult> {
+    stepIndex: number;
+    rawText?: string;
+    extractorResult?: T;
+    error?: string;
+    toolCalls?: Array<{
+        name: string;
+        call_id: string;
+        params: any;
+    }>;
+    toolCallResults?: Array<{
+        name: string;
+        call_id: string;
+        params: any;
+        status: 'pending' | 'succeed' | 'failed';
+        result?: any;
+        message?: string;
+        executionTime?: number; // 毫秒
+    }>;
+}
+
+/**
+ * PromptProcessor 的提取器结果基础接口
+ */
+export interface ExtractorResult {
+    finalAnswer?: string;
+}
+
+/**
+ * 标准提取器结果，包含思考和最终答案
+ */
+export interface StandardExtractorResult extends ExtractorResult {
+    thinking?: string;
+    finalAnswer?: string;
+}
+
+/**
+ * PromptProcessor 抽象基类接口
+ * 用于管理 Agent 的 prompt 生成、历史记录和步骤处理
+ */
+export interface IPromptProcessor<TExtractorResult extends ExtractorResult> {
+    // 基础属性
+    systemPrompt: string;
+    currentPrompt: string;
+    chatMessagesHistory: ChatMessage[];
+    finalAnswer: string | null;
+    
+    // 工具调用控制
+    enableToolCallsForStep: (stepIndex: number) => boolean;
+    setEnableToolCallsForStep(enableToolCallsForStep: (stepIndex: number) => boolean): void;
+    
+    // 核心抽象方法
+    textExtractor(responseText: string): TExtractorResult;
+    renderExtractorResultToPrompt(extractorResult: TExtractorResult, stepIndex: number): void;
+    renderChatMessageToPrompt(messages: ChatMessage[]): void;
+    renderToolCallToPrompt(toolResults: AgentStep['toolCallResults'], stepIndex: number): void;
+    formatPrompt(stepIndex: number): string | Promise<string>;
+    
+    // 最终答案管理
+    resetFinalAnswer(): void;
+    setFinalAnswer(finalAnswer: string): void;
+    getFinalAnswer(): string | null;
+    
+    // 步骤结果处理
+    processStepResult(step: AgentStep): void;
+
+    /**
+     * 获取步骤 prompts，支持范围过滤
+     * @param stepRange 可选的步骤范围 { start: number, end: number }
+     * @returns 步骤 prompts 数组
+     */
+    getStepPrompts(stepRange?: { start: number; end: number }): string[];
+
+    /**
+     * 更新 system prompt
+     * @param newSystemPrompt 新的 system prompt
+     */
+    updateSystemPrompt(newSystemPrompt: string): void;
+}
+
+/**
+ * PromptProcessor 抽象基类
+ * 提供基础实现，子类需要实现抽象方法
+ */
+export abstract class BasePromptProcessor<TExtractorResult extends ExtractorResult> 
+    implements IPromptProcessor<TExtractorResult> {
+    
+    systemPrompt: string = '';
+    currentPrompt: string = '';
+    chatMessagesHistory: ChatMessage[] = [];
+    finalAnswer: string | null = null;
+    enableToolCallsForStep: (stepIndex: number) => boolean = () => true;
+
+    setEnableToolCallsForStep(enableToolCallsForStep: (stepIndex: number) => boolean): void {
+        this.enableToolCallsForStep = enableToolCallsForStep;
+    }
+
+    abstract textExtractor(responseText: string): TExtractorResult;
+    abstract renderExtractorResultToPrompt(extractorResult: TExtractorResult, stepIndex: number): void;
+    abstract renderChatMessageToPrompt(messages: ChatMessage[]): void;
+    abstract renderToolCallToPrompt(toolResults: AgentStep['toolCallResults'], stepIndex: number): void;
+    abstract formatPrompt(stepIndex: number): string | Promise<string>;
+
+    /**
+     * 获取指定步骤的 prompt
+     * @param stepIndex 步骤索引
+     * @returns 指定步骤的 prompt 字符串
+     */
+    abstract getPrompt(stepIndex: number): string | Promise<string>;
+
+    /**
+     * 获取步骤 prompts，支持范围过滤
+     * @param stepRange 可选的步骤范围 { start: number, end: number }
+     * @returns 步骤 prompts 数组
+     */
+    abstract getStepPrompts(stepRange?: { start: number; end: number }): string[];
+
+    resetFinalAnswer(): void {
+        this.finalAnswer = null;
+    }
+    
+    setFinalAnswer(finalAnswer: string): void {
+        this.finalAnswer = finalAnswer;
+    }
+    
+    getFinalAnswer(): string | null {
+        return this.finalAnswer;
+    }
+
+    processStepResult(step: AgentStep): void {
+        const extractorResult = this.textExtractor(step.rawText || '');
+        if (extractorResult) {
+            this.renderExtractorResultToPrompt(extractorResult, step.stepIndex);
+            if (extractorResult.finalAnswer) {
+                this.setFinalAnswer(extractorResult.finalAnswer);
+            }
+        }
+        this.renderToolCallToPrompt(step.toolCallResults || [], step.stepIndex);
+    }
+
+    /**
+     * 更新 system prompt
+     * @param newSystemPrompt 新的 system prompt
+     */
+    updateSystemPrompt(newSystemPrompt: string): void {
+        this.systemPrompt = newSystemPrompt;
+    }
+}
+
+/**
+ * 工具调用执行结果接口，用于 PromptProcessor
+ */
+export interface ToolExecutionResult {
+    name: string;
+    call_id: string;
+    params: any;
+    status: 'pending' | 'succeed' | 'failed';
+    result?: any;
+    message?: string;
 }

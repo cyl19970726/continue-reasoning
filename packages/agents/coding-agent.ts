@@ -17,7 +17,6 @@ import { logger } from '../core/utils/logger';
  */
 export class CodingAgent extends BaseAgent {
     private workspacePath: string;
-    private codingContext: IContext<any>;
 
     constructor(
         id: string,
@@ -43,12 +42,11 @@ export class CodingAgent extends BaseAgent {
             maxSteps,
             logLevel,
             agentOptions,
-            contexts,
+            [...(contexts || []),codingContext],
             eventBus
         );
         
         this.workspacePath = workspacePath;
-        this.codingContext = codingContext;
         
         logger.info(`CodingAgent initialized with workspace: ${workspacePath}`);
     }
@@ -142,10 +140,9 @@ export class CodingAgent extends BaseAgent {
         const newCodingContext = createCodingContext(newPath);
         
         // 替换现有的coding context
-        const contextIndex = this.contexts.findIndex(ctx => ctx.id === this.codingContext.id);
+        const contextIndex = this.contexts.findIndex(ctx => ctx.id === 'coding-context');
         if (contextIndex !== -1) {
             this.contexts[contextIndex] = newCodingContext as any;
-            this.codingContext = newCodingContext;
             
             // 重新注册context
             this.contextManager.registerContext(newCodingContext as any);

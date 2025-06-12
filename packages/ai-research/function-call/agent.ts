@@ -29,8 +29,10 @@ type ToolCall = {
 type AgentStep = {
     stepIndex: number;
     rawText?: string;
+    error?: string;
     toolCalls?: Array<ToolCall>;
     toolCallResults?: Array<ToolCallResult>;
+    extractorResult?: any;
 }       
 
 function formatToIAgentStep(step: AgentStep, promptProcessor: PromptProcessor<any>): IAgentStep {
@@ -288,7 +290,7 @@ export class ModularFunctionCallAgent implements IAgent {
   }
 
   setMaxIterations(max: number): void {
-    this.maxIterations = max;
+    this.maxStep = max;
     logger.info(`Set max iterations to: ${max}`);
   }
 
