@@ -41,10 +41,10 @@ export interface ICodingContext extends IRAGEnabledContext<typeof CodingContextD
 async function initializeSandbox(sandbox: ISandbox): Promise<ISandbox> {
   try {
     const betterSandbox = await createPlatformSandbox();
-    console.log(`Sandbox initialized with type: ${betterSandbox.type}`);
+    logger.info(`Sandbox initialized with type: ${betterSandbox.type}`);
     return betterSandbox;
   } catch (error) {
-    console.error('Failed to initialize platform sandbox, using NoSandbox as fallback:', error);
+    logger.error('Failed to initialize platform sandbox, using NoSandbox as fallback:', error);
     // Keep the default NoSandbox
     return sandbox;
   }

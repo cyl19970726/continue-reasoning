@@ -1,4 +1,4 @@
-import { BaseAgent, AgentOptions, AgentState } from '../core/agent';
+import { BaseAgent, AgentOptions } from '../core/agent';
 import { LogLevel } from '../core/utils/logger';
 import { IContext, ToolCallResult } from '../core/interfaces';
 import { IEventBus } from '../core/events/eventBus';
@@ -27,7 +27,6 @@ export class CodingAgent extends BaseAgent {
         logLevel?: LogLevel,
         agentOptions?: AgentOptions,
         contexts?: IContext<any>[],
-        eventBus?: IEventBus
     ) {
         // 创建coding context
         const codingContext = createCodingContext(workspacePath);
@@ -43,7 +42,6 @@ export class CodingAgent extends BaseAgent {
             logLevel,
             agentOptions,
             [...(contexts || []),codingContext],
-            eventBus
         );
         
         this.workspacePath = workspacePath;
@@ -63,12 +61,7 @@ export class CodingAgent extends BaseAgent {
             fs.mkdirSync(this.workspacePath, { recursive: true });
             logger.info(`Created workspace directory: ${this.workspacePath}`);
         }
-        
-        // 订阅执行模式变更事件
-        this.subscribeToExecutionModeChanges();
-        
-        // 可以在这里添加其他编程环境准备工作
-        // 例如：检查依赖、初始化git仓库等
+
     }
 
     /**
@@ -92,34 +85,7 @@ export class CodingAgent extends BaseAgent {
             if (toolName.includes('file') || toolName.includes('code') || toolName.includes('edit')) {
                 logger.debug(`Coding tool completed: ${toolName}`);
                 
-                // 可以在这里添加代码质量检查、自动格式化等
-                await this.postProcessCodeChange(toolResult);
             }
-        }
-    }
-
-    /**
-     * 🔧 编程专用方法 - 代码变更后处理
-     */
-    private async postProcessCodeChange(toolResult: ToolCallResult): Promise<void> {
-        try {
-            // 这里可以添加：
-            // 1. 代码格式化
-            // 2. 语法检查
-            // 3. 自动测试
-            // 4. Git提交
-            logger.debug('Post-processing code changes...');
-            
-            // 发布代码变更事件
-            if (this.eventBus) {
-                await this.publishEvent('code_change', {
-                    toolName: toolResult.name,
-                    workspace: this.workspacePath,
-                    timestamp: Date.now()
-                });
-            }
-        } catch (error) {
-            logger.error('Error in post-processing code changes:', error);
         }
     }
 
@@ -150,69 +116,7 @@ export class CodingAgent extends BaseAgent {
         
         logger.info(`Workspace changed to: ${newPath}`);
         
-        // 发布工作空间变更事件
-        if (this.eventBus) {
-            await this.publishEvent('workspace_change', {
-                oldPath: this.workspacePath,
-                newPath: newPath,
-                timestamp: Date.now()
-            });
-        }
     }
 
-    /**
-     * 🔧 编程Agent专用 - 订阅执行模式变更
-     */
-    subscribeToExecutionModeChanges(): void {
-        if (!this.eventBus) return;
-
-        this.eventBus.subscribe('execution_mode_change_request', async (event: any) => {
-            const { toMode, fromMode, reason, requestId } = event.payload;
-            
-            logger.info(`CodingAgent received execution mode change request: ${fromMode} -> ${toMode} (${reason || 'No reason provided'})`);
-            
-            try {
-                // 更新Agent的执行模式
-                this.executionMode = toMode;
-                
-                logger.info(`CodingAgent execution mode updated to: ${this.executionMode}`);
-                
-                // 发送响应事件
-                if (this.eventBus && requestId) {
-                    await this.eventBus.publish({
-                        type: 'execution_mode_change_response',
-                        source: 'agent',
-                        sessionId: event.sessionId,
-                        payload: {
-                            requestId,
-                            mode: toMode,
-                            timestamp: Date.now(),
-                            success: true,
-                            agentType: 'coding'
-                        }
-                    });
-                }
-            } catch (error) {
-                logger.error(`Failed to change execution mode: ${error}`);
-                
-                // 发送失败响应
-                if (this.eventBus && requestId) {
-                    await this.eventBus.publish({
-                        type: 'execution_mode_change_response',
-                        source: 'agent',
-                        sessionId: event.sessionId,
-                        payload: {
-                            requestId,
-                            mode: fromMode, // 保持原模式
-                            timestamp: Date.now(),
-                            success: false,
-                            error: error instanceof Error ? error.message : String(error),
-                            agentType: 'coding'
-                        }
-                    });
-                }
-            }
-        });
-    }
 
 } 
