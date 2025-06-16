@@ -4,7 +4,7 @@
 export interface BaseEvent {
   id: string;
   timestamp: number;
-  source: 'user' | 'agent' | 'system';
+  source: 'user' | 'agent' | 'system' | 'interaction_hub' | 'error_handler' | 'cli_client';
   sessionId: string;
 }
 
@@ -82,6 +82,7 @@ export interface InputResponseEvent extends BaseEvent {
     requestId: string;
     value: string | boolean;
     cancelled?: boolean;
+    inputType?: 'text' | 'choice' | 'file_path' | 'confirmation' | 'password' | 'config';
   };
 }
 
@@ -122,6 +123,8 @@ export interface UserMessageEvent extends BaseEvent {
       previousMessages?: string[];
       currentTask?: string;
       userIntent?: string;
+      inputMethod?: string;
+      fallback?: boolean;
     };
     conversationHistory?: Array<{
       id: string;
@@ -209,6 +212,55 @@ export interface ConversationSearchResponseEvent extends BaseEvent {
   };
 }
 
+// 新增：系统管理事件
+export interface AgentRegisteredEvent extends BaseEvent {
+  type: 'agent_registered';
+  payload: {
+    agentId: string;
+    agentName: string;
+    timestamp: number;
+  };
+}
+
+export interface InteractiveLayerRegisteredEvent extends BaseEvent {
+  type: 'interactive_layer_registered';
+  payload: {
+    layerId: string;
+    capabilities: any;
+    timestamp: number;
+  };
+}
+
+export interface SystemStartedEvent extends BaseEvent {
+  type: 'system_started';
+  payload: {
+    timestamp: number;
+    registeredAgents: string[];
+    registeredLayers: string[];
+  };
+}
+
+export interface ErrorOccurredEvent extends BaseEvent {
+  type: 'error_occurred';
+  payload: {
+    errorId: string;
+    errorType: 'runtime_error' | 'validation_error' | 'permission_error' | 'network_error';
+    message: string;
+    stack?: string;
+    context?: any;
+  };
+}
+
+export interface ManualInterventionRequiredEvent extends BaseEvent {
+  type: 'manual_intervention_required';
+  payload: {
+    errorId: string;
+    message: string;
+    suggestedActions: string[];
+    context?: any;
+  };
+}
+
 // 跨组件交互事件联合类型
 export type CrossComponentEvent = 
   | ExecutionModeChangeRequestEvent
@@ -223,7 +275,12 @@ export type CrossComponentEvent =
   | ConversationHistoryRequestEvent
   | ConversationHistoryResponseEvent
   | ConversationSearchRequestEvent
-  | ConversationSearchResponseEvent;
+  | ConversationSearchResponseEvent
+  | AgentRegisteredEvent
+  | InteractiveLayerRegisteredEvent
+  | SystemStartedEvent
+  | ErrorOccurredEvent
+  | ManualInterventionRequiredEvent;
 
 // 所有事件类型的联合
 export type AllEventTypes = CrossComponentEvent; 

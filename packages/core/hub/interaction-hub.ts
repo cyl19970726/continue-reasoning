@@ -35,14 +35,16 @@ export class InteractionHub implements IInteractionHub {
         logger.info(`Agent registered: ${agent.id} (${agent.name})`);
 
         // 设置事件总线
-        if (!agent.eventBus) {
+        if (!(agent as any).eventBus) {
             (agent as any).eventBus = this.eventBus;
         }
 
         // 注意：延迟设置事件处理器，只有在系统启动后才设置
         // 这样避免Agent在用户输入之前就开始响应事件
         if (this.isRunning) {
-            agent.setupEventHandlers();
+            if ((agent as any).setupEventHandlers) {
+                (agent as any).setupEventHandlers();
+            }
         }
 
         // 发布agent注册事件
@@ -141,7 +143,9 @@ export class InteractionHub implements IInteractionHub {
             // 这样确保Agent只在系统完全启动后才开始监听事件
             for (const [id, agent] of this.agents) {
                 try {
-                    agent.setupEventHandlers();
+                    if ((agent as any).setupEventHandlers) {
+                        (agent as any).setupEventHandlers();
+                    }
                     logger.info(`Agent event handlers setup completed: ${id}`);
                 } catch (error) {
                     logger.error(`Failed to setup event handlers for Agent ${id}:`, error);
@@ -232,7 +236,10 @@ export class InteractionHub implements IInteractionHub {
 
         for (const agent of this.agents.values()) {
             promises.push(
-                agent.publishEvent(eventType, payload).catch(error => {
+                ((agent as any).publishEvent ? 
+                    (agent as any).publishEvent(eventType, payload) : 
+                    Promise.resolve()
+                ).catch((error: any) => {
                     logger.error(`Failed to broadcast to agent ${agent.id}:`, error);
                 })
             );
@@ -246,11 +253,11 @@ export class InteractionHub implements IInteractionHub {
      */
     async broadcastToInteractiveLayers(eventType: string, payload: any): Promise<void> {
         await this.eventBus.publish({
-            type: eventType,
+            type: eventType as any,
             source: 'interaction_hub',
             sessionId: 'broadcast',
             payload
-        });
+        } as any);
     }
 
     /**
@@ -287,7 +294,9 @@ export class InteractionHub implements IInteractionHub {
             if (targetId) {
                 const agent = this.agents.get(targetId);
                 if (agent) {
-                    await agent.publishEvent(event.type, event.payload, event.sessionId);
+                    if ((agent as any).publishEvent) {
+                        await (agent as any).publishEvent(event.type, event.payload, event.sessionId);
+                    }
                 } else {
                     logger.warn(`Agent ${targetId} not found for event routing`);
                 }

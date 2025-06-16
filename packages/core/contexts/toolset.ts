@@ -52,14 +52,16 @@ export const ListToolSetTool = createTool({
       description: z.string(),
       active: z.boolean(),
       source: z.string().optional(),
-    }))
+    })),
+    success: z.boolean(),
+    message: z.string().optional()
   }),
   async: false,
   execute: async (_params, agent?: IAgent) => {
-    if (!agent || !('listToolSets' in agent)) return { toolSets: [] };
+    if (!agent || !('listToolSets' in agent)) return { toolSets: [], success: false};
     // @ts-ignore
     const sets = agent.listToolSets();
-    return { toolSets: sets };
+    return { toolSets: sets, success: true };
   }
 }); 
 

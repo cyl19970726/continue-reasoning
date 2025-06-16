@@ -2209,11 +2209,14 @@ export class CLIClient extends BaseInteractiveLayer {
     process.exit(0);
   }
 
-  private getSourceIcon(source: 'user' | 'agent' | 'system'): string {
+  private getSourceIcon(source: 'user' | 'agent' | 'system' | 'interaction_hub' | 'error_handler' | 'cli_client'): string {
     switch (source) {
       case 'user': return '👤';
       case 'agent': return '🤖';
       case 'system': return '⚙️';
+      case 'interaction_hub': return '🔄';
+      case 'error_handler': return '⚠️';
+      case 'cli_client': return '💻';
       default: return '❓';
     }
   }

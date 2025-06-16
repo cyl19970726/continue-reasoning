@@ -1,5 +1,5 @@
 import { AgentOptions, BaseAgent } from "./agent";
-import { CliClient } from "./contexts/client";
+import { CLIClient } from "./interactive/cliClient";
 import { ContextManager } from "./context";
 import { MapMemoryManager } from "./memory/baseMemory";
 import { z } from "zod";
@@ -39,18 +39,17 @@ let agentOptions: AgentOptions = {
 // const llm = new GeminiWrapper(LLMModel.Enum.google, true, 0.7, 1000);
 // const llm = new OpenAIWrapper(LLMModel.Enum.openai, true, 0.7, 1000);
 
-// Initialize clients
-const clients = [new CliClient()];
+// Initialize clients - 注释掉，因为 BaseAgent 不需要 clients 参数
+// const clients = [new CLIClient()];
 
 // Create agent with explicit log level
 const agent = new BaseAgent(
     "1", 
     "test", 
     "test", 
-    clients, 
-    100,
-    logLevelArg,
-    agentOptions
+    100,  // maxSteps
+    logLevelArg,  // logLevel
+    agentOptions  // agentOptions
 );
 
 export async function start() {

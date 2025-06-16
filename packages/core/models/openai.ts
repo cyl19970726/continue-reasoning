@@ -4,6 +4,7 @@ import { ILLM, LLMModel, ToolCallDefinition, ToolCallParams } from "../interface
 import dotenv from "dotenv";
 import { zodToJsonNostrict, zodToJsonStrict } from "../utils/jsonHelper";
 import { SupportedModel } from "../models";
+import { logger } from "../utils/logger";
 
 dotenv.config();
 
@@ -95,8 +96,7 @@ export class OpenAIWrapper implements ILLM {
             parameters: JSON.parse(item.arguments),
         }));
 
-        // console.log("Response Message:", message);
-        console.log("Extracted Tool Calls:", toolCalls);
+        logger.debug(`[OpenAIWrapper] Extracted Tool Calls: ${toolCalls.length}`);
 
         return {
             text: response.output_text || "",
@@ -207,9 +207,9 @@ export class OpenAIWrapper implements ILLM {
                 }
             }
 
-            console.log("Streaming complete. Generated text length:", generatedText.length);
-            console.log("Extracted Tool Calls:", toolCalls.length);
-            console.log("Seen event types:", Array.from(seenEvents));
+            logger.debug(`[OpenAIWrapper] Streaming complete. Generated text length: ${generatedText.length}`);
+            logger.debug(`[OpenAIWrapper] Extracted Tool Calls: ${toolCalls.length}`);
+            logger.debug(`[OpenAIWrapper] Seen event types: ${Array.from(seenEvents)}`);
             
             // Extract response text from fullResponseItems if we didn't get it from streaming
             if (generatedText.length === 0 && fullResponseItems.length > 0) {
@@ -219,7 +219,7 @@ export class OpenAIWrapper implements ILLM {
                         generatedText += item.text;
                     }
                 }
-                console.log("Extracted text from response items:", generatedText.length);
+                logger.debug("[OpenAIWrapper] Extracted text from response items:", generatedText.length);
             }
             
             // Extract function calls from fullResponseItems if we didn't get them from streaming
@@ -237,13 +237,13 @@ export class OpenAIWrapper implements ILLM {
                         console.error("Error parsing function call arguments:", e);
                     }
                 }
-                console.log("Extracted tool calls from response items:", toolCalls.length);
+                logger.debug(`[OpenAIWrapper] Extracted tool calls from response items: ${toolCalls.length}`);
             }
             
             // If we didn't get any output from streaming or tool calls, 
             // fall back to non-streaming API as a backup
             if (generatedText.length === 0 && toolCalls.length === 0) {
-                console.log("No streaming output received, falling back to non-streaming API");
+                logger.debug("[OpenAIWrapper] No streaming output received, falling back to non-streaming API");
                 return this.call(messages, tools);
             }
 
@@ -252,9 +252,9 @@ export class OpenAIWrapper implements ILLM {
                 toolCalls
             };
         } catch (error) {
-            console.error("Error in streamCall:", error);
+            logger.error("[OpenAIWrapper] Error in streamCall:", error);
             // Fall back to regular call on error
-            console.log("Falling back to non-streaming API due to error");
+            logger.debug("[OpenAIWrapper] Falling back to non-streaming API due to error");
             return this.call(messages, tools);
         }
     }

@@ -2,7 +2,7 @@
 // 从各个事件文件中导入并重新导出
 
 // 导入Agent内部事件
-export type {
+import type {
   BaseEvent,
   AgentStepEvent,
   ToolExecutionResultEvent,
@@ -14,7 +14,7 @@ export type {
 } from './agentEvents';
 
 // 导入InteractiveLayer内部事件
-export type {
+import type {
   StatusUpdateEvent,
   FileOperationEvent,
   CommandExecutionEvent,
@@ -28,7 +28,7 @@ export type {
 } from './interactiveEvents';
 
 // 导入跨组件交互事件
-export type {
+import type {
   ExecutionModeChangeRequestEvent,
   ExecutionModeChangeResponseEvent,
   ApprovalRequestEvent,
@@ -63,7 +63,7 @@ export type MessageHandler = (message: AllEventMessages) => Promise<void>;
 // 事件过滤器
 export interface EventFilter {
   eventTypes?: string[];
-  sources?: ('user' | 'agent' | 'system')[];
+  sources?: ('user' | 'agent' | 'system' | 'interaction_hub' | 'error_handler' | 'cli_client')[];
   sessionId?: string;
   afterTimestamp?: number;
   beforeTimestamp?: number;
@@ -74,4 +74,36 @@ export interface SubscriptionConfig {
   filter?: EventFilter;
   persistent?: boolean; // 是否持久化订阅
   maxEvents?: number; // 最大事件缓存数量
-} 
+}
+
+// 重新导出所有类型
+export type {
+  BaseEvent,
+  AgentStepEvent,
+  ToolExecutionResultEvent,
+  AgentStateChangeEvent,
+  ContextUpdateEvent,
+  TaskQueueEvent,
+  AgentReplyEvent,
+  AgentInternalEvent,
+  StatusUpdateEvent,
+  FileOperationEvent,
+  CommandExecutionEvent,
+  ErrorEvent,
+  DataCollectionEvent,
+  TaskEvent,
+  ContextSwitchEvent,
+  ToolCallEvent,
+  SelfTestEvent,
+  InteractiveInternalEvent,
+  ExecutionModeChangeRequestEvent,
+  ExecutionModeChangeResponseEvent,
+  ApprovalRequestEvent,
+  ApprovalResponseEvent,
+  InputRequestEvent,
+  InputResponseEvent,
+  CollaborationRequestEvent,
+  CollaborationResponseEvent,
+  UserMessageEvent,
+  CrossComponentEvent
+}; 

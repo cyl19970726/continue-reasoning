@@ -90,7 +90,7 @@ export class ContextManagerHelper<T extends ManagedItem> {
       inputSchema: CreateSchema;
       itemBuilder: (params: z.infer<CreateSchema>) => Omit<T, "id" | "status">
     }
-  ): ITool<CreateSchema, z.ZodObject<any>, IAgent> {
+  ) {
     return createTool({
       name: options.name,
       description: options.description,
@@ -157,7 +157,7 @@ export class ContextManagerHelper<T extends ManagedItem> {
       inputSchema: UpdateSchema;
       shouldUpdateFn?: (item: T, params: z.infer<UpdateSchema>) => boolean;
     }
-  ): ITool<UpdateSchema, z.ZodObject<any>, IAgent> {
+  ) {
     return createTool({
       name: options.name,
       description: options.description,
@@ -235,7 +235,7 @@ export class ContextManagerHelper<T extends ManagedItem> {
       newStatus: ItemStatus;
       postStatusChangeFn?: (item: T, params: z.infer<StatusSchema>, agent: IAgent) => Promise<void>;
     }
-  ): ITool<StatusSchema, z.ZodObject<any>, IAgent> {
+  ) {
     return createTool({
       name: options.name,
       description: options.description,
@@ -334,7 +334,7 @@ export class ContextManagerHelper<T extends ManagedItem> {
       inputSchema: QuerySchema;
       queryBuilderFn?: (params: z.infer<QuerySchema>) => string;
     }
-  ): ITool<QuerySchema, z.ZodObject<any>, IAgent> {
+  ) {
     return createTool({
       name: options.name,
       description: options.description,

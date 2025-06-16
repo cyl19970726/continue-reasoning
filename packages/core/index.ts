@@ -46,10 +46,6 @@ export * from './utils';
 // Task queue functionality
 export { TaskQueue } from './taskQueue';
 
-// Thinking framework
-export * from './thinking';
-export { createThinkingContext } from './thinking/thinking-context';
-
 // Prompts
 export * from './prompts'; 
 

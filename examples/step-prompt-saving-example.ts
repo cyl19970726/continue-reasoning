@@ -1,7 +1,8 @@
-import { LogLevel, createThinkingContext, globalEventBus, logger, OPENAI_MODELS } from '@continue-reasoning/core';
-import { CodingAgent } from '@continue-reasoning/agents';
+import { LogLevel, globalEventBus, logger, OPENAI_MODELS } from '../packages/core';
+import { CodingAgent } from '../packages/agents';
 import path from 'path';
 import fs from 'fs';
+import { SessionManager } from '../packages/core/session/sessionManager';
 
 async function stepPromptSavingExample() {
     console.log('📝 Step-by-Step Prompt Saving Example\n');
@@ -12,7 +13,6 @@ async function stepPromptSavingExample() {
     if (!fs.existsSync(workspacePath)) {
         fs.mkdirSync(workspacePath, { recursive: true });
     }
-
 
     // 🆕 使用 CodingAgent
     const agent = new CodingAgent(
@@ -28,8 +28,10 @@ async function stepPromptSavingExample() {
             temperature: 0.1,
         },
         [],
-        globalEventBus
     );
+
+    // 🔧 修复：SessionManager只需要一个参数（agent）
+    const sessionManager = new SessionManager(agent);
 
     await agent.setup();
     agent.setEnableToolCallsForStep((stepIndex) => {
@@ -55,10 +57,8 @@ async function stepPromptSavingExample() {
         console.log(`   ⚡ Real-time: Save after each step completion\n`);
 
         // 执行任务
-        const task = `刚刚以下任务执行到一半，请继续完成：
-
-Task:创建一个Python网页爬虫项目，具体要求如下：
-
+        const task = `
+帮我创建一个Python网页爬虫项目，具体要求如下：
 1. **目标网站**: https://news.ycombinator.com (Hacker News首页)
 2. **提取内容**: 提取首页前20条新闻的标题和链接
 3. **技术栈**: 使用 requests 和 BeautifulSoup 库
@@ -72,22 +72,14 @@ Task:创建一个Python网页爬虫项目，具体要求如下：
    - 添加用户代理头部避免被屏蔽
    - 添加适当的延时避免过于频繁请求
    - 代码要有详细注释
-
-任务状态：
-爬虫测试成功执行，输出文件 news_headlines.json，并且但是程序没有成功提取并保存了前20条新闻到 news_headlines.json 文件
-
-项目总结：
-- 创建了以下文件: news_scraper.py, requirements.txt, README.md
-- 实现了爬虫功能: 使用 requests 和 BeautifulSoup 进行网页爬取
-- 提取了Hacker News首页前20条新闻的标题和链接
-- 添加了错误处理、用户代理头部、请求延时等功能
-- 测试结果: 生成了 news_headlines.json 文件,但是没有数据
-
-在你给出最终结果前，请你阅读下 news_headlines.json 文件，确保你已经成功提取了前20条新闻的标题和链接。`;
+   - 在任务完成之后，请阅读 news_headlines.json 文件，确保你已经成功提取了前20条新闻的标题和链接。`
+   ;
         
         console.log('🚀 Starting task with step-by-step prompt saving...\n');
         
-        await agent.startWithUserInput(task, 20, promptSaveOptions);
+        // 🔧 修复：使用正确的参数顺序和类型
+        const sessionId = `step-prompt-demo-${Date.now()}`;
+        await agent.startWithUserInput(task, 20, sessionId, promptSaveOptions);
 
         console.log('\n✅ Task completed! Analyzing saved prompts...\n');
 
@@ -108,13 +100,13 @@ Task:创建一个Python网页爬虫项目，具体要求如下：
             // 显示每个步骤的文件大小和内容概览
             console.log('📋 Step-by-step file overview:');
             
-            const stepNumbers = new Set();
+            const stepNumbers = new Set<number>();
             files.forEach(file => {
                 const match = file.match(/step-(\d+)-/);
                 if (match) stepNumbers.add(parseInt(match[1]));
             });
 
-            Array.from(stepNumbers).sort((a, b) => (a as number) - (b as number)).forEach((stepNum: any) => {
+            Array.from(stepNumbers).sort((a, b) => a - b).forEach((stepNum) => {
                 console.log(`\n   📌 Step ${stepNum}:`);
                 
                 const stepMarkdown = files.find(f => f.includes(`step-${String(stepNum).padStart(3, '0')}`) && f.endsWith('.md'));
@@ -160,7 +152,7 @@ Task:创建一个Python网页爬虫项目，具体要求如下：
             try {
                 const promptLengths: number[] = [];
                 
-                Array.from(stepNumbers).sort((a, b) => (a as number) - (b as number)).forEach((stepNum: any) => {
+                Array.from(stepNumbers).sort((a, b) => a - b).forEach((stepNum) => {
                     const stepJson = files.find(f => f.includes(`step-${String(stepNum).padStart(3, '0')}`) && f.endsWith('.json'));
                     if (stepJson) {
                         const jsonPath = path.join(stepDir, stepJson);

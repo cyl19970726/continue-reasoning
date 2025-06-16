@@ -112,25 +112,6 @@ export const ApplyWholeFileEditTool = createTool({
         open_files: openFiles
       });
       
-      // Publish file operation event
-      if (agent?.eventBus) {
-        const eventType = fileExists ? 'file_modified' : 'file_created';
-        await agent.eventBus.publish({
-          type: eventType,
-          source: 'agent',
-          sessionId: agent.eventBus.getActiveSessions()[0] || 'default',
-          payload: fileExists ? {
-            path: params.path,
-            tool: 'whole_file',
-            changesApplied: 1,
-            diff: diffString
-          } : {
-            path: params.path,
-            size: params.content.length,
-            diff: diffString
-          }
-        });
-      }
       
       return {
         success: true,
@@ -342,20 +323,6 @@ export const ApplyEditBlockTool = createTool({
           open_files: openFiles
         });
         
-        // Publish file modified event
-        if (agent?.eventBus) {
-          await agent.eventBus.publish({
-            type: 'file_modified',
-            source: 'agent',
-            sessionId: agent.eventBus.getActiveSessions()[0] || 'default',
-            payload: {
-              path: params.path,
-              tool: 'edit_block',
-              changesApplied: result.changesApplied || 0,
-              diff: result.diff
-            }
-          });
-        }
       }
       
       return {
@@ -598,21 +565,6 @@ async function deleteFileWithDiff(
       open_files: openFiles
     });
     
-    // Publish file deleted event
-    if (agent?.eventBus) {
-      await agent.eventBus.publish({
-        type: 'file_deleted',
-        source: 'agent',
-        sessionId: agent.eventBus.getActiveSessions()[0] || 'default',
-        payload: {
-          path: relativePath,
-          isDirectory: false,
-          filesDeleted: [relativePath],
-          diff: diffString
-        }
-      });
-    }
-    
     return {
       success: true,
       message: `File ${relativePath} deleted successfully`,
@@ -649,19 +601,6 @@ async function deleteDirectoryWithDiff(
       const result = await runtime.execute(command);
       
       if (result.exitCode === 0) {
-        // Publish directory deleted event
-        if (agent?.eventBus) {
-          await agent.eventBus.publish({
-            type: 'file_deleted',
-            source: 'agent',
-            sessionId: agent.eventBus.getActiveSessions()[0] || 'default',
-            payload: {
-              path: relativePath,
-              isDirectory: true,
-              filesDeleted: []
-            }
-          });
-        }
         
         return {
           success: true,
@@ -731,21 +670,6 @@ async function deleteDirectoryWithDiff(
           active_diffs: activeDiffs,
           open_files: openFiles
         });
-        
-        // Publish directory deleted event
-        if (agent?.eventBus) {
-          await agent.eventBus.publish({
-            type: 'file_deleted',
-            source: 'agent',
-            sessionId: agent.eventBus.getActiveSessions()[0] || 'default',
-            payload: {
-              path: relativePath,
-              isDirectory: true,
-              filesDeleted: deletedFiles,
-              diff: combinedDiff
-            }
-          });
-        }
         
         return {
           success: true,
@@ -839,19 +763,6 @@ export const CreateDirectoryTool = createTool({
           message: `Failed to create directory ${params.path}`,
           changesApplied: 0
         };
-      }
-      
-      // Publish directory created event
-      if (agent?.eventBus) {
-        await agent.eventBus.publish({
-          type: 'directory_created',
-          source: 'agent',
-          sessionId: agent.eventBus.getActiveSessions()[0] || 'default',
-          payload: {
-            path: params.path,
-            recursive: params.recursive !== false
-          }
-        });
       }
       
       // No diff generation for directory creation, just update context if needed
@@ -1142,20 +1053,6 @@ export const ReverseDiffTool = createTool({
           active_diffs: activeDiffs,
           open_files: openFiles
         });
-        
-        // Publish diff reversed event
-        if (agent?.eventBus) {
-          await agent.eventBus.publish({
-            type: 'diff_reversed',
-            source: 'agent',
-            sessionId: agent.eventBus.getActiveSessions()[0] || 'default',
-            payload: {
-              affectedFiles: reverseResult.affectedFiles,
-              changesReverted: applyResult.changesApplied || 0,
-              reason: 'User requested rollback'
-            }
-          });
-        }
         
         return {
           success: true,

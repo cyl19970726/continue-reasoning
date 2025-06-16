@@ -1,0 +1,36 @@
+{
+  "name": "@continue-reasoning/cli-client",
+  "version": "0.1.0",
+  "description": "CLI client for Continue Reasoning agent interaction",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist/",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "cli",
+    "agent",
+    "interactive",
+    "continue-reasoning"
+  ],
+  "author": "Continue Reasoning Team",
+  "license": "MIT",
+  "dependencies": {
+    "@continue-reasoning/core": "workspace:*",
+    "chalk": "^4.1.2",
+    "readline": "^1.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "@continue-reasoning/core": "workspace:*"
+  }
+} 

@@ -15,6 +15,8 @@ export enum BasicToolNames {
     runDocker = "run-docker",
 }
 
-export { HackernewsContext, HackernewsContextId } from './hackernews';
-export { DeepWikiContext, DeepWikiContextId } from './deepwiki';
-export { FireCrawlContext, FireCrawlContextId } from './firecrawl';
+export { HackernewsContext, HackernewsContextId } from './hackernews.js';
+export { DeepWikiContext, DeepWikiContextId } from './deepwiki.js';
+export { FireCrawlContext, FireCrawlContextId } from './firecrawl.js';
+export { PlanContext, PlanContextId } from './plan.js';
+export { WebSearchContext, WebSearchContextId } from './web-search.js';
