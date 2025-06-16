@@ -248,7 +248,18 @@ function registerMcpToolsForClient(client: Client, serverId: number, agent: IAge
                 async: true,
                 execute: async (params) => {
                     // Note: Use the original tool name when calling
-                    return await client.callTool({ name: tool.name, arguments: inputSchema.parse(params) });
+                    try {
+                        const result = await client.callTool({ name: tool.name, arguments: inputSchema.parse(params) });
+                        return {
+                            success: true,
+                            result: result
+                        };
+                    } catch (error) {
+                        return {
+                            success: false,
+                            error: error instanceof Error ? error.message : String(error)
+                        };
+                    }
                 }
             });
             
@@ -512,24 +523,26 @@ export const ListToolsTool = createTool({
     inputSchema: ListToolsToolInputSchema,
     // Use the refined ToolDetailSchema in the outputSchema
     outputSchema: z.object({
+        success: z.boolean(),
         tools: z.array(MCPToolCallSchema).describe("The list of tools including name, description, and input schema."),
+        error: z.string().optional(),
     }),
     async: true, // API call is async
     // Return type annotation uses the refined schema
-    execute: async (params: z.infer<typeof ListToolsToolInputSchema>, agent?: IAgent): Promise<{ tools: z.infer<typeof MCPToolCallSchema>[] }> => {
+    execute: async (params: z.infer<typeof ListToolsToolInputSchema>, agent?: IAgent) => {
         const context = ContextHelper.findContext(agent!, MCPContextId);
         if (!context || !context.data?.clients) {
             console.error("MCP context or clients not found in ListToolsTool.");
-            return { tools: [] };
+            return { success: false, tools: [], error: "MCP context or clients not found" };
         }
         if (params.mcpClientId < 0 || params.mcpClientId >= context.data.clients.length) {
             console.error(`MCP client index ${params.mcpClientId} out of bounds.`);
-            return { tools: [] };
+            return { success: false, tools: [], error: `MCP client index ${params.mcpClientId} out of bounds` };
         }
         const client = context.data.clients[params.mcpClientId] as Client;
         if (!client) {
             console.error(`MCP client at index ${params.mcpClientId} not found or invalid.`);
-            return { tools: [] };
+            return { success: false, tools: [], error: `MCP client at index ${params.mcpClientId} not found or invalid` };
         }
         try {
             const listToolsResult = await client.listTools();
@@ -541,11 +554,11 @@ export const ListToolsTool = createTool({
                     inputSchema: (tool.inputSchema && typeof tool.inputSchema === 'object') ? tool.inputSchema : {},
                 })
             );
-            console.log("ListToolsTool result:", detailedTools[0].inputSchema);
-            return { tools: detailedTools };
+            console.log("ListToolsTool result:", detailedTools[0]?.inputSchema);
+            return { success: true, tools: detailedTools };
         } catch (error: any) {
             console.error(`Error listing tools for client index ${params.mcpClientId}:`, error);
-            return { tools: [] }; // Return empty list on error, matching schema
+            return { success: false, tools: [], error: error.message || "Error listing tools" };
         }
     },
 });
@@ -573,23 +586,25 @@ export const ListPromptsTool = createTool({
     description: "Lists available prompts on a specified MCP client.",
     inputSchema: ListPromptsInputSchema,
     outputSchema: z.object({
-        prompts: z.array(McpPromptSchema).describe("List of available prompts with name, description, and arguments.")
+        success: z.boolean(),
+        prompts: z.array(McpPromptSchema).describe("List of available prompts with name, description, and arguments."),
+        error: z.string().optional(),
     }),
     async: true,
-    execute: async (params: z.infer<typeof ListPromptsInputSchema>, agent?: IAgent): Promise<{ prompts: z.infer<typeof McpPromptSchema >[] }> => {
+    execute: async (params: z.infer<typeof ListPromptsInputSchema>, agent?: IAgent) => {
          const context = ContextHelper.findContext(agent!, MCPContextId);
          if (!context || !context.data?.clients) {
             console.error("MCP context or clients not found in ListPromptsTool.");
-            return { prompts: [] };
+            return { success: false, prompts: [], error: "MCP context or clients not found" };
         }
          if (params.mcpClientId < 0 || params.mcpClientId >= context.data.clients.length) {
              console.error(`MCP client index ${params.mcpClientId} out of bounds.`);
-             return { prompts: [] };
+             return { success: false, prompts: [], error: `MCP client index ${params.mcpClientId} out of bounds` };
          }
          const client = context.data.clients[params.mcpClientId];
          if (!client) {
              console.error(`MCP client at index ${params.mcpClientId} not found or invalid.`);
-             return { prompts: [] };
+             return { success: false, prompts: [], error: `MCP client at index ${params.mcpClientId} not found or invalid` };
          }
         try {
             // Pass any pagination params if implemented in input schema
@@ -602,10 +617,10 @@ export const ListPromptsTool = createTool({
                     arguments: prompt.arguments ?? [], // Include arguments, default to empty array
                 })
             );
-            return { prompts };
+            return { success: true, prompts };
         } catch (error: any) {
             console.error(`Error listing prompts for client ${params.mcpClientId}:`, error);
-            return { prompts: [] };
+            return { success: false, prompts: [], error: error.message || "Error listing prompts" };
         }
     },
 });
@@ -627,24 +642,25 @@ export const ListResourcesTool = createTool({
     name: LIST_RESOURCES_ID,
     description: "Lists available resources on a specified MCP client.",
     inputSchema: ListResourcesInputSchema,
-    // outputSchema: z.object({
-    //     resources: z.array(ResourceDetailSchema).describe("List of available resources.")
-    // }),
+    outputSchema: z.object({
+        success: z.boolean(),
+        resources: z.array(z.any()),
+        error: z.string().optional(),
+    }),
     async: true,
     execute: async (params: z.infer<typeof ListResourcesInputSchema>, agent?: IAgent)=> {
          const context = ContextHelper.findContext(agent!, MCPContextId);
         
          const client = context.data.clients[params.mcpClientId] as Client;
          if (!client) {
-            throw new Error(`MCP client at index ${params.mcpClientId} not found or invalid.`);
+            return { success: false, resources: [], error: `MCP client at index ${params.mcpClientId} not found or invalid` };
          }
         try {
             const listResult = await client.listResources(); 
-            return listResult
+            return { success: true, resources: listResult.resources || [] };
         } catch (error: any) {
-            throw new Error(`Error listing resources for client ${params.mcpClientId}:`, error);
             console.error(`Error listing resources for client ${params.mcpClientId}:`, error);
-            return { resources: [] };
+            return { success: false, resources: [], error: error.message || "Error listing resources" };
         }
     },
 });
@@ -659,18 +675,23 @@ export const ReadResourceTool = createTool({
     name: READ_RESOURCE_ID,
     description: "Reads a specific resource from a specified MCP client.",
     inputSchema: ReadResourceInputSchema,
+    outputSchema: z.object({
+        success: z.boolean(),
+        resource: z.any(),
+        error: z.string().optional(),
+    }),
     async: true,
     execute: async (params: z.infer<typeof ReadResourceInputSchema>, agent?: IAgent)=> {
         const context = ContextHelper.findContext(agent!, MCPContextId);
         const client = context.data.clients[params.mcpClientId] as Client;
         if (!client) {
-            throw new Error(`MCP client at index ${params.mcpClientId} not found or invalid.`);
+            return { success: false, resource: null, error: `MCP client at index ${params.mcpClientId} not found or invalid` };
         }
         try {
             const resourceResult = await client.readResource({ uri: params.resourceUri });
-            return resourceResult;
+            return { success: true, resource: resourceResult };
         } catch (error: any) {
-            throw new Error(`Error reading resource ${params.resourceUri}:`, error);
+            return { success: false, resource: null, error: error.message || `Error reading resource ${params.resourceUri}` };
         }
     },
 });

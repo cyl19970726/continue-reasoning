@@ -1,5 +1,5 @@
 import { IEventBus } from './eventBus';
-import { ToolCallParams, ToolExecutionResult, AgentState, AgentStep, StandardExtractorResult } from '../interfaces';
+import { ToolCallParams, ToolExecutionResult, AgentStatus, AgentStep, StandardExtractorResult } from '../interfaces';
 import { logger } from '../utils/logger';
 // 导入预定义的事件结构体
 import {
@@ -62,8 +62,8 @@ export class AgentEventManager {
      * 发布 Agent 状态变更事件
      */
     async publishStateChange(
-        fromState: AgentState, 
-        toState: AgentState, 
+        fromState: AgentStatus, 
+        toState: AgentStatus, 
         reason?: string,
         currentStep?: number
     ): Promise<void> {
@@ -459,12 +459,12 @@ export class AgentEventManager {
                 timestamp: Date.now(),
                 source: 'agent',
                 sessionId: this.sessionId,
-                type: eventType,
+                type: eventType as any,
                 payload: {
                     agentId: this.agentId,
                     ...payload
                 }
-            });
+            } as any);
         } catch (error) {
             logger.error(`Failed to publish custom event ${eventType}:`, error);
         }

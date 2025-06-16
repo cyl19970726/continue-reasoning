@@ -332,9 +332,9 @@ export abstract class BaseInteractiveLayer implements IInteractiveLayer {
   // 🆕 自动记录对话的 sendMessage 实现
   protected async sendMessageWithAutoRecord(message: InteractiveMessage): Promise<void> {
     // 对于 agent_reply，记录到 InteractiveMemory
-    if (message.type === 'agent_reply') {
+    if ((message as any).type === 'agent_reply') {
       await this.interactiveMemory.recordConversation({
-        sessionId: message.sessionId,
+        sessionId: (message as any).sessionId,
         userId: this.getUserId(),
         agentId: this.extractAgentId(message),
         type: 'agent_reply',

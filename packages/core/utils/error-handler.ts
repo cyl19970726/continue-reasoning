@@ -281,9 +281,7 @@ export class ClaudeErrorHandler {
     });
 
     // 发布错误事件
-    if (this.eventBus) {
-      await this.publishErrorEvent(structuredError);
-    }
+    await this.publishErrorEvent(structuredError);
 
     // 执行恢复策略
     await this.executeRecoveryStrategy(structuredError);
@@ -411,22 +409,38 @@ export class ClaudeErrorHandler {
   private async publishErrorEvent(error: StructuredError): Promise<void> {
     if (!this.eventBus) return;
 
+    // 将 ErrorType 映射到事件期望的类型
+    let eventErrorType: 'runtime_error' | 'validation_error' | 'permission_error' | 'network_error';
+    
+    switch (error.type) {
+      case ErrorType.VALIDATION_ERROR:
+      case ErrorType.TOOL_INVALID_PARAMS:
+      case ErrorType.CONFIG_INVALID:
+        eventErrorType = 'validation_error';
+        break;
+      case ErrorType.FILE_PERMISSION_DENIED:
+        eventErrorType = 'permission_error';
+        break;
+      case ErrorType.NETWORK_ERROR:
+      case ErrorType.CONNECTION_TIMEOUT:
+      case ErrorType.CONNECTION_REFUSED:
+        eventErrorType = 'network_error';
+        break;
+      default:
+        eventErrorType = 'runtime_error';
+        break;
+    }
+
     await this.eventBus.publish({
       type: 'error_occurred',
       source: 'error_handler',
       sessionId: error.context.sessionId || 'unknown',
       payload: {
         errorId: error.id,
-        errorType: error.type,
-        severity: error.severity,
+        errorType: eventErrorType,
         message: error.userFriendly.description,
-        title: error.userFriendly.title,
-        component: error.context.component,
-        operation: error.context.operation,
-        stepIndex: error.context.stepIndex,
-        recoverable: error.recovery.strategy !== RecoveryStrategy.ABORT,
-        suggestions: error.recovery.suggestions,
-        actions: error.userFriendly.actions
+        stack: error.details.stackTrace,
+        context: error.context
       }
     });
   }
@@ -475,8 +489,9 @@ export class ClaudeErrorHandler {
             sessionId: error.context.sessionId || 'unknown',
             payload: {
               errorId: error.id,
-              reason: error.message,
-              suggestions: error.recovery.suggestions
+              message: error.message,
+              suggestedActions: error.recovery.suggestions,
+              context: error.context
             }
           });
         }

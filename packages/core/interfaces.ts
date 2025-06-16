@@ -8,7 +8,7 @@ import Logger, { logger } from "./utils/logger";
 
 // 从 agent.ts 导入类型定义
 export type LLMProvider = 'openai' | 'anthropic' | 'google';
-export type AgentState = 'idle' | 'running' | 'stopping' | 'error';
+export type AgentStatus = 'idle' | 'running' | 'stopping' | 'error';
 
 // 从 taskQueue.ts 导入接口
 export interface ITask{
@@ -416,21 +416,6 @@ export interface IEnhancedMemoryManager extends IMemoryManager {
 }
 
 
-export interface IClient<InputSchema extends z.ZodObject<any>,OutputSchema extends z.ZodObject<any>>{
-    id: string;
-    description: string;
-    input:{
-        subscribe: (sendfn: ClientSendFnType) => void;
-    }
-    // if the llm response include the output handlers, wrap the output handers as the task and put it into taskqueue
-    output:{
-        paramsSchema: OutputSchema;
-        responseTool?: ITool<InputSchema, any, IAgent>;
-        dealResponseResult?: (response: z.infer<OutputSchema>, context: AnyContext) => void;// after calling the tool to generate the output, we also need to put the output in the Context or at the Memory 
-    }
-}
-
-
 
 // 标准化的工具执行结果基础格式
 export const BaseToolResultSchema = z.object({
@@ -513,6 +498,16 @@ export interface IInteractionHub {
     };
 }
 
+export type AgentCallbacks = {
+    onSessionStart?: (sessionId: string) => void;
+    onSessionEnd?: (sessionId: string) => void;
+    onAgentStep?: (step: AgentStep<any>) => void;
+    onStateStorage?: (state: AgentStorage) => void;
+    loadAgentStorage: (sessionId: string) => Promise<AgentStorage | null>;
+    onToolCall?: (toolCall: ToolCallParams) => void;
+    onToolCallResult?: (result: ToolExecutionResult) => void;
+}
+
 /**
  * 🤖 智能体接口 - 核心任务处理器
  * 职责：任务理解、工具调用、思考推理
@@ -533,34 +528,34 @@ export interface IAgent{
     toolSets: ToolSet[];
     enableParallelToolCalls: boolean;
     mcpConfigPath: string;
-    
-    // 事件和状态管理
-    eventBus?: IEventBus;
+
     executionMode: 'auto' | 'manual' | 'supervised';
     isRunning: boolean;
     shouldStop: boolean;
-    currentState: AgentState;
+    currentState: AgentStatus;
     currentStep: number;
+
+    // agentStorage
+    agentStorage: AgentStorage;
     
     // 上下文集合
     contexts: IRAGEnabledContext<any>[];
+
+    // callbacks
+    callbacks?: AgentCallbacks;
+
+    setCallBacks(callbacks:AgentCallbacks): void;
 
     // 核心生命周期方法
     setup(): Promise<void>;
     startWithUserInput(
         userInput: string, 
         maxSteps: number, 
+        sessionId?: string,
         options?: {
-        savePromptPerStep?: boolean;  // 是否每步保存prompt
-        promptSaveDir?: string;       // prompt保存目录
-        promptSaveFormat?: 'markdown' | 'json' | 'both';  // 保存格式
-            conversationHistory?: Array<{  // 🆕 添加对话历史参数
-                id: string;
-                role: 'user' | 'agent' | 'system';
-                content: string;
-                timestamp: number;
-                metadata?: Record<string, any>;
-            }>;
+            savePromptPerStep?: boolean;
+            promptSaveDir?: string;
+            promptSaveFormat?: 'markdown' | 'json' | 'both';
         }
     ): Promise<void>;
     stop(): void;
@@ -578,12 +573,6 @@ export interface IAgent{
     getExecutionMode(): 'auto' | 'manual' | 'supervised';
     setExecutionMode(mode: 'auto' | 'manual' | 'supervised'): Promise<void>;
     
-    // 🆕 标准化的事件处理接口
-    setupEventHandlers(): void;
-    handleUserMessage(event: any): Promise<void>;
-    handleInputResponse(event: any): Promise<void>;
-    subscribeToExecutionModeChanges?(): void;
-    
     // 用户交互方法
     processUserInput(input: string, sessionId: string, conversationHistory?: Array<{
         id: string;
@@ -593,15 +582,9 @@ export interface IAgent{
         metadata?: Record<string, any>;
     }>): Promise<void>;
     
-    // 🆕 事件发布能力
-    publishEvent(eventType: string, payload: any, sessionId?: string): Promise<void>;
-    subscribe(eventType: string, handler: (event: any) => void): string;
-    unsubscribe(subscriptionId: string): void;
-    
     // 🆕 生命周期钩子（供子类扩展）
     beforeStart?(): Promise<void>;
     afterStop?(): Promise<void>;
-    onToolCallComplete?(toolResult: ToolCallResult): Promise<void>;
 }
 
 /**
@@ -916,9 +899,21 @@ export interface Config {
 
 /**
  * 聊天消息类型，用于 PromptProcessor 的历史管理
+ * @param role 消息角色
+ * @param type 消息类型
+ *      error: 错误消息
+ *      message: 普通消息 包括用户输入的消息
+ *      toolCall: 工具调用消息
+ *      toolCallResult: 工具调用结果消息
+ *      thinking: 思考消息 extractorResult 的 thinking 字段
+ *      finalAnswer: 最终答案消息 extractorResult 的 finalAnswer 字段,代表用户回复的消息
+ * @param step 因为当前的系统是multi-step的，所以step 越小代表该Message越老，step 越大代表该Message越新
+ * @param content 消息内容
+ * @param timestamp 消息时间戳
  */
 export interface ChatMessage {
     role: 'user' | 'agent' | 'system';
+    type?: 'error' | 'message' | 'toolCallResult' | 'thinking' | 'finalAnswer' ;
     step: number;
     content: string;
     timestamp: string;
@@ -971,7 +966,7 @@ export interface IPromptProcessor<TExtractorResult extends ExtractorResult> {
     // 基础属性
     systemPrompt: string;
     currentPrompt: string;
-    chatMessagesHistory: ChatMessage[];
+    chatHistory: ChatMessage[];
     finalAnswer: string | null;
     
     // 工具调用控制
@@ -985,6 +980,12 @@ export interface IPromptProcessor<TExtractorResult extends ExtractorResult> {
     renderToolCallToPrompt(toolResults: AgentStep['toolCallResults'], stepIndex: number): void;
     formatPrompt(stepIndex: number): string | Promise<string>;
     
+    // 上下文管理
+    getChatHistory(): ChatMessage[];
+
+    // 重置PromptProcessor
+    resetPromptProcessor(): void; 
+
     // 最终答案管理
     resetFinalAnswer(): void;
     setFinalAnswer(finalAnswer: string): void;
@@ -1016,7 +1017,7 @@ export abstract class BasePromptProcessor<TExtractorResult extends ExtractorResu
     
     systemPrompt: string = '';
     currentPrompt: string = '';
-    chatMessagesHistory: ChatMessage[] = [];
+    chatHistory: ChatMessage[] = [];
     finalAnswer: string | null = null;
     enableToolCallsForStep: (stepIndex: number) => boolean = () => true;
 
@@ -1074,6 +1075,18 @@ export abstract class BasePromptProcessor<TExtractorResult extends ExtractorResu
     updateSystemPrompt(newSystemPrompt: string): void {
         this.systemPrompt = newSystemPrompt;
     }
+
+    getChatHistory(): ChatMessage[] {
+        return this.chatHistory;
+    }
+
+    // reset除了systemPrompt之外的属性
+    resetPromptProcessor(): void {
+        this.chatHistory = [];
+        this.finalAnswer = null;
+        this.enableToolCallsForStep = () => true;
+        this.currentPrompt = '';
+    }
 }
 
 /**
@@ -1086,4 +1099,142 @@ export interface ToolExecutionResult {
     status: 'pending' | 'succeed' | 'failed';
     result?: any;
     message?: string;
+}
+
+// 🆕 会话状态管理相关接口
+
+/**
+ * 聊天上下文 - 重命名自 chatMessagesHistory，支持智能压缩
+ */
+export interface ChatContext {
+  // 完整历史记录（用于分析和压缩）
+  fullHistory: ChatMessage[];
+  
+  // 优化后的上下文（实际用于 prompt 生成）
+  optimizedContext: ChatMessage[];
+  
+  // 压缩摘要
+  historySummaries: ContextSummary[];
+  
+  // 元数据
+  totalMessages: number;
+  compressionRatio: number;
+  lastOptimizedAt: number;
+}
+
+/**
+ * 上下文摘要结构
+ */
+export interface ContextSummary {
+  stepRange: { start: number; end: number };
+  messageCount: number;
+  summary: string;
+  keyTopics: string[];
+  importantDecisions: string[];
+  toolUsageSummary: Record<string, number>;
+  timestamp: number;
+}
+
+/**
+ * 压缩策略函数接口
+ */
+export interface CompressionStrategy {
+  // 判断是否需要压缩
+  shouldCompress(chatContext: ChatContext): boolean;
+  
+  // 执行压缩
+  compress(chatContext: ChatContext): Promise<ChatContext>;
+  
+  // 压缩配置
+  config: {
+    maxFullHistorySize: number;
+    maxOptimizedContextSize: number;
+    recentStepsWindow: number;
+    summaryBatchSize: number;
+    preserveImportantSteps: boolean;
+  };
+}
+
+export type AgentStorage = {
+    // 基础信息
+  sessionId: string;
+  agentId: string;
+  userId?: string;
+  
+  // 执行状态
+  currentStep: number;
+  agentSteps: AgentStep<any>[];
+
+  // 上下文信息
+  contexts?: IRAGEnabledContext<any>[];
+  
+  // 智能压缩的聊天上下文
+  chatContext?: ChatContext;
+  
+  // Token 使用统计
+  totalTokensUsed: number;
+  
+  // 会话元数据
+  sessionStartTime: number;
+  lastActiveTime: number;
+}
+
+/**
+ * 会话管理器回调接口 - 用于解耦
+ */
+export interface ISessionManagerCallbacks {
+    onSessionStart?: (sessionId: string) => void;
+    onSessionEnd?: (sessionId: string) => void;
+    onAgentStep?: (step: AgentStep<any>) => void;
+    onToolCall?: (toolCall: ToolCallParams) => void;
+    onToolCallResult?: (result: ToolExecutionResult) => void;
+}
+
+/**
+ * 简化的会话管理器接口 - 只负责状态存储，使用回调解耦
+ */
+export interface ISessionManager {
+    // 关联的Agent
+    agent: IAgent;
+    
+    // 设置回调
+    setCallbacks(callbacks: ISessionManagerCallbacks): void;
+    
+    // 核心消息处理
+    sendMessageToAgent(message: string, maxSteps: number, sessionId: string): Promise<string>;
+    
+    // 核心状态管理
+    loadSession(sessionId: string): Promise<AgentStorage | null>;
+    saveSession(sessionId: string, state: AgentStorage): Promise<void>;
+    
+    // 简单的生命周期
+    createSession(userId?: string, agentId?: string): string;
+    archiveSession(sessionId: string): Promise<void>;
+    
+    // 获取会话列表
+    getActiveSessions(): string[];
+    getSessionCount(): number;
+}
+
+/**
+ * 客户端接口 - 使用依赖注入模式
+ */
+export interface IClient {
+    name: string;
+    currentSessionId?: string;
+    
+    // 依赖注入的会话管理器
+    sessionManager?: ISessionManager;
+    
+    // 设置会话管理器
+    setSessionManager(sessionManager: ISessionManager): void;
+    
+    // 处理Agent的回调事件
+    handleAgentStep(step: AgentStep<any>): void;
+    handleToolCall(toolCall: ToolCallParams): void;
+    handleToolCallResult(result: ToolExecutionResult): void;
+
+    // 简化的方法签名 - 不需要传递sessionManager参数
+    sendMessageToAgent(message: string): Promise<void>;
+    newSession(): void;
 }

@@ -37,7 +37,6 @@ export class ProductionPromptProcessor extends BasePromptProcessor<StandardExtra
     textExtractor(responseText: string): StandardExtractorResult {
         const thinking = this.extractThinking(responseText);
         const finalAnswer = this.extractFinalAnswer(responseText);
-        logger.info('[PromptProcessor] Text extractor result', { thinking, finalAnswer });
         return { 
             thinking: thinking, 
             finalAnswer: finalAnswer 
@@ -76,7 +75,21 @@ export class ProductionPromptProcessor extends BasePromptProcessor<StandardExtra
     }
 
     renderChatMessageToPrompt(messages: ChatMessage[]): void {
-        this.chatMessagesHistory.push(...messages);
+        messages.forEach(message => {
+          // set message type first
+          message.type = 'message';
+          this.chatHistory.push(message);
+        });
+    }
+
+    renderErrorToPrompt(error: string, stepIndex: number): void {
+        this.chatHistory.push({
+            role: 'agent',
+            step: stepIndex,
+            type: 'error',
+            content: `<error>${error}</error>`,
+            timestamp: new Date().toISOString()
+        });
     }
 
     renderExtractorResultToPrompt(
@@ -84,17 +97,19 @@ export class ProductionPromptProcessor extends BasePromptProcessor<StandardExtra
         stepIndex: number
     ): void {
         if (extractorResult.thinking) {
-            this.chatMessagesHistory.push({
+            this.chatHistory.push({
                 role: 'agent',
                 step: stepIndex,
+                type: 'thinking',
                 content: `<think>${extractorResult.thinking}</think>`,
                 timestamp: new Date().toISOString()
             });
         }
         if (extractorResult.finalAnswer) {
-            this.chatMessagesHistory.push({
+            this.chatHistory.push({
                 role: 'agent',
                 step: stepIndex,
+                type: 'finalAnswer',
                 content: `<final_answer>${extractorResult.finalAnswer}</final_answer>`,
                 timestamp: new Date().toISOString()
             });
@@ -114,9 +129,10 @@ message=${result.message || ''}
 </tool_call_result>`
         ).join('\n');
 
-        this.chatMessagesHistory.push({
+        this.chatHistory.push({
             role: 'agent',
             step: stepIndex,
+            type: 'toolCallResult',
             content: toolResultsText,
             timestamp: new Date().toISOString()
         });
@@ -143,9 +159,9 @@ message=${result.message || ''}
         }
         
         // 3. ExecutionHistory（ChatHistory List）
-        if (this.chatMessagesHistory.length > 0) {
+        if (this.chatHistory.length > 0) {
             prompt += '\n## Chat History List\n';
-            this.chatMessagesHistory.forEach(message => {
+            this.chatHistory.forEach(message => {
                 prompt += `
 <chat_history>
 step: ${message.step}
@@ -284,7 +300,7 @@ ${message.role}: ${message.content}
         content += `\`\`\`\n${prompt}\n\`\`\`\n\n`;
 
         // 添加相关的聊天消息
-        const stepMessages = this.chatMessagesHistory.filter(msg => msg.step === stepIndex);
+        const stepMessages = this.chatHistory.filter(msg => msg.step === stepIndex);
         if (stepMessages.length > 0) {
             content += `## Related Chat Messages\n\n`;
             stepMessages.forEach(msg => {
@@ -309,7 +325,7 @@ ${message.role}: ${message.content}
             data.metadata = {
                 generated: new Date().toISOString(),
                 totalSteps: this.stepPrompts.length,
-                relatedMessages: this.chatMessagesHistory.filter(msg => msg.step === stepIndex)
+                relatedMessages: this.chatHistory.filter(msg => msg.step === stepIndex)
             };
         }
 
@@ -323,7 +339,7 @@ ${message.role}: ${message.content}
         if (includeMetadata) {
             content += `**Generated:** ${new Date().toISOString()}\n`;
             content += `**Total Steps:** ${this.stepPrompts.length}\n`;
-            content += `**Total Messages:** ${this.chatMessagesHistory.length}\n`;
+            content += `**Total Messages:** ${this.chatHistory.length}\n`;
             content += `**Has Final Answer:** ${!!this.getFinalAnswer()}\n\n`;
         }
 
@@ -361,7 +377,7 @@ ${message.role}: ${message.content}
     private formatPromptSummaryAsJSON(includeMetadata?: boolean): any {
         const data: any = {
             totalSteps: this.stepPrompts.length,
-            totalMessages: this.chatMessagesHistory.length,
+            totalMessages: this.chatHistory.length,
             hasFinalAnswer: !!this.getFinalAnswer(),
             promptLengths: this.stepPrompts.map(p => p.length),
             estimatedTokens: this.stepPrompts.map(p => Math.round(p.length / 4))
@@ -404,6 +420,11 @@ ${message.role}: ${message.content}
         }
         
         return results;
+    }
+
+    resetPromptProcessor(): void {
+        super.resetPromptProcessor();
+        this.stepPrompts = [];
     }
 }
 

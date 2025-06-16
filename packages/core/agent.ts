@@ -1,8 +1,8 @@
-import { AnyTool, IContextManager, IMemoryManager, IAgent, IClient, ILLM, IContext, ToolCallDefinition, ToolCallParams, ToolCallResult, IRAGEnabledContext, asRAGEnabledContext } from "./interfaces";
+import { AnyTool, IContextManager, IMemoryManager, IAgent, ILLM, IContext, ToolCallDefinition, ToolCallParams, ToolCallResult, IRAGEnabledContext, asRAGEnabledContext, AgentStatus, AgentStep, StandardExtractorResult, ChatMessage, ToolSet, AgentStorage, ISessionManager, ToolExecutionResult, AgentCallbacks } from "./interfaces";
 import { SystemToolNames, HackernewsContext, DeepWikiContext, FireCrawlContext } from "./contexts/index";
 import { ITaskQueue, ITask, TaskQueue } from "./taskQueue";
 import { z } from "zod";
-import { Message,ToolSet } from "./interfaces";
+import { Message } from "./interfaces";
 import dotenv from "dotenv";
 import { error, time } from "console";
 import { PlanContext } from "./contexts/plan";
@@ -19,16 +19,9 @@ import { logger } from "./utils/logger";
 import { IEventBus } from "./events/eventBus";
 import { Agent } from "http";
 import { ContextManager } from "./context";
-// 导入 PromptProcessor 相关类型和实现
-import { 
-    StandardExtractorResult, 
-    ChatMessage, 
-    AgentStep, 
-    ToolExecutionResult
-} from "./interfaces";
 import { ProductionPromptProcessor, createProductionPromptProcessor } from "./prompt-processor";
-// 🆕 导入事件管理器
 import { AgentEventManager } from "./events/agent-event-manager";
+import { SessionManager } from "./session/sessionManager";
 
 dotenv.config();
 
@@ -40,7 +33,7 @@ const SYSTEM_CONTEXTS = [
 const DEFAULT_CONTEXTS = [
     // Planning context (计划和组织)
     PlanContext,
-    
+
     // Execution and utility contexts (执行和工具)
     WebSearchContext,
     MCPContext,
@@ -86,27 +79,33 @@ export interface AgentOptions {
     };
 }
 
-// Agent状态枚举
-export type AgentState = 'idle' | 'running' | 'stopping' | 'error';
-
 export class BaseAgent implements IAgent {
     id: string;
     name: string;
     description: string;
     maxSteps: number;
     contextManager: IContextManager;
-    llm: ILLM; 
+    llm: ILLM;
     taskQueue: ITaskQueue;
     enableParallelToolCalls: boolean;
     toolSets: ToolSet[] = [];
     mcpConfigPath: string;
-    eventBus?: IEventBus; // 添加EventBus支持
     executionMode: 'auto' | 'manual' | 'supervised' = 'manual'; // Agent执行模式，默认为manual
 
     isRunning: boolean;
     shouldStop: boolean;
-    currentState: AgentState = 'idle'; // 添加状态跟踪
+    currentState: AgentStatus = 'idle'; // 添加状态跟踪
     currentStep: number = 0; // 添加步骤跟踪
+    agentStorage: AgentStorage = {
+        sessionId: '',
+        agentId: '',
+        currentStep: 0,
+        contexts: [],
+        agentSteps: [],
+        totalTokensUsed: 0,
+        sessionStartTime: 0,
+        lastActiveTime: 0,
+    };
 
     contexts: IRAGEnabledContext<any>[] = [];
 
@@ -116,17 +115,21 @@ export class BaseAgent implements IAgent {
     // 🆕 事件管理器
     private eventManager?: AgentEventManager;
 
+    // 🆕 会话感知能力
+    private sessionId?: string;
+    callbacks?: AgentCallbacks;
+
     constructor(
-        id: string, 
-        name: string, 
-        description: string, 
+        id: string,
+        name: string,
+        description: string,
         maxSteps: number,
         logLevel?: LogLevel,
-        agentOptions?: AgentOptions, 
+        agentOptions?: AgentOptions,
         contexts?: IContext<any>[],
-        eventBus?: IEventBus // 添加EventBus参数
-    ){
+    ) {
 
+        this.agentStorage.agentId = id;
         agentOptions = agentOptions || DEFAULT_AGENT_OPTIONS;
         this.contexts = contexts || DEFAULT_CONTEXTS;
 
@@ -141,7 +144,6 @@ export class BaseAgent implements IAgent {
         this.description = description;
         this.contextManager = new ContextManager(id, name, agentOptions?.promptOptimization);
         this.toolSets = [];
-        this.eventBus = eventBus; // 设置EventBus
         this.executionMode = agentOptions?.executionMode || 'manual';
         logger.info(`Agent initialized with execution mode: ${this.executionMode}`);
 
@@ -149,11 +151,11 @@ export class BaseAgent implements IAgent {
         const temperature = agentOptions?.temperature || 0.7;
         const maxTokens = agentOptions?.promptOptimization?.maxTokens || 2048;
         this.enableParallelToolCalls = agentOptions?.enableParallelToolCalls ?? false;
-        
+
         // 简化的模型配置：直接使用模型
         const selectedModel: SupportedModel = agentOptions?.model || OPENAI_MODELS.GPT_4O;
         const provider = getModelProvider(selectedModel);
-        
+
         // Initialize correct LLM based on provider
         if (provider === 'openai') {
             this.llm = new OpenAIWrapper(selectedModel, false, temperature, maxTokens);
@@ -170,7 +172,7 @@ export class BaseAgent implements IAgent {
         } else {
             throw new Error(`Unsupported LLM provider: ${provider}`);
         }
-        
+
         // Set LLM parallel tool calling
         if (this.llm.setParallelToolCall) {
             this.llm.setParallelToolCall(this.enableParallelToolCalls);
@@ -178,7 +180,7 @@ export class BaseAgent implements IAgent {
             // Directly set the property if method isn't available
             this.llm.parallelToolCall = this.enableParallelToolCalls;
         }
-        
+
         // 初始化 PromptProcessor
         this.promptProcessor = createProductionPromptProcessor(
             this.getBaseSystemPrompt([]), // 先传入空工具列表
@@ -198,11 +200,6 @@ export class BaseAgent implements IAgent {
         // Set MCP config path
         this.mcpConfigPath = agentOptions?.mcpConfigPath || path.join(process.cwd(), 'config', 'mcp.json');
         logger.info(`MCP config path: ${this.mcpConfigPath}`);
-
-        // 🆕 初始化事件管理器
-        if (eventBus) {
-            this.eventManager = new AgentEventManager(eventBus, this.id);
-        }
 
         let taskConcurency = agentOptions?.taskConcurency ? agentOptions?.taskConcurency : 5;
         this.taskQueue = new TaskQueue(taskConcurency);
@@ -227,8 +224,12 @@ export class BaseAgent implements IAgent {
 避免使用"step"等字样，用"任务"、"阶段"等替代。
 </think>
 
+<request>
+你可以在这里请求用户补充信息，但是只有在必要的时候再进行请求;
+</request>
+
 <final_answer>
-重要：在任务执行过程中，这里必须保持为空！
+重要：
 只有当你确认所有任务都已完成并且用户的需求得到完全满足时，才在这里给出最终回答。
 如果任务还在进行中，请保持此标签为空。
 </final_answer>
@@ -243,56 +244,27 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
     private async processStepWithPromptProcessor(
         userInput: string,
         stepIndex: number,
-        conversationHistory?: Array<{
-            id: string;
-            role: 'user' | 'agent' | 'system';
-            content: string;
-            timestamp: number;
-            metadata?: Record<string, any>;
-        }>
     ): Promise<{
         continueProcessing: boolean;
         agentStep: AgentStep;
     }> {
         try {
-            // 如果是第一步，添加用户输入到历史
-            if (stepIndex === 0) {
-                
-                // 如果有对话历史，也添加进去
-                if (conversationHistory && conversationHistory.length > 0) {
-                    const historyMessages: ChatMessage[] = conversationHistory.map((msg, index) => ({
-                        role: msg.role as 'user' | 'agent' | 'system',
-                        step: -1 - index, // 使用负数表示历史消息
-                        content: msg.content,
-                        timestamp: new Date(msg.timestamp).toISOString()
-                    }));
-                    this.promptProcessor.renderChatMessageToPrompt(historyMessages);
-                }
-
-                const userMessage: ChatMessage = {
-                    role: 'user',
-                    step: stepIndex,
-                    content: userInput,
-                    timestamp: new Date().toISOString()
-                };
-                this.promptProcessor.renderChatMessageToPrompt([userMessage]);
-            }
 
             // 生成 prompt
             const prompt = await this.promptProcessor.formatPrompt(stepIndex);
             logger.debug('Generated prompt', { length: prompt.length });
 
             // 获取工具定义
-            const toolDefs = this.promptProcessor.enableToolCallsForStep(stepIndex) 
+            const toolDefs = this.promptProcessor.enableToolCallsForStep(stepIndex)
                 ? this.getActiveTools().map(tool => tool.toCallParams())
                 : [];
 
-            logger.info('Tool calls enabled for step', { stepIndex, toolDefs: toolDefs.map(t => t.name) });
-            
+            logger.debug('Tool calls enabled for step', { stepIndex, toolDefs: toolDefs.map(t => t.name) });
+
             // 调用 LLM
             const llmResponse = await this.llm.call(prompt, toolDefs);
             const responseText = llmResponse.text || '';
-            logger.info('[PromptProcessor] responseText', { responseText });
+            logger.debug('[PromptProcessor] responseText', { responseText });
             const toolCalls = llmResponse.toolCalls || [];
 
             // 创建当前步骤
@@ -317,10 +289,10 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
                 message?: string;
                 executionTime?: number;
             }> = [];
-            
+
             for (const toolCall of toolCalls) {
                 const tool = this.getActiveTools().find(t => t.name === toolCall.name);
-                
+
                 if (!tool) {
                     const errorResult = {
                         name: toolCall.name,
@@ -331,7 +303,7 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
                         executionTime: 0
                     };
                     toolResults.push(errorResult);
-                    
+
                     // 🆕 发布工具执行结果事件
                     if (this.eventManager) {
                         await this.eventManager.publishToolExecutionResult(
@@ -349,19 +321,12 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
 
                 try {
                     // 🆕 发布工具执行开始事件
-                    if (this.eventManager) {
-                        await this.eventManager.publishToolExecutionStarted(
-                            tool.name,
-                            toolCall.call_id || `${tool.name}_${Date.now()}`,
-                            toolCall.parameters,
-                            stepIndex
-                        );
-                    }
+                    this.callbacks?.onToolCall?.(toolCall);
 
                     const startTime = Date.now();
                     const result = await tool.execute(toolCall.parameters, this);
                     const executionTime = Date.now() - startTime;
-                    
+
                     const toolCallResult = {
                         name: tool.name,
                         call_id: toolCall.call_id || `${tool.name}_${Date.now()}`,
@@ -371,20 +336,10 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
                         executionTime
                     };
                     toolResults.push(toolCallResult);
-                    
+
                     // 🆕 发布工具执行结果事件
-                    if (this.eventManager) {
-                        await this.eventManager.publishToolExecutionResult(
-                            tool.name,
-                            toolCallResult.call_id,
-                            true,
-                            result,
-                            undefined,
-                            executionTime,
-                            stepIndex
-                        );
-                    }
-                    
+                    this.callbacks?.onToolCallResult?.(toolCallResult);
+
                     // 调用 processToolCallResult 以便其他系统能响应
                     this.processToolCallResult(result as ToolCallResult);
 
@@ -433,46 +388,11 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
             const extractorResult = this.promptProcessor.textExtractor(responseText);
             currentStep.extractorResult = extractorResult;
 
-            // 🆕 发布事件
-            if (this.eventManager) {
-                // 发布 step 事件
-                await this.eventManager.publishAgentStep(currentStep);
-
-                // 发布 thinking 事件
-                if (extractorResult.thinking) {
-                    await this.eventManager.publishThinking(
-                        stepIndex,
-                        {
-                            analysis: extractorResult.thinking,
-                            plan: '',
-                            reasoning: extractorResult.thinking,
-                            nextAction: ''
-                        },
-                        toolCalls,
-                        responseText
-                    );
-                }
-
-                // 发布 reply 事件
-                if (extractorResult.finalAnswer) {
-                    await this.eventManager.publishReply(
-                        extractorResult.finalAnswer,
-                        'final_answer',
-                        {
-                            reasoning: extractorResult.thinking,
-                            confidence: 85,
-                            stepNumber: stepIndex
-                        }
-                    );
-                }
-            }
-
             // 检查是否应该继续
-            const finalAnswer = this.promptProcessor.getFinalAnswer();
-            const continueProcessing = !finalAnswer;
-            
-            if (finalAnswer) {
-                logger.info('Final answer reached', { finalAnswer });
+            const continueProcessing = !extractorResult.finalAnswer;
+
+            if (extractorResult.finalAnswer) {
+                logger.info('Final answer reached', { finalAnswer: extractorResult.finalAnswer });
             }
 
             return {
@@ -482,7 +402,10 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
 
         } catch (error) {
             logger.error('Error in prompt processor step:', error);
-            
+
+            // add error to prompt
+            this.promptProcessor.renderErrorToPrompt(error instanceof Error ? error.message : String(error), stepIndex);
+
             // 创建错误步骤
             const errorStep: AgentStep = {
                 stepIndex: stepIndex,
@@ -496,13 +419,13 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
         }
     }
 
-    async setup(): Promise<void>{
+    async setup(): Promise<void> {
         // Register all contexts with the context manager
         this.contexts.forEach((context) => {
             logger.info(`Registering context: ${context.id}`);
             this.contextManager.registerContext(asRAGEnabledContext(context));
         });
-        
+
         // Add tools from contexts
         this.contextManager.contexts.forEach((context) => {
             if (context && context.toolSet) {
@@ -522,7 +445,7 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
             }
         });
 
-          // 使用ContextManager集中安装所有Context的MCP服务器
+        // 使用ContextManager集中安装所有Context的MCP服务器
         const installResults = await this.contextManager.installAllContexts(this);
         logger.info(`MCP服务器安装结果: 总数=${installResults.totalContexts}, 成功=${installResults.installedCount}, 失败=${installResults.failedCount}, 跳过=${installResults.skippedCount}`);
         // 如果有安装失败的，记录详细信息
@@ -533,46 +456,41 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
             logger.warn(`以下Context的MCP服务器安装失败:\n${failedContexts.join('\n')}`);
         }
 
-        // 订阅ExecutionModeChangeEvent
-        if (this.eventBus) {
-            this.setupEventHandlers(); // 设置用户输入相关的事件处理器
-        }
-
         // 🆕 在 setup 完成后，更新 PromptProcessor 的 system prompt，包含所有工具信息
         const allTools = this.getActiveTools();
-        logger.info(`[PromptProcessor] Active tools: ${allTools.map(t => t.name).join(', ')}`);
+        logger.debug(`[PromptProcessor] Active tools: ${allTools.map(t => t.name).join(', ')}`);
         const updatedSystemPrompt = this.getBaseSystemPrompt(allTools);
         this.promptProcessor.updateSystemPrompt(updatedSystemPrompt);
-        logger.info(`[PromptProcessor] Updated system prompt with ${allTools.length} tools`);
+        logger.debug(`[PromptProcessor] Updated system prompt with ${allTools.length} tools`);
     }
 
     // 添加状态变更方法
-    private async changeState(newState: AgentState, reason?: string): Promise<void> {
+    private async changeState(newState: AgentStatus, reason?: string): Promise<void> {
         const oldState = this.currentState;
         this.currentState = newState;
-        
-        logger.info(`Agent state changed: ${oldState} -> ${newState}${reason ? ` (${reason})` : ''}`);
-        
+
+        logger.debug(`Agent state changed: ${oldState} -> ${newState}${reason ? ` (${reason})` : ''}`);
+
         // 🆕 使用事件管理器发布状态变更事件
         if (this.eventManager) {
             await this.eventManager.publishStateChange(oldState, newState, reason, this.currentStep);
         }
     }
 
+    /**
+     * 
+     * feature:
+     *   1. 对同一个会话可以多次调用该方法，会从上一次调用的地方继续执行
+     *   2. 如果传入新的SessionId，会重置会话，并且加载新的SessionId的AgentStorage,从之前的状态开始执行
+     */
     async startWithUserInput(
-        userInput: string, 
-        maxSteps: number, 
+        userInput: string,
+        maxSteps: number,
+        sessionId: string,  // 🆕 可选的 sessionId
         options?: {
             savePromptPerStep?: boolean;  // 是否保存步骤prompt文件
             promptSaveDir?: string;       // prompt保存目录
             promptSaveFormat?: 'markdown' | 'json' | 'both';  // 保存格式
-            conversationHistory?: Array<{  // 🆕 添加对话历史参数
-                id: string;
-                role: 'user' | 'agent' | 'system';
-                content: string;
-                timestamp: number;
-                metadata?: Record<string, any>;
-            }>;
         }
     ): Promise<void> {
         // 验证参数
@@ -588,95 +506,96 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
             throw new Error('Agent is already running');
         }
 
+        // 🆕 会话管理逻辑
+        if (this.sessionId) {
+            if (this.sessionId !== sessionId) {
+                // 存储旧会话
+                this.callbacks?.onSessionEnd?.(this.sessionId!);
+                this.callbacks?.onStateStorage?.(this.agentStorage);
+
+                // 重置会话
+                this.resetPromptProcessor();
+
+                this.sessionId = sessionId;
+                let state = await this.callbacks?.loadAgentStorage(sessionId);
+                this.loadAgentStorage(state!);
+                logger.info(`Agent ${this.id}: Starting new session ${sessionId} at step ${this.currentStep}`);
+            } else {
+                // 仍然存储有状态继续执行  
+                logger.info(`Agent ${this.id}: Continuing session ${sessionId} from step ${this.currentStep}`);
+            }
+        } else {
+            // 从 step 0 开始执行
+            this.sessionId = sessionId;
+            let state = await this.callbacks?.loadAgentStorage(sessionId);
+            if (!state) {
+                state = {
+                    sessionId: sessionId,
+                    agentId: this.id,
+                    currentStep: 0,
+                    agentSteps: [],
+                    totalTokensUsed: 0,
+                    sessionStartTime: Date.now(),
+                    lastActiveTime: Date.now(),
+                }
+            }
+            await this.loadAgentStorage(state);
+            logger.info(`Agent ${this.id}: Starting new session ${sessionId} at step ${this.currentStep}`)
+        }
+
+        // 添加 userInput 到 PromptProcessor
+        this.promptProcessor.renderChatMessageToPrompt(
+            [{
+                role: 'user',
+                step: this.currentStep,
+                timestamp: new Date().toISOString(),
+                type: 'message',
+                content: userInput
+            }]
+        );
+
         await this.changeState('running', 'Starting task processing');
 
-        try {
-            // 重置状态
-            this.currentStep = 0;
-            this.shouldStop = false;
+        // 🆕 不再重置 currentStep，保持会话连续性
+        this.shouldStop = false;
 
-            // 🆕 支持对话历史
-            if (options?.conversationHistory) {
-                logger.info(`Loading conversation history: ${options.conversationHistory.length} messages`);
-                // 将对话历史添加到PromptProcessor
-                const chatMessages = options.conversationHistory.map(historyItem => ({
-                    role: historyItem.role,
-                    content: historyItem.content,
-                    step: -1, // 使用-1表示历史消息
-                    timestamp: new Date(historyItem.timestamp).toISOString()
-                }));
-                this.promptProcessor.renderChatMessageToPrompt(chatMessages);
-            }
+        logger.info(`🚀 Starting agent execution with maxSteps: ${maxSteps}, currentStep: ${this.currentStep}`);
 
-            logger.info(`🚀 Starting agent execution with maxSteps: ${maxSteps}`);
-            
-            // 开始执行步骤循环
-            await this.executeStepsLoop(userInput, maxSteps, options);
+        // 开始执行步骤循环
+        await this.executeStepsLoop(userInput, maxSteps, options);
 
-            // 🆕 在所有步骤完成后，一次性保存所有步骤的prompt
-            if (options?.savePromptPerStep && this.promptProcessor) {
-                await this.saveAllStepPrompts(options);
-            }
-
-            logger.info('✅ Agent execution completed successfully');
-            await this.changeState('idle', 'Task processing completed');
-
-        } catch (error) {
-            logger.error('❌ Agent execution failed:', error);
-            await this.changeState('error', `Execution failed: ${error}`);
-            throw error;
+        // 🆕 在所有步骤完成后，一次性保存所有步骤的prompt
+        if (options?.savePromptPerStep && this.promptProcessor) {
+            await this.saveAllStepPrompts(options);
         }
+
+        logger.info('✅ Agent execution completed successfully');
+        await this.changeState('idle', 'Task processing completed');
     }
 
     private async executeStepsLoop(userInput: string, maxSteps: number, options?: {
         savePromptPerStep?: boolean;  // 是否保存步骤prompt文件
         promptSaveDir?: string;       // prompt保存目录
         promptSaveFormat?: 'markdown' | 'json' | 'both';  // 保存格式
-        conversationHistory?: Array<{
-            id: string;
-            role: 'user' | 'agent' | 'system';
-            content: string;
-            timestamp: number;
-            metadata?: Record<string, any>;
-        }>;
     }): Promise<void> {
+        let agentSteps: AgentStep[] = [];
         while (this.currentStep < maxSteps && !this.shouldStop) {
             logger.info(`\n🔄 --- Step ${this.currentStep}/${maxSteps} ---`);
+            // 使用PromptProcessor处理此步骤, 内部有错误处理步骤
+            const result = await this.processStepWithPromptProcessor(
+                userInput,
+                this.currentStep,
+            );
+            agentSteps.push(result.agentStep);
 
-            try {
-                // 使用PromptProcessor处理此步骤
-                const result = await this.processStepWithPromptProcessor(
-                    userInput, 
-                    this.currentStep,
-                    options?.conversationHistory
-                );
+            // 🆕 调用 onAgentStep 回调
+            this.callbacks?.onAgentStep?.(result.agentStep);
 
-                // 🆕 使用事件管理器发布步骤完成事件
-                if (this.eventManager) {
-                    await this.eventManager.publishAgentStep(result.agentStep);
-                }
-
-                if (!result.continueProcessing) {
-                    logger.info(`✅ Agent decided to stop at step ${this.currentStep}`);
-                    break;
-                }
-
-            } catch (error) {
-                logger.error(`❌ Error in step ${this.currentStep}:`, error);
-                
-                // 🆕 使用事件管理器发布步骤错误事件
-                if (this.eventManager) {
-                    await this.eventManager.publishStepError(this.currentStep, new Error(String(error)));
-                }
-                
-                // 如果是第一步就失败，重新抛出错误
-                if (this.currentStep === 0) {
-                    throw error;
-                }
-                
-                // 否则记录错误但继续下一步
-                logger.warn(`⚠️ Continuing to next step after error in step ${this.currentStep}`);
+            if (!result.continueProcessing) {
+                logger.info(`✅ Agent decided to stop at step ${this.currentStep}`);
+                break;
             }
+
             this.currentStep++;
         }
 
@@ -690,7 +609,7 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
     stop(): void {
         this.shouldStop = true;
         logger.info("Agent Stop has been called");
-        
+
         // 异步更新状态
         this.changeState('stopping', 'User requested stop').catch(error => {
             logger.error('Error updating state to stopping:', error);
@@ -702,7 +621,7 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
         this.toolSets.push(toolSet);
     }
 
-    listToolSets() {    
+    listToolSets() {
         return this.toolSets;
     }
 
@@ -731,12 +650,12 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
     // New: Get all tools from active tool sets, filtered by execution mode
     getActiveTools(): AnyTool[] {
         const allTools = this.toolSets.filter(ts => ts.active).flatMap(ts => ts.tools);
-        
+
         if (this.executionMode === 'auto') {
             // Auto模式：过滤掉ApprovalRequestTool
             return allTools.filter(tool => tool.name !== 'approval_request');
         }
-        
+
         return allTools; // Manual模式：包含所有工具
     }
 
@@ -748,7 +667,7 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
      */
     protected processToolCallResult(toolCallResult: ToolCallResult): void {
         if (!toolCallResult) return;
-        
+
         // Iterate through all contexts and call onToolCall if it exists
         const contexts = this.contextManager.contextList();
         for (const context of contexts) {
@@ -760,23 +679,6 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
                 logger.error(`Error in context ${context.id} onToolCall handler:`, error);
             }
         }
-    }
-
-    /**
-     * 设置事件处理器（在 Agent 启动时调用）
-     */
-    setupEventHandlers(): void {
-        if (!this.eventBus) return;
-
-        // 处理用户消息事件
-        this.eventBus.subscribe('user_message', async (event: any) => {
-            await this.handleUserMessage(event);
-        });
-
-        // 处理输入响应事件
-        this.eventBus.subscribe('input_response', async (event: any) => {
-            await this.handleInputResponse(event);
-        });
     }
 
     /**
@@ -797,23 +699,23 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
 
         const { content, messageType, context, conversationHistory } = event.payload;
         logger.info(`Agent handling user message: "${content}" (type: ${messageType})`);
-        
+
         // 🆕 构建包含对话历史的选项
         const startOptions: any = {
             savePromptPerStep: true,
             promptSaveDir: './step-prompts',
             promptSaveFormat: 'markdown'
         };
-        
+
         // 🆕 如果事件中包含对话历史，添加到选项中
         if (conversationHistory && conversationHistory.length > 0) {
             logger.info(`User message event includes conversation history: ${conversationHistory.length} messages`);
             startOptions.conversationHistory = conversationHistory;
         }
-        
+
         // 如果启用了思考系统，直接使用思考系统处理
         if (this.promptProcessor) {
-            await this.startWithUserInput(content, this.maxSteps, startOptions);
+            await this.startWithUserInput(content, this.maxSteps, this.sessionId || 'default-session', startOptions);
             return;
         }
     }
@@ -824,7 +726,7 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
     async handleInputResponse(event: any): Promise<void> {
         const { requestId, value } = event.payload;
         logger.info(`Agent handling input response for request ${requestId}: ${value}`);
-        
+
         // 查找任何具有handleInputResponse方法的context
         const contexts = this.contextManager.contextList();
         for (const context of contexts) {
@@ -839,62 +741,6 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
         }
     }
 
-    /**
-     * 🆕 事件发布能力
-     */
-    async publishEvent(eventType: string, payload: any, sessionId?: string): Promise<void> {
-        // 🆕 优先使用事件管理器
-        if (this.eventManager) {
-            if (sessionId && sessionId !== this.eventManager.getSessionId()) {
-                this.eventManager.updateSessionId(sessionId);
-            }
-            await this.eventManager.publishCustomEvent(eventType, payload);
-            return;
-        }
-
-        // 后备方案：直接使用 EventBus
-        if (!this.eventBus) {
-            throw new Error('EventBus is not available');
-        }
-        
-        await this.eventBus.publish({
-            type: eventType,
-            source: 'agent',
-            sessionId: sessionId || this.eventBus.getActiveSessions()[0] || 'default',
-            payload
-        });
-    }
-
-    /**
-     * 🆕 订阅事件
-     */
-    subscribe(eventType: string, handler: (event: any) => void): string {
-        if (!this.eventBus) {
-            throw new Error('EventBus is not available');
-        }
-        
-        // 包装handler为MessageHandler（返回Promise<void>）
-        const wrappedHandler = async (event: any) => {
-            try {
-                handler(event);
-            } catch (error) {
-                logger.error(`Error in event handler for ${eventType}:`, error);
-            }
-        };
-        
-        return this.eventBus.subscribe(eventType, wrappedHandler);
-    }
-
-    /**
-     * 🆕 取消订阅事件
-     */
-    unsubscribe(subscriptionId: string): void {
-        if (!this.eventBus) {
-            throw new Error('EventBus is not available');
-        }
-        
-        this.eventBus.unsubscribe(subscriptionId);
-    }
 
     /**
      * 🆕 处理用户输入的统一接口
@@ -907,12 +753,12 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
         metadata?: Record<string, any>;
     }>): Promise<void> {
         logger.info(`Agent processing user input: "${input}" in session ${sessionId}`);
-        
+
         // 调用 beforeStart 钩子（如果子类实现了的话）
         if ('beforeStart' in this && typeof (this as any).beforeStart === 'function') {
             await (this as any).beforeStart();
         }
-        
+
         // 🆕 构建包含对话历史的选项
         const startOptions: any = {
             savePromptPerStep: true,
@@ -923,10 +769,10 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
             logger.info(`Processing user input with conversation history: ${conversationHistory.length} messages`);
             startOptions.conversationHistory = conversationHistory;
         }
-        
+
         // 使用思考系统处理输入
         if (this.promptProcessor) {
-            await this.startWithUserInput(input, this.maxSteps, startOptions);
+            await this.startWithUserInput(input, this.maxSteps, sessionId, startOptions);
         }
     }
 
@@ -944,7 +790,7 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
         const oldMode = this.executionMode;
         this.executionMode = mode;
         logger.info(`Agent execution mode changed: ${oldMode} -> ${mode}`);
-        
+
         // 🆕 使用事件管理器发布执行模式变更事件
         if (this.eventManager) {
             await this.eventManager.publishExecutionModeChange(oldMode, mode, 'User requested mode change');
@@ -965,15 +811,15 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
 
         const saveDir = options.promptSaveDir || './step-prompts';
         const format = options.promptSaveFormat || 'both';
-        
+
         logger.info(`💾 Saving all ${this.currentStep} step prompts to ${saveDir}...`);
-        
+
         try {
             await this.promptProcessor.saveAllStepPrompts(saveDir, {
                 formatType: format,
                 includeMetadata: true
             });
-            
+
             logger.info(`✅ Successfully saved ${this.currentStep} step prompts to ${saveDir}`);
         } catch (error) {
             logger.error(`❌ Error saving step prompts:`, error);
@@ -997,9 +843,7 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
 
     // 新增：重置PromptProcessor
     public resetPromptProcessor(): void {
-        this.promptProcessor.resetFinalAnswer();
-        this.promptProcessor.chatMessagesHistory = [];
-        logger.info('Prompt Processor reset');
+        this.promptProcessor.resetPromptProcessor();
     }
 
     // 新增：获取处理器统计信息
@@ -1010,11 +854,32 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
         finalAnswer: string | null;
     } {
         return {
-            totalMessages: this.promptProcessor.chatMessagesHistory.length,
+            totalMessages: this.promptProcessor.chatHistory.length,
             currentStep: this.currentStep,
             hasFinalAnswer: !!this.promptProcessor.getFinalAnswer(),
             finalAnswer: this.promptProcessor.getFinalAnswer()
         };
+    }
+
+    // 🆕 设置会话回调
+    setCallBacks(callbacks: AgentCallbacks): void {
+        this.callbacks = callbacks;
+        logger.info(`Agent ${this.id}: Session callback set`);
+    }
+
+    // 🆕 加载会话状态
+    async loadAgentStorage(state: AgentStorage): Promise<void> {
+        state.agentId = this.id;
+        this.sessionId = state.sessionId;
+        this.currentStep = state.currentStep;
+        this.agentStorage = state;
+
+        // 恢复 chatContext 到 promptProcessor
+        if (state.chatContext && state.chatContext.fullHistory.length > 0) {
+            this.promptProcessor.renderChatMessageToPrompt(state.chatContext.fullHistory);
+        }
+
+        logger.debug(`Agent ${this.id}: Loaded session state for ${state.sessionId}, currentStep: ${state.currentStep}`);
     }
 }
 

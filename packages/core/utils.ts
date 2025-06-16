@@ -365,9 +365,6 @@ export const ContextHelper = {
       
       data: dataSchema.parse(initialData) as z.infer<T>,
       
-      // Add promptCtx if provided
-      promptCtx,
-      
       // Add mcpServers if provided
       mcpServers,
       
