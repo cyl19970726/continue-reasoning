@@ -1271,3 +1271,9 @@ export const EditingStrategyToolSet = [
   CreateDirectoryTool,
   CompareFilesTool,
 ];
+
+export const ReadToolSet = [
+  ReadFileTool,
+  CreateDirectoryTool,
+  CompareFilesTool,
+];

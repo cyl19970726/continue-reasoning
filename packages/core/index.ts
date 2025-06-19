@@ -26,9 +26,6 @@ export type {
 export { BaseInteractiveLayer } from './events/interactiveLayer';
 export { AgentEventManager } from './events/agent-event-manager';
 
-// Interactive layers
-export { CLIClient } from './interactive/cliClient';
-
 // Hub functionality  
 export { InteractionHub } from './hub/interaction-hub';
 

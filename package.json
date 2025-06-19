@@ -29,6 +29,7 @@
     "test:hackernews": "vitest packages/core/__tests__/hackernews.test.ts --watch=false",
     "test:memory": "vitest packages/core/__tests__/memory/baseMemory.test.ts --watch=false",
     "test:snapshot": "vitest packages/agents/contexts/coding/snapshot/__tests__/operation-buffer.test.ts packages/agents/contexts/coding/snapshot/__tests__/session-cache.test.ts packages/agents/contexts/coding/snapshot/__tests__/compression.test.ts packages/agents/contexts/coding/snapshot/__tests__/snapshot-manager-simple.test.ts --watch=false",
+    "test:snapshot-ignore": "vitest packages/agents/contexts/coding/snapshot/simple-snapshot-ignore.test.ts --watch=false",
     "test:core": "vitest packages/core/__tests__/ --watch=false",
     "test": "vitest",
     "build:packages": "pnpm -r run build",

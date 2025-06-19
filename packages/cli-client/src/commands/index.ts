@@ -3,6 +3,11 @@ import { helpCommand } from './help';
 import { multilineCommand } from './multiline';
 import { exitCommand } from './exit';
 import { sessionCommands } from './session-commands';
+import { 
+  fileImportInfoCommand, 
+  fileImportConfigCommand, 
+  fileCompletionInfoCommand 
+} from './file-import';
 
 /**
  * 内置命令映射
@@ -12,6 +17,9 @@ export const BUILT_IN_COMMANDS: Record<string, CommandHandler> = {
   '?': helpCommand, // 别名
   'multiline': multilineCommand,
   '###': multilineCommand, // 别名
+  'fileinfo': fileImportInfoCommand,
+  'fileconfig': fileImportConfigCommand,
+  'completion': fileCompletionInfoCommand,
 };
 
 /**
@@ -26,6 +34,11 @@ export function getAllCommands(customCommands?: Record<string, CommandHandler>):
     // 输入模式命令
     multiline: multilineCommand,
     '###': multilineCommand, // multiline 别名
+    
+    // 文件导入命令
+    fileinfo: fileImportInfoCommand,
+    fileconfig: fileImportConfigCommand,
+    completion: fileCompletionInfoCommand,
     
     // 会话管理命令
     new: sessionCommands.new,
@@ -72,4 +85,5 @@ export function parseCommand(input: string): { command: string; args: string[] }
 export * from './help';
 export * from './multiline';
 export * from './exit';
-export * from './session-commands'; 
+export * from './session-commands';
+export * from './file-import'; 

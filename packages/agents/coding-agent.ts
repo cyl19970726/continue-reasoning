@@ -1,10 +1,12 @@
 import { BaseAgent, AgentOptions } from '../core/agent';
 import { LogLevel } from '../core/utils/logger';
-import { IContext, ToolCallResult } from '../core/interfaces';
+import { AnyTool, IContext, ToolCallResult } from '../core/interfaces';
 import { IEventBus } from '../core/events/eventBus';
 import { createCodingContext } from './contexts/coding';
 import { createInteractiveContext } from './contexts/interaction';
 import { logger } from '../core/utils/logger';
+import { SimpleSnapshotManager } from './contexts/coding/snapshot/simple-snapshot-manager';
+import { ICodingContext } from './contexts/coding/coding-context';
 
 /**
  * 🔧 编程专用智能体
@@ -14,9 +16,11 @@ import { logger } from '../core/utils/logger';
  * - 项目结构管理
  * - 编程工具集成
  * - 开发环境管理
+ * - 快照管理和版本控制
  */
 export class CodingAgent extends BaseAgent {
     private workspacePath: string;
+    private codingContext: ICodingContext;
 
     constructor(
         id: string,
@@ -28,11 +32,9 @@ export class CodingAgent extends BaseAgent {
         agentOptions?: AgentOptions,
         contexts?: IContext<any>[],
     ) {
+
         // 创建coding context
         const codingContext = createCodingContext(workspacePath);
-        
-        // 🆕 创建 interactive context 以提供 requestApproval 和 requestUserInput 功能
-        const interactiveContext = createInteractiveContext();
         
         super(
             id,
@@ -45,6 +47,7 @@ export class CodingAgent extends BaseAgent {
         );
         
         this.workspacePath = workspacePath;
+        this.codingContext = codingContext;
         
         logger.info(`CodingAgent initialized with workspace: ${workspacePath}`);
     }
@@ -82,9 +85,9 @@ export class CodingAgent extends BaseAgent {
             const toolName = toolResult.name;
             
             // 记录编程相关的工具使用
-            if (toolName.includes('file') || toolName.includes('code') || toolName.includes('edit')) {
+            if (toolName.includes('file') || toolName.includes('code') || toolName.includes('edit') || toolName.includes('create') || toolName.includes('delete') || toolName.includes('Bash') || toolName.includes('Apply'))  {
                 logger.debug(`Coding tool completed: ${toolName}`);
-                
+                logger.debug(`Coding tool result: ${JSON.stringify(toolResult)}`);
             }
         }
     }
@@ -94,6 +97,14 @@ export class CodingAgent extends BaseAgent {
      */
     getWorkspacePath(): string {
         return this.workspacePath;
+    }
+
+    /**
+     * 🔧 获取快照管理器
+     * 提供对快照系统的统一访问
+     */
+    getSnapshotManager(): SimpleSnapshotManager {
+        return this.codingContext.getSnapshotManager();
     }
 
     /**

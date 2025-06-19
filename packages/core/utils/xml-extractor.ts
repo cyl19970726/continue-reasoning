@@ -362,6 +362,99 @@ export class XmlExtractor {
   setOptions(options: Partial<ExtractionOptions>): void {
     this.options = { ...this.options, ...options };
   }
+
+  /**
+   * 🎯 Enhanced extraction with type support
+   * Extracts content and parses type attributes for typed values
+   */
+  extractWithType(text: string, tagPath: string, options?: ExtractionOptions): {
+    success: boolean;
+    content: string;
+    type?: string;
+    value?: any;
+    error?: string;
+  } {
+    const opts = { ...this.options, ...options };
+    const tags = tagPath.split('.');
+    const targetTag = tags[tags.length - 1];
+    
+    try {
+      // First extract the content
+      const result = this.extract(text, tagPath, opts);
+      if (!result.success) {
+        return {
+          success: false,
+          content: '',
+          error: result.error
+        };
+      }
+
+      // Extract attributes from the target tag
+      const attributes = this.extractAttributes(text, targetTag);
+      const type = attributes.type || 'string';
+      const value = this.parseTypedValue(result.content, type);
+
+      return {
+        success: true,
+        content: result.content,
+        type,
+        value
+      };
+
+    } catch (error) {
+      return {
+        success: false,
+        content: '',
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  /**
+   * 🎯 Enhanced multiple extraction with type support
+   */
+  extractMultipleWithType(text: string, tagPaths: string[], options?: ExtractionOptions): Record<string, {
+    success: boolean;
+    content: string;
+    type?: string;
+    value?: any;
+    error?: string;
+  }> {
+    const results: Record<string, any> = {};
+    
+    for (const tagPath of tagPaths) {
+      results[tagPath] = this.extractWithType(text, tagPath, options);
+    }
+    
+    return results;
+  }
+
+  /**
+   * 🛠️ Parse typed value based on type attribute
+   */
+  private parseTypedValue(content: string, type: string): any {
+    const trimmedContent = content.trim();
+    
+    switch (type.toLowerCase()) {
+      case 'boolean':
+        return trimmedContent.toLowerCase() === 'true';
+      
+      case 'number':
+        const num = parseFloat(trimmedContent);
+        return isNaN(num) ? trimmedContent : num;
+      
+      case 'json':
+        try {
+          return JSON.parse(trimmedContent);
+        } catch {
+          return trimmedContent;
+        }
+      
+      case 'string':
+      default:
+        return trimmedContent;
+    }
+  }
 }
 
 /**

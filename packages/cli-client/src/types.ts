@@ -1,3 +1,6 @@
+import { FileImporterConfig } from './utils/file-importer';
+import { FileCompleterConfig } from './utils/file-completer';
+
 /**
  * CLI Client 配置接口
  */
@@ -22,6 +25,12 @@ export interface CLIClientConfig {
   enableColors?: boolean;
   enableTimestamps?: boolean;
   promptPrefix?: string;
+  
+  // 文件导入配置
+  fileImporter?: FileImporterConfig;
+  
+  // 文件补全配置
+  fileCompleter?: FileCompleterConfig;
   
   // 扩展配置
   customCommands?: Record<string, CommandHandler>;

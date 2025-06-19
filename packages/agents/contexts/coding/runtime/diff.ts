@@ -44,6 +44,58 @@ export interface GitDiffOptions {
 }
 
 /**
+ * Interface for diff merge operations
+ */
+export interface DiffMergeOptions {
+  preserveGitHeaders?: boolean;
+  conflictResolution?: 'fail' | 'concatenate' | 'skip';
+  validateContinuity?: boolean;
+}
+
+export interface DiffMergeResult {
+  success: boolean;
+  mergedDiff: string;
+  conflicts?: DiffConflict[];
+  warnings?: string[];
+  filesProcessed: number;
+}
+
+export interface DiffConflict {
+  filePath: string;
+  type: 'overlapping_hunks' | 'inconsistent_headers' | 'sequence_gap';
+  description: string;
+  affectedHunks?: HunkInfo[];
+}
+
+export interface HunkInfo {
+  oldStart: number;
+  oldCount: number;
+  newStart: number;
+  newCount: number;
+  content: string[];
+}
+
+export interface ParsedHunk {
+  header: string;
+  oldStart: number;
+  oldCount: number;
+  newStart: number;
+  newCount: number;
+  lines: string[];
+}
+
+export interface FileDiffInfo {
+  filePath: string;
+  oldPath: string;
+  newPath: string;
+  gitHeader?: string;
+  indexLine?: string;
+  hunks: ParsedHunk[];
+  isCreation: boolean;
+  isDeletion: boolean;
+}
+
+/**
  * Calculate file hash using SHA1 (Git-compatible)
  */
 export function calculateFileHash(content: string): string {
@@ -676,4 +728,550 @@ export function addFileHashesToDiff(diffContent: string, oldContent?: string, ne
   }
   
   return result.join('\n');
+}
+
+/**
+ * Merge multiple diffs into a single unified diff
+ * This is the main entry point for diff merging operations
+ */
+export function mergeDiffs(diffs: string[], options: DiffMergeOptions = {}): DiffMergeResult {
+  if (diffs.length === 0) {
+    return {
+      success: true,
+      mergedDiff: '',
+      filesProcessed: 0
+    };
+  }
+
+  if (diffs.length === 1) {
+    // 🆕 即使是单个 diff，也要通过解析和重构来处理 Git headers
+    try {
+      const fileDiffs = parseDetailedMultiFileDiff(diffs[0]);
+      if (fileDiffs.length === 0) {
+        return {
+          success: false,
+          mergedDiff: '',
+          conflicts: [{
+            filePath: 'unknown',
+            type: 'inconsistent_headers',
+            description: 'Failed to parse diff: No valid file diffs found'
+          }],
+          filesProcessed: 0
+        };
+      }
+      
+      const mergedFileDiffs = fileDiffs.map(fileDiff => reconstructFileDiff(fileDiff, options));
+      return {
+        success: true,
+        mergedDiff: ensureDiffLineEnding(mergedFileDiffs.join('')),
+        filesProcessed: fileDiffs.length
+      };
+    } catch (error) {
+      return {
+        success: false,
+        mergedDiff: '',
+        conflicts: [{
+          filePath: 'unknown',
+          type: 'inconsistent_headers',
+          description: `Failed to parse diff: ${error instanceof Error ? error.message : 'Unknown error'}`
+        }],
+        filesProcessed: 0
+      };
+    }
+  }
+
+  try {
+    // Parse all diffs and group by file
+    const fileGroups = new Map<string, FileDiffInfo[]>();
+    const conflicts: DiffConflict[] = [];
+    const warnings: string[] = [];
+    let totalFilesProcessed = 0;
+
+    for (const diff of diffs) {
+      if (!diff.trim()) continue;
+
+      try {
+        const fileDiffs = parseDetailedMultiFileDiff(diff);
+        
+        // 🆕 如果解析失败（没有找到有效的文件 diff），处理为 malformed diff
+        if (fileDiffs.length === 0) {
+          warnings.push(`Failed to parse diff: No valid file diffs found`);
+          
+          if (options.conflictResolution === 'fail') {
+            conflicts.push({
+              filePath: 'unknown',
+              type: 'inconsistent_headers',
+              description: 'Failed to parse diff: No valid file diffs found'
+            });
+          } else if (options.conflictResolution === 'concatenate') {
+            // 在 concatenate 模式下，将原始 diff 作为 fallback
+            // 但这里我们跳过，因为无法正确解析
+            continue;
+          }
+          continue;
+        }
+        
+        totalFilesProcessed += fileDiffs.length;
+
+        for (const fileDiff of fileDiffs) {
+          if (!fileGroups.has(fileDiff.filePath)) {
+            fileGroups.set(fileDiff.filePath, []);
+          }
+          fileGroups.get(fileDiff.filePath)!.push(fileDiff);
+        }
+      } catch (error) {
+        warnings.push(`Failed to parse diff: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        
+        if (options.conflictResolution === 'fail') {
+          conflicts.push({
+            filePath: 'unknown',
+            type: 'inconsistent_headers',
+            description: `Failed to parse diff: ${error instanceof Error ? error.message : 'Unknown error'}`
+          });
+        }
+      }
+    }
+
+    // 🆕 如果有 conflicts 且是 fail 模式，立即返回失败
+    if (conflicts.length > 0 && options.conflictResolution === 'fail') {
+      return {
+        success: false,
+        mergedDiff: '',
+        conflicts,
+        warnings: warnings.length > 0 ? warnings : undefined,
+        filesProcessed: totalFilesProcessed
+      };
+    }
+
+    // Merge diffs for each file
+    const mergedFileDiffs: string[] = [];
+
+    for (const [filePath, fileDiffs] of fileGroups) {
+      if (fileDiffs.length === 1) {
+        // Single diff for this file, use as-is
+        mergedFileDiffs.push(reconstructFileDiff(fileDiffs[0], options));
+      } else {
+        // Multiple diffs for the same file, need to merge
+        const mergeResult = mergeFileDiffs(filePath, fileDiffs, options);
+        
+        if (!mergeResult.success) {
+          conflicts.push(...(mergeResult.conflicts || []));
+          
+          if (options.conflictResolution === 'fail') {
+            return {
+              success: false,
+              mergedDiff: '',
+              conflicts,
+              warnings,
+              filesProcessed: totalFilesProcessed
+            };
+          } else if (options.conflictResolution === 'skip') {
+            warnings.push(`Skipped file ${filePath} due to merge conflicts`);
+            continue;
+          }
+          // 'concatenate' mode falls through to add the result anyway
+        }
+        
+        mergedFileDiffs.push(mergeResult.mergedDiff);
+      }
+    }
+
+    const finalDiff = mergedFileDiffs.join('');
+    
+    return {
+      success: conflicts.length === 0 || options.conflictResolution !== 'fail',
+      mergedDiff: ensureDiffLineEnding(finalDiff),
+      conflicts: conflicts.length > 0 ? conflicts : undefined,
+      warnings: warnings.length > 0 ? warnings : undefined,
+      filesProcessed: totalFilesProcessed
+    };
+
+  } catch (error) {
+    return {
+      success: false,
+      mergedDiff: '',
+      conflicts: [{
+        filePath: 'unknown',
+        type: 'inconsistent_headers',
+        description: `Merge operation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      }],
+      filesProcessed: 0
+    };
+  }
+}
+
+/**
+ * Parse a multi-file diff with detailed information extraction
+ */
+function parseDetailedMultiFileDiff(diffContent: string): FileDiffInfo[] {
+  const fileDiffs: FileDiffInfo[] = [];
+  const lines = diffContent.split('\n');
+  
+  let i = 0;
+  // 🆕 添加安全计数器防止无限循环
+  let safetyCounter = 0;
+  const maxIterations = lines.length + 10; // 安全上限
+  
+  while (i < lines.length && safetyCounter < maxIterations) {
+    safetyCounter++;
+    const previousIndex = i; // 记录之前的索引
+    
+    const fileDiff = parseFileDiff(lines, i);
+    if (fileDiff.fileDiff) {
+      fileDiffs.push(fileDiff.fileDiff);
+    }
+    i = fileDiff.nextIndex;
+    
+    // 🆕 确保索引有前进，防止无限循环
+    if (i <= previousIndex) {
+      console.warn(`parseDetailedMultiFileDiff: Index not advancing at line ${i}, forcing increment`);
+      i = previousIndex + 1;
+    }
+  }
+  
+  // 🆕 如果达到安全计数器上限，记录警告
+  if (safetyCounter >= maxIterations) {
+    console.warn(`parseDetailedMultiFileDiff: Safety counter reached. Possible infinite loop prevented.`);
+  }
+  
+  return fileDiffs;
+}
+
+/**
+ * Parse a single file diff starting from a given line index
+ */
+function parseFileDiff(lines: string[], startIndex: number): { fileDiff: FileDiffInfo | null; nextIndex: number } {
+  let i = startIndex;
+  let gitHeader: string | undefined;
+  let indexLine: string | undefined;
+  let oldPath = '';
+  let newPath = '';
+  const hunks: ParsedHunk[] = [];
+  
+  // Skip empty lines
+  while (i < lines.length && lines[i].trim() === '') {
+    i++;
+  }
+  
+  if (i >= lines.length) {
+    return { fileDiff: null, nextIndex: i };
+  }
+  
+  // Check for git header
+  if (lines[i].startsWith('diff --git ')) {
+    gitHeader = lines[i];
+    i++;
+    
+    // Check for index line
+    if (i < lines.length && lines[i].startsWith('index ')) {
+      indexLine = lines[i];
+      i++;
+    }
+  }
+  
+  // Look for file headers
+  if (i < lines.length && lines[i].startsWith('--- ')) {
+    oldPath = lines[i].substring(4).trim();
+    i++;
+    
+    if (i < lines.length && lines[i].startsWith('+++ ')) {
+      newPath = lines[i].substring(4).trim();
+      i++;
+    } else {
+      // Invalid diff format
+      return { fileDiff: null, nextIndex: i };
+    }
+  } else {
+    // No file headers found
+    return { fileDiff: null, nextIndex: i };
+  }
+  
+  // Parse hunks
+  // 🆕 添加安全计数器防止无限循环
+  let safetyCounter = 0;
+  const maxIterations = lines.length + 10; // 安全上限
+  
+  while (i < lines.length && safetyCounter < maxIterations) {
+    safetyCounter++;
+    const previousIndex = i; // 记录之前的索引
+    
+    if (lines[i].startsWith('@@')) {
+      const hunkResult = parseHunk(lines, i);
+      if (hunkResult.hunk) {
+        hunks.push(hunkResult.hunk);
+      }
+      i = hunkResult.nextIndex;
+    } else if (lines[i].startsWith('diff --git ') || 
+               (lines[i].startsWith('--- ') && i + 1 < lines.length && lines[i + 1].startsWith('+++ '))) {
+      // Start of next file diff
+      break;
+    } else {
+      i++;
+    }
+    
+    // 🆕 确保索引有前进，防止无限循环
+    if (i <= previousIndex) {
+      console.warn(`parseFileDiff: Index not advancing at line ${i}, forcing increment`);
+      i = previousIndex + 1;
+    }
+  }
+  
+  // 🆕 如果达到安全计数器上限，记录警告
+  if (safetyCounter >= maxIterations) {
+    console.warn(`parseFileDiff: Safety counter reached. Possible infinite loop prevented.`);
+  }
+  
+  const filePath = extractFilePathFromDiff(oldPath, newPath);
+  const isCreation = isFileCreation(oldPath);
+  const isDeletion = isFileDeletion(newPath);
+  
+  const fileDiff: FileDiffInfo = {
+    filePath,
+    oldPath,
+    newPath,
+    gitHeader,
+    indexLine,
+    hunks,
+    isCreation,
+    isDeletion
+  };
+  
+  return { fileDiff, nextIndex: i };
+}
+
+/**
+ * Parse a single hunk starting from a given line index
+ */
+function parseHunk(lines: string[], startIndex: number): { hunk: ParsedHunk | null; nextIndex: number } {
+  let i = startIndex;
+  
+  if (i >= lines.length || !lines[i].startsWith('@@')) {
+    return { hunk: null, nextIndex: i };
+  }
+  
+  const header = lines[i];
+  const hunkMatch = header.match(/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/);
+  
+  if (!hunkMatch) {
+    return { hunk: null, nextIndex: i + 1 };
+  }
+  
+  const oldStart = parseInt(hunkMatch[1]);
+  const oldCount = parseInt(hunkMatch[2] || '1');
+  const newStart = parseInt(hunkMatch[3]);
+  const newCount = parseInt(hunkMatch[4] || '1');
+  
+  i++; // Move past hunk header
+  
+  const hunkLines: string[] = [];
+  let processedOldLines = 0;
+  let processedNewLines = 0;
+  
+  // 🆕 添加安全计数器防止无限循环
+  let safetyCounter = 0;
+  const maxIterations = lines.length * 2; // 安全上限
+  
+  while (i < lines.length && safetyCounter < maxIterations) {
+    safetyCounter++;
+    
+    // 🆕 改进退出条件：如果已经处理完所有预期的行，就退出
+    if (processedOldLines >= oldCount && processedNewLines >= newCount) {
+      break;
+    }
+    
+    const line = lines[i];
+    
+    if (line.startsWith(' ')) {
+      // Context line
+      processedOldLines++;
+      processedNewLines++;
+      hunkLines.push(line);
+    } else if (line.startsWith('-')) {
+      // Removed line
+      processedOldLines++;
+      hunkLines.push(line);
+    } else if (line.startsWith('+')) {
+      // Added line
+      processedNewLines++;
+      hunkLines.push(line);
+    } else if (line.startsWith('\\')) {
+      // "No newline at end of file" marker
+      hunkLines.push(line);
+    } else if (line.startsWith('@@') || line.startsWith('diff --git ') || 
+               (line.startsWith('--- ') && i + 1 < lines.length && lines[i + 1].startsWith('+++ '))) {
+      // Start of next hunk or file
+      break;
+    } else if (line.trim() === '') {
+      // Empty line might indicate end of hunk
+      if (processedOldLines >= oldCount && processedNewLines >= newCount) {
+        break;
+      }
+      hunkLines.push(line);
+    } else {
+      // 🆕 改进未知行处理：如果已经处理了足够的行，就停止
+      if (processedOldLines >= oldCount && processedNewLines >= newCount) {
+        break;
+      }
+      // Unknown line, include it but continue
+      hunkLines.push(line);
+    }
+    
+    i++;
+  }
+  
+  // 🆕 如果达到安全计数器上限，记录警告
+  if (safetyCounter >= maxIterations) {
+    console.warn(`parseHunk: Safety counter reached for hunk starting at line ${startIndex}. Possible infinite loop prevented.`);
+  }
+  
+  const hunk: ParsedHunk = {
+    header,
+    oldStart,
+    oldCount,
+    newStart,
+    newCount,
+    lines: hunkLines
+  };
+  
+  return { hunk, nextIndex: i };
+}
+
+/**
+ * Merge multiple diffs for the same file
+ */
+function mergeFileDiffs(filePath: string, fileDiffs: FileDiffInfo[], options: DiffMergeOptions): DiffMergeResult {
+  if (fileDiffs.length === 0) {
+    return {
+      success: true,
+      mergedDiff: '',
+      filesProcessed: 0
+    };
+  }
+
+  if (fileDiffs.length === 1) {
+    return {
+      success: true,
+      mergedDiff: reconstructFileDiff(fileDiffs[0], options),
+      filesProcessed: 1
+    };
+  }
+
+  const conflicts: DiffConflict[] = [];
+  const warnings: string[] = [];
+
+  // Validate file path consistency
+  const firstDiff = fileDiffs[0];
+  for (let i = 1; i < fileDiffs.length; i++) {
+    if (fileDiffs[i].filePath !== firstDiff.filePath) {
+      conflicts.push({
+        filePath,
+        type: 'inconsistent_headers',
+        description: `File path mismatch: ${firstDiff.filePath} vs ${fileDiffs[i].filePath}`
+      });
+    }
+  }
+
+  // Collect all hunks and sort by position
+  const allHunks: { hunk: ParsedHunk; sourceIndex: number }[] = [];
+  
+  for (let i = 0; i < fileDiffs.length; i++) {
+    for (const hunk of fileDiffs[i].hunks) {
+      allHunks.push({ hunk, sourceIndex: i });
+    }
+  }
+
+  // Sort hunks by old file position
+  allHunks.sort((a, b) => a.hunk.oldStart - b.hunk.oldStart);
+
+  // Detect overlapping hunks
+  for (let i = 0; i < allHunks.length - 1; i++) {
+    const current = allHunks[i].hunk;
+    const next = allHunks[i + 1].hunk;
+    
+    const currentEnd = current.oldStart + current.oldCount - 1;
+    const nextStart = next.oldStart;
+    
+    if (currentEnd >= nextStart) {
+      conflicts.push({
+        filePath,
+        type: 'overlapping_hunks',
+        description: `Overlapping hunks detected: lines ${current.oldStart}-${currentEnd} and ${nextStart}-${next.oldStart + next.oldCount - 1}`,
+        affectedHunks: [
+          {
+            oldStart: current.oldStart,
+            oldCount: current.oldCount,
+            newStart: current.newStart,
+            newCount: current.newCount,
+            content: current.lines
+          },
+          {
+            oldStart: next.oldStart,
+            oldCount: next.oldCount,
+            newStart: next.newStart,
+            newCount: next.newCount,
+            content: next.lines
+          }
+        ]
+      });
+    }
+  }
+
+  // If we have conflicts and strict mode, fail
+  if (conflicts.length > 0 && options.conflictResolution === 'fail') {
+    return {
+      success: false,
+      mergedDiff: '',
+      conflicts,
+      warnings,
+      filesProcessed: 0
+    };
+  }
+
+  // Build merged diff
+  const mergedDiff: FileDiffInfo = {
+    filePath: firstDiff.filePath,
+    oldPath: firstDiff.oldPath,
+    newPath: firstDiff.newPath,
+    gitHeader: options.preserveGitHeaders ? firstDiff.gitHeader : undefined,
+    indexLine: options.preserveGitHeaders ? firstDiff.indexLine : undefined,
+    hunks: allHunks.map(item => item.hunk),
+    isCreation: firstDiff.isCreation,
+    isDeletion: firstDiff.isDeletion
+  };
+
+  return {
+    success: conflicts.length === 0,
+    mergedDiff: reconstructFileDiff(mergedDiff, options),
+    conflicts: conflicts.length > 0 ? conflicts : undefined,
+    warnings: warnings.length > 0 ? warnings : undefined,
+    filesProcessed: 1
+  };
+}
+
+/**
+ * Reconstruct a diff string from parsed FileDiffInfo
+ */
+function reconstructFileDiff(fileDiff: FileDiffInfo, options: DiffMergeOptions): string {
+  const lines: string[] = [];
+  
+  // Add Git headers if requested and available
+  if (options.preserveGitHeaders && fileDiff.gitHeader) {
+    lines.push(fileDiff.gitHeader);
+    
+    if (fileDiff.indexLine) {
+      lines.push(fileDiff.indexLine);
+    }
+  }
+  
+  // Add file headers
+  lines.push(`--- ${fileDiff.oldPath}`);
+  lines.push(`+++ ${fileDiff.newPath}`);
+  
+  // Add hunks
+  for (const hunk of fileDiff.hunks) {
+    lines.push(hunk.header);
+    lines.push(...hunk.lines);
+  }
+  
+  return lines.join('\n') + '\n';
 } 
