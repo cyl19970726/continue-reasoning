@@ -23,7 +23,8 @@ import {
   getPrompt,
   validateInput,
   promptUser,
-  safeExit
+  safeExit,
+  getWorkspaceDirectory
 } from './utils';
 import {
   formatThinking,
@@ -34,6 +35,11 @@ import {
   formatError,
   formatSystemInfo
 } from './utils/display-formatter';
+import {
+  FileImporter,
+  FileImporterConfig,
+  createFileImporter
+} from './utils/file-importer';
 
 // 从本地类型定义导入接口类型
 import {
@@ -73,6 +79,9 @@ export class CLIClient implements IClient {
     reject: (error: Error) => void;
   }> = [];
 
+  // 文件导入器
+  private fileImporter: FileImporter;
+
   // 添加一个计数器来控制提示显示频率
   private promptCounter: number = 0;
 
@@ -92,9 +101,28 @@ export class CLIClient implements IClient {
     this.name = this.config.name || 'cli-client';
     this.currentSessionId = this.config.sessionId;
 
+    // 获取workspace目录
+    const workspaceDir = getWorkspaceDirectory();
+
     // 初始化组件
-    this.rl = createReadlineInterface();
+    this.rl = createReadlineInterface({
+      workingDirectory: workspaceDir,
+      maxResults: 10,
+      showHidden: false,
+      allowedExtensions: this.config.fileImporter?.allowedExtensions || [],
+      ...this.config.fileCompleter
+    });
     this.commands = getAllCommands(this.config.customCommands);
+
+    // 初始化文件导入器
+    this.fileImporter = createFileImporter({
+      workingDirectory: workspaceDir,
+      maxFileSize: 1024 * 1024, // 1MB
+      maxDepth: 3,
+      showFilePath: true,
+      // 可以从 config 中获取文件导入配置
+      ...this.config.fileImporter
+    });
 
     // 初始化状态
     this.multilineState = {
@@ -346,6 +374,10 @@ export class CLIClient implements IClient {
    * 显示会话信息
    */
   private showSessionInfo(): void {
+    // 显示workspace信息
+    const workspaceDir = this.fileImporter.getConfig().workingDirectory;
+    console.log(formatSystemInfo(`Workspace: ${workspaceDir}`));
+    
     if (this.currentSessionId) {
       console.log(formatSystemInfo(`Active Session: ${this.currentSessionId}`));
       if (this.sessionManager) {
@@ -538,14 +570,36 @@ export class CLIClient implements IClient {
   private async handleUserMessage(content: string): Promise<void> {
     if (!content.trim()) return;
 
-    this.addToHistory(content, 'single');
+    try {
+      // 处理文件导入语法 @file_path
+      const processedContent = await this.fileImporter.processInput(content);
+      
+      // 如果内容发生了变化，显示处理后的内容预览
+      if (processedContent !== content) {
+        const previewLength = 200;
+        const preview = processedContent.length > previewLength 
+          ? processedContent.substring(0, previewLength) + '...'
+          : processedContent;
+        
+        console.log('\n📄 Processed message preview:');
+        console.log('─'.repeat(50));
+        console.log(preview);
+        console.log('─'.repeat(50));
+        console.log(`Total length: ${processedContent.length} characters\n`);
+      }
 
-    // 直接通过 SessionManager 发送消息
-    if (this.sessionManager) {
-      console.log('✅ SessionManager found, sending message...');
-      await this.sendMessageToAgent(content);
-    } else {
-      console.log(formatError('SessionManager not configured. Use /send command or configure sessionManager.'));
+      this.addToHistory(content, 'single'); // 保存原始输入到历史
+
+      // 直接通过 SessionManager 发送处理后的消息
+      if (this.sessionManager) {
+        console.log('✅ SessionManager found, sending message...');
+        await this.sendMessageToAgent(processedContent);
+      } else {
+        console.log(formatError('SessionManager not configured. Use /send command or configure sessionManager.'));
+      }
+    } catch (error) {
+      console.error('Error processing user message:', error);
+      console.log(formatError(`Failed to process message: ${(error as Error).message}`));
     }
   }
 
@@ -608,5 +662,12 @@ export class CLIClient implements IClient {
    */
   public getHistory(): HistoryItem[] {
     return [...this.history];
+  }
+
+  /**
+   * 获取文件导入器
+   */
+  public getFileImporter(): FileImporter {
+    return this.fileImporter;
   }
 } 

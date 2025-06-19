@@ -1,15 +1,19 @@
 import * as readline from 'readline';
 import * as fs from 'fs';
 import { HistoryItem } from '../types';
+import { createFileCompleter, FileCompleterConfig } from './file-completer';
 
 /**
  * 创建 readline 接口
  */
-export function createReadlineInterface(): readline.Interface {
+export function createReadlineInterface(fileCompleterConfig?: FileCompleterConfig): readline.Interface {
+  // 创建文件补全器
+  const completer = createFileCompleter(fileCompleterConfig);
+  
   return readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    completer: undefined // 可以后续添加自动完成功能
+    completer: completer
   });
 }
 
@@ -171,4 +175,13 @@ export function safeExit(rl: readline.Interface, code: number = 0): void {
     // 忽略关闭错误
   }
   process.exit(code);
-} 
+}
+
+// 导出文件导入相关工具
+export * from './file-importer';
+
+// 导出文件补全相关工具
+export * from './file-completer';
+
+// Workspace utilities
+export * from './workspace'; 
