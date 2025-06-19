@@ -96,7 +96,7 @@ export class OpenAIWrapper implements ILLM {
             parameters: JSON.parse(item.arguments),
         }));
 
-        logger.debug(`[OpenAIWrapper] Extracted Tool Calls: ${toolCalls.length}`);
+        logger.debug(`[OpenAIWrapper] Extracted Tool Calls: ${toolCalls.length} \nDetails: ${JSON.stringify(toolCalls)}`);
 
         return {
             text: response.output_text || "",

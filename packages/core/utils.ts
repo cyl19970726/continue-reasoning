@@ -339,7 +339,7 @@ export const ContextHelper = {
     initialData: Partial<z.infer<T>>;
     promptCtx?: import("./interfaces").PromptCtx;
     renderPromptFn?: (data: z.infer<T>) => string | import("./interfaces").PromptCtx;
-    toolSetFn: () => import("./interfaces").ToolSet;
+    toolSetFn: () => import("./interfaces").ToolSet | import("./interfaces").ToolSet[];
     handleToolCall?: (toolCallResult: any) => void;
     install?: (agent: import("./interfaces").IAgent) => Promise<void>;
     mcpServers?: {
@@ -541,7 +541,7 @@ export const ContextHelper = {
         `;
       },
 
-      toolSet(): import("./interfaces").ToolSet {
+      toolSet(): import("./interfaces").ToolSet | import("./interfaces").ToolSet[] {
         return toolSetFn();
       }
     };
@@ -564,7 +564,7 @@ export const ContextHelper = {
     initialData?: Partial<z.infer<T>>;
     promptCtx?: import("./interfaces").PromptCtx;
     renderPromptFn?: (data: z.infer<T>) => string | import("./interfaces").PromptCtx;
-    toolSetFn?: () => import("./interfaces").ToolSet;
+    toolSetFn?: () => import("./interfaces").ToolSet | import("./interfaces").ToolSet[];
     handleToolCall?: (toolCallResult: any) => void;
     install?: (agent: import("./interfaces").IAgent) => Promise<void>;
     ragConfigs?: Record<string, {

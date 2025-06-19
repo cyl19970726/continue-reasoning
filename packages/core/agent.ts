@@ -1,12 +1,9 @@
-import { AnyTool, IContextManager, IMemoryManager, IAgent, ILLM, IContext, ToolCallDefinition, ToolCallParams, ToolCallResult, IRAGEnabledContext, asRAGEnabledContext, AgentStatus, AgentStep, StandardExtractorResult, ChatMessage, ToolSet, AgentStorage, ISessionManager, ToolExecutionResult, AgentCallbacks } from "./interfaces";
+import { AnyTool, IContextManager, IAgent, ILLM, IContext, ToolCallDefinition, ToolCallParams, ToolCallResult, IRAGEnabledContext, asRAGEnabledContext, AgentStatus, AgentStep, StandardExtractorResult, ChatMessage, ToolSet, AgentStorage, AgentCallbacks, MessageType, BasePromptProcessor, ExtractorResult } from "./interfaces";
 import { SystemToolNames, HackernewsContext, DeepWikiContext, FireCrawlContext } from "./contexts/index";
-import { ITaskQueue, ITask, TaskQueue } from "./taskQueue";
-import { z } from "zod";
-import { Message } from "./interfaces";
+import { ITaskQueue, TaskQueue } from "./taskQueue";
 import dotenv from "dotenv";
-import { error, time } from "console";
 import { PlanContext } from "./contexts/plan";
-import { MCPContext, MCPContextId, AddStdioMcpServer, AddSseOrHttpMcpServer } from "./contexts/mcp";
+import { MCPContext } from "./contexts/mcp";
 import { WebSearchContext } from "./contexts/web-search";
 import { OpenAIWrapper } from "./models/openai";
 import { AnthropicWrapper } from "./models/anthropic";
@@ -16,12 +13,10 @@ import path from "path";
 import { LogLevel, Logger } from "./utils/logger";
 import { ToolSetContext } from "./contexts/toolset";
 import { logger } from "./utils/logger";
-import { IEventBus } from "./events/eventBus";
-import { Agent } from "http";
 import { ContextManager } from "./context";
-import { ProductionPromptProcessor, createProductionPromptProcessor } from "./prompt-processor";
+import { createEnhancedPromptProcessor, createStandardPromptProcessor } from "./prompt-processor-factory";
 import { AgentEventManager } from "./events/agent-event-manager";
-import { SessionManager } from "./session/sessionManager";
+import { getSystemPromptForMode } from "./prompts/enhanced-thinking-system-prompt";
 
 dotenv.config();
 
@@ -55,6 +50,7 @@ const DEFAULT_AGENT_OPTIONS: AgentOptions = {
     },
     // 新增 PromptProcessor 选项
     promptProcessorOptions: {
+        type: 'standard',
         enableToolCallsForFirstStep: false,
         maxHistoryLength: 50
     },
@@ -74,6 +70,7 @@ export interface AgentOptions {
     };
     // 新增 PromptProcessor 选项
     promptProcessorOptions?: {
+        type: 'standard' | 'enhanced';
         enableToolCallsForFirstStep?: boolean;
         maxHistoryLength?: number;
     };
@@ -110,7 +107,7 @@ export class BaseAgent implements IAgent {
     contexts: IRAGEnabledContext<any>[] = [];
 
     // 新增 PromptProcessor 相关属性
-    promptProcessor: ProductionPromptProcessor;
+    promptProcessor: BasePromptProcessor<any>;
 
     // 🆕 事件管理器
     private eventManager?: AgentEventManager;
@@ -181,21 +178,16 @@ export class BaseAgent implements IAgent {
             this.llm.parallelToolCall = this.enableParallelToolCalls;
         }
 
-        // 初始化 PromptProcessor
-        this.promptProcessor = createProductionPromptProcessor(
-            this.getBaseSystemPrompt([]), // 先传入空工具列表
-            this.contextManager,
-            {
-                enableToolCallsForFirstStep: agentOptions?.promptProcessorOptions?.enableToolCallsForFirstStep,
-                xmlExtractorOptions: {
-                    caseSensitive: false,
-                    preserveWhitespace: false,
-                    allowEmptyContent: true,
-                    fallbackToRegex: true
-                }
-            }
-        );
-
+        // 🆕 初始化 PromptProcessor - 使用工厂模式，默认为 Standard
+        this.promptProcessor = agentOptions?.promptProcessorOptions?.type === 'enhanced' 
+            ? createEnhancedPromptProcessor(
+                this.getBaseSystemPrompt([], 'enhanced'),
+                this.contextManager
+            )
+            : createStandardPromptProcessor(
+                this.getBaseSystemPrompt([], 'standard'),
+                this.contextManager
+            );
 
         // Set MCP config path
         this.mcpConfigPath = agentOptions?.mcpConfigPath || path.join(process.cwd(), 'config', 'mcp.json');
@@ -208,36 +200,16 @@ export class BaseAgent implements IAgent {
         this.shouldStop = false;
     }
 
-    private getBaseSystemPrompt(tools: AnyTool[]): string {
-        return `你是一个智能体，能够调用多种工具来完成任务。
+    protected getBaseSystemPrompt(tools: AnyTool[], promptProcessorType: 'standard' | 'enhanced' = 'standard'): string {
+        let systemPrompt = getSystemPromptForMode(promptProcessorType)
+        let toolsPrompt =  tools.length > 0 ? 
+        `
+## Tool Usage Guidelines
+- Call tools when you need to perform actions or gather information
+- Available Tools:
+${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
 
-重要：你的所有回复必须严格按照以下格式输出，不可偏离：
-
-<think>
-在这里进行思考、分析和计划制定。你可以：
-- 分析用户的需求
-- 制定行动计划用 markdown 的 todo list 格式
-- 在必要的时候更新之前制定的行动计划，或者更新行动计划的状态
-- 思考需要调用哪些工具
-- 分析工具调用结果
-- 更新计划状态
-避免使用"step"等字样，用"任务"、"阶段"等替代。
-</think>
-
-<request>
-你可以在这里请求用户补充信息，但是只有在必要的时候再进行请求;
-</request>
-
-<final_answer>
-重要：
-只有当你确认所有任务都已完成并且用户的需求得到完全满足时，才在这里给出最终回答。
-如果任务还在进行中，请保持此标签为空。
-</final_answer>
-
-注意：你是多阶段智能体，会重复调用直到任务完成。每个阶段都包含之前的必要信息，请查看"## Chat History List"了解之前的工作。
-
-可用工具：
-${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
+        return systemPrompt + toolsPrompt
     }
 
     // 新增：使用 PromptProcessor 处理步骤
@@ -268,7 +240,7 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
             const toolCalls = llmResponse.toolCalls || [];
 
             // 创建当前步骤
-            const currentStep: AgentStep = {
+            const currentStep: AgentStep<any> = {
                 stepIndex: stepIndex,
                 rawText: responseText,
                 toolCalls: toolCalls.map(call => ({
@@ -386,13 +358,15 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
 
             // 提取结果
             const extractorResult = this.promptProcessor.textExtractor(responseText);
+            logger.debug('extractorResult', { extractorResult });
             currentStep.extractorResult = extractorResult;
 
+            // logger.debug('currentStep', { currentStep });
             // 检查是否应该继续
-            const continueProcessing = !extractorResult.finalAnswer;
+            const continueProcessing = !extractorResult.stopSignal;
 
-            if (extractorResult.finalAnswer) {
-                logger.info('Final answer reached', { finalAnswer: extractorResult.finalAnswer });
+            if (extractorResult.stopSignal) {
+                logger.info('Stop signal reached', { stopSignal: extractorResult.stopSignal });
             }
 
             return {
@@ -459,7 +433,7 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
         // 🆕 在 setup 完成后，更新 PromptProcessor 的 system prompt，包含所有工具信息
         const allTools = this.getActiveTools();
         logger.debug(`[PromptProcessor] Active tools: ${allTools.map(t => t.name).join(', ')}`);
-        const updatedSystemPrompt = this.getBaseSystemPrompt(allTools);
+        const updatedSystemPrompt = this.getBaseSystemPrompt(allTools, this.promptProcessor.type);
         this.promptProcessor.updateSystemPrompt(updatedSystemPrompt);
         logger.debug(`[PromptProcessor] Updated system prompt with ${allTools.length} tools`);
     }
@@ -549,7 +523,7 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
                 role: 'user',
                 step: this.currentStep,
                 timestamp: new Date().toISOString(),
-                type: 'message',
+                type: MessageType.MESSAGE,
                 content: userInput
             }]
         );
@@ -837,8 +811,16 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
     }
 
     // 新增：获取PromptProcessor实例
-    public getPromptProcessor(): ProductionPromptProcessor {
+    public getPromptProcessor(): BasePromptProcessor<any> {
         return this.promptProcessor;
+    }
+
+    // 🆕 设置PromptProcessor实例
+    public setPromptProcessor(processor: BasePromptProcessor<any>): void {
+        this.promptProcessor = processor;
+        // 确保新的处理器有正确的上下文管理器
+        this.promptProcessor.setContextManager(this.contextManager);
+        logger.info(`PromptProcessor updated to: ${processor.constructor.name}`);
     }
 
     // 新增：重置PromptProcessor
@@ -853,11 +835,16 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
         hasFinalAnswer: boolean;
         finalAnswer: string | null;
     } {
+        // Get the last response message from chat history
+        const lastResponse = this.promptProcessor.chatHistory
+            .filter(msg => msg.role === 'agent' && msg.type === MessageType.MESSAGE)
+            .pop();
+        
         return {
             totalMessages: this.promptProcessor.chatHistory.length,
             currentStep: this.currentStep,
-            hasFinalAnswer: !!this.promptProcessor.getFinalAnswer(),
-            finalAnswer: this.promptProcessor.getFinalAnswer()
+            hasFinalAnswer: !!this.promptProcessor.getStopSignal(),
+            finalAnswer: lastResponse?.content || null
         };
     }
 
@@ -873,11 +860,6 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}`;
         this.sessionId = state.sessionId;
         this.currentStep = state.currentStep;
         this.agentStorage = state;
-
-        // 恢复 chatContext 到 promptProcessor
-        if (state.chatContext && state.chatContext.fullHistory.length > 0) {
-            this.promptProcessor.renderChatMessageToPrompt(state.chatContext.fullHistory);
-        }
 
         logger.debug(`Agent ${this.id}: Loaded session state for ${state.sessionId}, currentStep: ${state.currentStep}`);
     }

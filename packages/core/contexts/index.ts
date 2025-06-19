@@ -19,4 +19,4 @@ export { HackernewsContext, HackernewsContextId } from './hackernews.js';
 export { DeepWikiContext, DeepWikiContextId } from './deepwiki.js';
 export { FireCrawlContext, FireCrawlContextId } from './firecrawl.js';
 export { PlanContext, PlanContextId } from './plan.js';
-export { WebSearchContext, WebSearchContextId } from './web-search.js';
+export { WebSearchContext, WebSearchContextId,WebSearchTool } from './web-search.js';
