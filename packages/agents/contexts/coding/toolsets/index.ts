@@ -32,7 +32,7 @@ export {
 export {
   SnapshotEnhancedApplyWholeFileEditTool,
   createEnhancedWholeFileEditTool
-} from '../snapshot/snapshot-enhanced-tools';
+} from './snapshot-enhanced-tools';
 
 // Export snapshot system utilities
 export {

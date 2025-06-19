@@ -10,7 +10,11 @@ import {
   isFileDeletion,
   countDiffChanges,
   ensureDiffLineEnding,
-  reverseDiff
+  reverseDiff,
+  calculateFileHash,
+  getGitTimestamp,
+  addFileHashesToDiff,
+  mergeDiffs
 } from './diff';
 
 describe('Diff Utilities', () => {

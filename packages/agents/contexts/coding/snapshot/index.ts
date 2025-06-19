@@ -40,7 +40,7 @@ export {
   createSnapshotEnhancedTools,
   createEnhancedWholeFileEditTool,
   SnapshotEnhancedApplyWholeFileEditTool
-} from './snapshot-enhanced-tools';
+} from '../toolsets/snapshot-enhanced-tools';
 
 // Enhanced Diff utilities
 export {
@@ -63,7 +63,7 @@ export async function initializeSnapshotSystem(workspacePath: string): Promise<S
  */
 export async function getAllSnapshotTools() {
   const snapshotTools = await import('./simple-snapshot-tools');
-  const enhancedTools = await import('./snapshot-enhanced-tools');
+  const enhancedTools = await import('../toolsets/snapshot-enhanced-tools');
   
   return [
     ...snapshotTools.SimpleSnapshotToolSet,
