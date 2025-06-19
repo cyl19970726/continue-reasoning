@@ -1,97 +1,295 @@
-# HHH-AGI
+# Continue Reasoning
 
-HHH-AGI 是一个强大的代理系统，设计用于处理复杂的用户请求。
+Continue Reasoning is a powerful AI agent framework designed to handle complex reasoning tasks through modular architecture, intelligent context management, and sophisticated tool integration.
 
-## 快速开始
+## ✨ Features
 
-### 安装依赖
+- **🤖 Intelligent Agent System**: Multi-step reasoning agents with configurable execution modes
+- **🧠 Enhanced Thinking Architecture**: Structured thinking with analysis, planning, and reasoning capabilities
+- **🔧 Modular Tool System**: Extensible tool sets with MCP (Model Context Protocol) integration
+- **📚 Context Management**: Dynamic context loading with RAG (Retrieval-Augmented Generation) support
+- **🎯 Interactive Memory**: Persistent memory management with vector store integration
+- **⚡ Parallel Processing**: Concurrent tool execution and task queue management
+- **🌐 Multi-Interface Support**: CLI, Web UI, and programmatic APIs
+- **📊 Comprehensive Logging**: Detailed logging with multiple levels and file rotation
+
+## 🏗️ Architecture
+
+The framework is built around several core interfaces:
+
+### Core Interfaces
+
+- **`IAgent`**: The main agent interface handling task processing, tool calling, and reasoning
+- **`IContext`**: Modular context system with MCP server integration and RAG capabilities
+- **`ITool`**: Flexible tool interface supporting async execution and type safety
+- **`IPromptProcessor`**: Advanced prompt processing with thinking modes and step management
+- **`IMemoryManager`**: Enhanced memory management with RAG integration
+- **`IRAG`**: Vector store and retrieval system for knowledge augmentation
+
+### Agent Capabilities
+
+- **Multi-step reasoning** with configurable maximum steps
+- **Parallel tool execution** for improved performance
+- **Context-aware processing** with dynamic context loading
+- **Interactive memory** with persistent storage
+- **Structured thinking** with analysis, planning, and reasoning phases
+- **Session management** with state persistence
+
+## 🚀 Quick Start
+
+### Installation
 
 ```bash
+# Clone the repository
+git clone <repository-url>
+cd continue-reasoning
+
+# Install dependencies
 pnpm install
+
+# Install MCP servers (automatically runs after pnpm install)
+pnpm run install-mcp
 ```
 
-### 运行代理
+### Running the Agent
 
 ```bash
-# 使用默认日志级别（INFO）
+# Start the agent with default settings
 pnpm start-agent
 
-# 使用不同的日志级别
-pnpm start-agent:debug  # 详细日志，包括提示词和调试信息
-pnpm start-agent:info   # 标准信息日志（默认）
-pnpm start-agent:warn   # 仅警告和错误
-pnpm start-agent:error  # 仅错误
-```
+# Start with different log levels
+pnpm start-agent:debug  # Detailed logs including prompts and debug info
+pnpm start-agent:info   # Standard information logs (default)
+pnpm start-agent:warn   # Only warnings and errors
+pnpm start-agent:error  # Only errors
 
-### 高级用法
-
-你也可以直接指定日志级别：
-
-```bash
-# 手动设置日志级别
+# Manual log level specification
 pnpm start-agent -- --log-level debug
 ```
 
-可用的日志级别有：
-- `DEBUG`: 最详细，包括所有提示词渲染和上下文信息
-- `INFO`: 标准信息（默认）
-- `WARN`: 只显示警告和错误
-- `ERROR`: 只显示错误
-- `NONE`: 禁用所有日志
+Available log levels:
+- `DEBUG`: Most verbose, includes all prompt rendering and context information
+- `INFO`: Standard information (default)
+- `WARN`: Only warnings and errors
+- `ERROR`: Only errors
+- `NONE`: Disable all logging
 
-## 文件结构
-
-- `src/core`: 核心代理逻辑
-  - `agent.ts`: 代理实现
-  - `context.ts`: 上下文管理
-  - `contexts/`: 各种上下文实现
-  - `models/`: LLM模型接口
-  - `utils/`: 工具函数，包括日志记录
-
-## 日志记录
-
-系统使用全局单例的logger实例，提供以下功能：
-
-- 不同日志级别（DEBUG, INFO, WARN, ERROR）
-- 控制台和文件日志记录
-- 特殊格式化（例如提示词和对象）
-- 日志文件自动轮换
-
-日志存储在 `./logs` 目录，采用日期格式命名。
-
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
-
-## Getting Started
-
-First, run the development server:
+### Web Interface
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# Start the web UI
+pnpm start-web-ui
+
+# Start web UI with agent integration
+pnpm start-web-ui-with-agent
+
+# Start web UI with self-test mode
+pnpm start-web-ui:self-test
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### CLI Coding Agent
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+# Start the CLI coding agent
+pnpm start-cli-coding-agent
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 🏗️ Project Structure
 
-## Learn More
+```
+continue-reasoning/
+├── packages/
+│   ├── core/                    # Core agent framework
+│   │   ├── interfaces/          # TypeScript interfaces and types
+│   │   │   ├── agent.ts         # Agent interface and LLM integration
+│   │   │   ├── context.ts       # Context management and MCP integration
+│   │   │   ├── tool.ts          # Tool system and task queue
+│   │   │   ├── prompt.ts        # Prompt processing and thinking modes
+│   │   │   ├── memory.ts        # Memory management and RAG system
+│   │   │   └── base.ts          # Base types and utilities
+│   │   ├── models/              # LLM model implementations
+│   │   ├── contexts/            # Built-in context implementations
+│   │   ├── memory/              # Memory and RAG implementations
+│   │   └── utils/               # Utilities and logging
+│   ├── agents/                  # Specialized agent implementations
+│   │   └── contexts/            # Agent-specific contexts
+│   │       └── coding/          # Coding agent with sandbox support
+│   ├── cli-client/              # CLI interface implementation
+│   ├── web/                     # Web UI implementation
+│   ├── ui-ink/                  # Terminal UI with Ink
+│   └── ai-research/             # AI research tools and examples
+├── examples/                    # Usage examples and demos
+├── tests/                       # Test suites and integration tests
+└── docs/                        # Documentation and guides
+```
 
-To learn more about Next.js, take a look at the following resources:
+## 🔧 Core Components
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Agent System
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The `IAgent` interface provides:
+- **Task Processing**: Multi-step reasoning with configurable execution modes
+- **Tool Management**: Dynamic tool set activation and deactivation
+- **Context Integration**: Seamless context loading and management
+- **Session Persistence**: State saving and restoration
+- **Execution Control**: Auto, manual, and supervised modes
 
-## Deploy on Vercel
+### Context System
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The `IContext` interface enables:
+- **Dynamic Data**: Zod schema-based data validation
+- **MCP Integration**: Direct MCP server configuration and tool injection
+- **RAG Capabilities**: Vector store integration for knowledge retrieval
+- **Tool Sets**: Context-specific tool provisioning
+- **Prompt Generation**: Flexible prompt rendering with structured support
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Tool System
+
+The `ITool` interface supports:
+- **Type Safety**: Zod schema validation for parameters and results
+- **Async Execution**: Promise-based tool execution
+- **Agent Integration**: Access to agent context during execution
+- **MCP Compatibility**: Seamless integration with MCP servers
+- **Task Queue**: Priority-based concurrent execution
+
+### Memory & RAG
+
+The memory system provides:
+- **Vector Stores**: Support for multiple vector database types
+- **Embedding Models**: Multiple embedding provider support
+- **Document Management**: Structured document storage with metadata
+- **Query Filtering**: Advanced filtering and search capabilities
+- **Memory Containers**: Organized memory storage and retrieval
+
+## 🧠 Thinking Architecture
+
+The framework supports enhanced thinking modes:
+
+- **Analysis**: Deep analysis of problems and situations
+- **Planning**: Strategic planning and step-by-step approaches
+- **Reasoning**: Logical reasoning and decision-making processes
+- **Interactive Response**: User interaction and communication
+
+## 🛠️ Development
+
+### Running Tests
+
+```bash
+# Run all tests
+pnpm test
+
+# Run specific test suites
+pnpm test:core          # Core framework tests
+pnpm test:events        # Event system tests
+pnpm test:rag           # RAG system tests
+pnpm test:memory        # Memory management tests
+pnpm test:snapshot      # Snapshot system tests
+pnpm test:web-ui        # Web UI tests
+```
+
+### Building
+
+```bash
+# Build all packages
+pnpm build:packages
+
+# Build frontend
+pnpm build-frontend
+
+# Development mode for all packages
+pnpm dev:packages
+```
+
+## 📚 Advanced Usage
+
+### Custom Contexts
+
+Create custom contexts by implementing the `IContext` interface:
+
+```typescript
+import { IContext } from '@continue-reasoning/core';
+import { z } from 'zod';
+
+const MyContextSchema = z.object({
+  customData: z.string(),
+  settings: z.object({
+    enabled: z.boolean()
+  })
+});
+
+export class MyCustomContext implements IContext<typeof MyContextSchema> {
+  id = 'my-custom-context';
+  description = 'Custom context for specific tasks';
+  dataSchema = MyContextSchema;
+  data = { customData: '', settings: { enabled: true } };
+
+  // Implement required methods...
+}
+```
+
+### Custom Tools
+
+Implement custom tools using the `ITool` interface:
+
+```typescript
+import { ITool } from '@continue-reasoning/core';
+import { z } from 'zod';
+
+const ParamsSchema = z.object({
+  input: z.string()
+});
+
+const ResultSchema = z.string();
+
+export class MyCustomTool implements ITool<typeof ParamsSchema, typeof ResultSchema, any> {
+  name = 'my-custom-tool';
+  description = 'Custom tool implementation';
+  params = ParamsSchema;
+  async = true;
+
+  async execute(params: z.infer<typeof ParamsSchema>) {
+    // Tool implementation
+    return `Processed: ${params.input}`;
+  }
+
+  // Implement other required methods...
+}
+```
+
+### Memory Integration
+
+Integrate RAG capabilities into your contexts:
+
+```typescript
+import { IRAGEnabledContext, IRAG } from '@continue-reasoning/core';
+
+export class RAGEnabledContext implements IRAGEnabledContext<MySchema> {
+  rags: Record<string, IRAG> = {};
+
+  async loadRAGForPrompt(): Promise<string> {
+    const ragResults = await this.queryContextRAG('my-rag', 'relevant query');
+    return ragResults.map(r => r.content).join('\n');
+  }
+
+  // Implement other methods...
+}
+```
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our contributing guidelines for more information.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🆘 Support
+
+For questions and support:
+- Check the [documentation](./docs/)
+- Review the [examples](./examples/)
+- Open an issue on GitHub
+
+---
+
+**Continue Reasoning** - Empowering AI agents with structured thinking and reasoning capabilities.

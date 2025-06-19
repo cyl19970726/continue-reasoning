@@ -5,6 +5,7 @@ config/mcp.json
 
 #log
 logs/*
+**/logs
 
 # dependencies - 忽略所有 node_modules 目录
 node_modules/

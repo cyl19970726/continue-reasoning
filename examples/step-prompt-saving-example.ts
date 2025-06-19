@@ -3,6 +3,7 @@ import { CodingAgent } from '../packages/agents';
 import path from 'path';
 import fs from 'fs';
 import { SessionManager } from '../packages/core/session/sessionManager';
+import { createEnhancedPromptProcessor } from '../packages/core/prompt-processor-factory';
 
 async function stepPromptSavingExample() {
     console.log('📝 Step-by-Step Prompt Saving Example\n');
@@ -24,12 +25,16 @@ async function stepPromptSavingExample() {
         LogLevel.DEBUG,
         {
             model: OPENAI_MODELS.GPT_4O_MINI,
-            enableParallelToolCalls: false,
+            enableParallelToolCalls: true,
             temperature: 0.1,
+            promptProcessorOptions: {
+                type: 'enhanced'
+            }
         },
         [],
     );
 
+    
     // 🔧 修复：SessionManager只需要一个参数（agent）
     const sessionManager = new SessionManager(agent);
 
@@ -47,8 +52,8 @@ async function stepPromptSavingExample() {
         // 🆕 配置每步保存选项
         const promptSaveOptions = {
             savePromptPerStep: true,                    // 启用每步保存
-            promptSaveDir: './demo-step-prompts',       // 保存目录
-            promptSaveFormat: 'both' as const           // 同时保存 markdown 和 json
+            promptSaveDir: './demo-step-prompts-1',       // 保存目录
+            promptSaveFormat: 'markdown' as const           // 同时保存 markdown 和 json
         };
 
         console.log('⚙️  Prompt saving configuration:');
@@ -56,9 +61,12 @@ async function stepPromptSavingExample() {
         console.log(`   📋 Format: ${promptSaveOptions.promptSaveFormat}`);
         console.log(`   ⚡ Real-time: Save after each step completion\n`);
 
+        // 🆕 首先创建.snapshotignore文件以避免news_headlines.json破坏状态连续性
+        console.log('🛡️  Setting up snapshot ignore rules to prevent state continuity issues...\n');
+
         // 执行任务
         const task = `
-帮我创建一个Python网页爬虫项目，具体要求如下：
+请帮我创建一个Python网页爬虫项目，具体要求如下：
 1. **目标网站**: https://news.ycombinator.com (Hacker News首页)
 2. **提取内容**: 提取首页前20条新闻的标题和链接
 3. **技术栈**: 使用 requests 和 BeautifulSoup 库
@@ -72,7 +80,8 @@ async function stepPromptSavingExample() {
    - 添加用户代理头部避免被屏蔽
    - 添加适当的延时避免过于频繁请求
    - 代码要有详细注释
-   - 在任务完成之后，请阅读 news_headlines.json 文件，确保你已经成功提取了前20条新闻的标题和链接。`
+   - 在任务完成之后，请阅读 news_headlines.json 文件，确保你已经成功提取了前20条新闻的标题和链接。
+`
    ;
         
         console.log('🚀 Starting task with step-by-step prompt saving...\n');
