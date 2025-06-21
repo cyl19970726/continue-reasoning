@@ -1,7 +1,7 @@
-import { BasePromptProcessor, IContextManager } from './interfaces';
+import { BasePromptProcessor, IContextManager } from '../interfaces';
 import { StandardPromptProcessor } from './standard-prompt-processor';
 import { EnhancedPromptProcessor } from './enhanced-prompt-processor';
-import { logger } from './utils/logger';
+import { logger } from '../utils/logger';
 
 /**
  * Prompt processor types

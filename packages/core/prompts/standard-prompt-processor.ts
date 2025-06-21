@@ -1,7 +1,6 @@
-import { BasePromptProcessor, MessageType } from './interfaces';
-import { StandardExtractorResult, ChatMessage, AgentStep } from './interfaces';
-import { XmlExtractor } from './utils/xml-extractor';
-import { logger } from './utils/logger';
+import { BasePromptProcessor, MessageType } from '../interfaces';
+import { StandardExtractorResult } from '../interfaces';
+import { XmlExtractor } from '../utils/xml-extractor';
 
 /**
  * Standard Prompt Processor for basic thinking and final answer workflow

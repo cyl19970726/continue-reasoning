@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { EnhancedPromptProcessor } from '../enhanced-prompt-processor';
-import { getSystemPromptForMode, validateSystemPromptCompatibility } from '../prompts/enhanced-thinking-system-prompt';
+import { EnhancedPromptProcessor } from '../prompts/enhanced-prompt-processor';
+import { getSystemPromptForMode, validateSystemPromptCompatibility } from '../prompts/system-prompt';
 
 describe('EnhancedPromptProcessor', () => {
     let processor: EnhancedPromptProcessor;

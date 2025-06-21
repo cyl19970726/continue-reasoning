@@ -1,7 +1,7 @@
-import { BasePromptProcessor, IEnhancedPromptProcessor, MessageType } from './interfaces';
-import { EnhancedThinkingExtractorResult, ChatMessage, AgentStep } from './interfaces';
-import { XmlExtractor } from './utils/xml-extractor';
-import { logger } from './utils/logger';
+import { BasePromptProcessor, IEnhancedPromptProcessor, MessageType } from '../interfaces';
+import { EnhancedThinkingExtractorResult, ChatMessage, AgentStep } from '../interfaces';
+import { XmlExtractor } from '../utils/xml-extractor';
+import { logger } from '../utils/logger';
 
 /**
  * Enhanced Prompt Processor with structured thinking support

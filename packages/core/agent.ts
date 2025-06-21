@@ -14,9 +14,9 @@ import { LogLevel, Logger } from "./utils/logger";
 import { ToolSetContext } from "./contexts/toolset";
 import { logger } from "./utils/logger";
 import { ContextManager } from "./context";
-import { createEnhancedPromptProcessor, createStandardPromptProcessor } from "./prompt-processor-factory";
+import { createEnhancedPromptProcessor, createStandardPromptProcessor } from "./prompts/prompt-processor-factory";
 import { AgentEventManager } from "./events/agent-event-manager";
-import { getSystemPromptForMode } from "./prompts/enhanced-thinking-system-prompt";
+import { getSystemPromptForMode } from "./prompts/system-prompt";
 
 dotenv.config();
 
@@ -206,6 +206,9 @@ export class BaseAgent implements IAgent {
         `
 ## Tool Usage Guidelines
 - Call tools when you need to perform actions or gather information
+- Always explain what you're doing and why
+- Analyze tool results thoroughly before proceeding
+- If a tool call fails, try alternative approaches or inform the user
 - Available Tools:
 ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
 
@@ -358,7 +361,6 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
 
             // 提取结果
             const extractorResult = this.promptProcessor.textExtractor(responseText);
-            logger.debug('extractorResult', { extractorResult });
             currentStep.extractorResult = extractorResult;
 
             // logger.debug('currentStep', { currentStep });
