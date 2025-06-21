@@ -12,7 +12,7 @@ import { generateUnifiedDiff } from '../runtime/diff';
 import * as path from 'path';
 
 /**
- * Get the shared SimpleSnapshotManager instance from CodingContext
+ * Get the shared SnapshotManager instance from CodingContext
  */
 function getSnapshotManager(agent?: IAgent) {
   const codingContext = agent?.contextManager.findContextById('coding-context') as ICodingContext;

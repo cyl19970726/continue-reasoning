@@ -1,46 +1,56 @@
 /**
- * Simplified Snapshot System - Main Export
+ * Modular Snapshot System - Main Export
  * 
- * This module exports the complete simplified snapshot system components:
- * - SimpleSnapshotManager: Core snapshot management functionality
+ * This module exports the complete modular snapshot system components:
+ * - SnapshotManager: Core snapshot management functionality using modular architecture
  * - Snapshot Tools: User-facing tools for snapshot operations
- * - Enhanced Editing Tools: Editing tools with automatic snapshot creation
+ * - Core Managers: Individual modular components
  * - Types and Interfaces: All necessary type definitions
  */
 
-import { SimpleSnapshotManager } from './simple-snapshot-manager';
+// Core Snapshot Manager (new modular version)
+export { SnapshotManager } from './snapshot-manager';
 
-// Core Manager
-export { SimpleSnapshotManager } from './simple-snapshot-manager';
+// Import types for internal use
+import { SnapshotManager } from './snapshot-manager';
+import type { SnapshotConfig } from './interfaces';
+
+// Core modular components
+export { CoreSnapshotManager } from './core/core-snapshot-manager';
+export { CheckpointManager } from './core/checkpoint-manager';
+export { IgnoreManager } from './core/ignore-manager';
+export { ConsolidationManager } from './core/consolidation-manager';
+
+// Snapshot Management Tools
+export { 
+  ReadSnapshotTool,
+  ListSnapshotsTool,
+  ConsolidateSnapshotsTool,
+  RevertSnapshotTool,
+  snapshotManagerTools
+} from './snapshot-manager-tools';
+
+// Enhanced Editing Tools with snapshot integration
+export { 
+  ApplyWholeFileEditTool,
+  ApplyUnifiedDiffTool,
+  ApplyEditBlockTool,
+  ApplyRangedEditTool,
+  DeleteTool,
+  SnapshotEditingToolSet
+} from './snapshot-enhanced-tools';
 
 // Types and Interfaces
 export type {
   SnapshotData,
-  MilestoneData,
+  SnapshotConfig,
   EditHistoryItem,
   HistoryOptions,
   EditHistory,
   ReverseOptions,
   ReverseResult,
-  MilestoneSummary
-} from './simple-snapshot-manager';
-
-// Snapshot Management Tools
-export {
-  ReadSnapshotDiffTool,
-  GetEditHistoryTool,
-  ReverseOpTool,
-  CreateMilestoneTool,
-  GetMilestonesTool,
-  SimpleSnapshotToolSet
-} from './simple-snapshot-tools';
-
-// Enhanced Editing Tools
-export {
-  createSnapshotEnhancedTools,
-  createEnhancedWholeFileEditTool,
-  SnapshotEnhancedApplyWholeFileEditTool
-} from '../toolsets/snapshot-enhanced-tools';
+  HandleResult
+} from './interfaces';
 
 // Enhanced Diff utilities
 export {
@@ -50,10 +60,10 @@ export {
 } from '../runtime/diff';
 
 /**
- * Initialize the simplified snapshot system for a workspace
+ * Initialize the modular snapshot system for a workspace
  */
-export async function initializeSnapshotSystem(workspacePath: string): Promise<SimpleSnapshotManager> {
-  const manager = new SimpleSnapshotManager(workspacePath);
+export async function initializeSnapshotSystem(workspacePath: string): Promise<SnapshotManager> {
+  const manager = new SnapshotManager(workspacePath);
   await manager.initialize();
   return manager;
 }
@@ -62,47 +72,38 @@ export async function initializeSnapshotSystem(workspacePath: string): Promise<S
  * Get all available tools including snapshot management and enhanced editing tools
  */
 export async function getAllSnapshotTools() {
-  const snapshotTools = await import('./simple-snapshot-tools');
-  const enhancedTools = await import('../toolsets/snapshot-enhanced-tools');
+  const snapshotTools = await import('./snapshot-manager-tools');
+  const enhancedTools = await import('./snapshot-enhanced-tools');
   
   return [
-    ...snapshotTools.SimpleSnapshotToolSet,
-    enhancedTools.SnapshotEnhancedApplyWholeFileEditTool,
-    // Add more enhanced tools as they're created
+    ...snapshotTools.snapshotManagerTools,
+    ...enhancedTools.SnapshotEditingToolSet
   ];
 }
 
 /**
  * Default configuration for the snapshot system
  */
-export const DEFAULT_SNAPSHOT_CONFIG = {
-  // Automatically create snapshots for these tools
-  autoSnapshotTools: [
-    'ApplyWholeFileEdit',
-    'ApplyEditBlock', 
-    'ApplyRangedEdit',
-    'ApplyUnifiedDiff',
-    'Delete'
-  ],
-  
-  // Maximum number of snapshots to keep in memory
-  maxSnapshots: 1000,
-  
-  // Automatically clean up snapshots older than this (days)
-  autoCleanupDays: 30,
-  
-  // Enable Git-compatible diff format by default
-  useGitCompatibleDiffs: true,
-  
-  // Default milestone tags
-  defaultMilestoneTags: ['feature', 'bugfix', 'refactor', 'enhancement']
-} as const;
+export const DEFAULT_SNAPSHOT_CONFIG: SnapshotConfig = {
+  enableUnknownChangeDetection: true,
+  unknownChangeStrategy: 'auto-fix',
+  keepAllCheckpoints: false,
+  maxCheckpointAge: 30, // days
+  excludeFromChecking: [
+    '.git/**',
+    'node_modules/**',
+    '.continue-reasoning/**',
+    '**/*.log',
+    '**/tmp/**',
+    '**/temp/**'
+  ]
+};
 
 /**
  * Utility function to create a snapshot for any operation
  */
 export async function createOperationSnapshot(
-  manager: SimpleSnapshotManager,
+  manager: SnapshotManager,
   operation: {
     tool: string;
     description: string;
@@ -137,4 +138,22 @@ export async function createOperationSnapshot(
     console.error('Failed to create operation snapshot:', error);
     return null;
   }
+}
+
+/**
+ * Utility function to get storage statistics
+ */
+export async function getSnapshotStorageStats(workspacePath: string) {
+  const manager = new SnapshotManager(workspacePath);
+  await manager.initialize();
+  return await manager.getStorageStats();
+}
+
+/**
+ * Utility function to get consolidation candidates
+ */
+export async function getConsolidationCandidates(workspacePath: string) {
+  const manager = new SnapshotManager(workspacePath);
+  await manager.initialize();
+  return await manager.getConsolidationCandidates();
 }

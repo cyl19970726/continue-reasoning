@@ -3,7 +3,7 @@ import { CodingAgent } from '../packages/agents';
 import path from 'path';
 import fs from 'fs';
 import { SessionManager } from '../packages/core/session/sessionManager';
-import { createEnhancedPromptProcessor } from '../packages/core/prompt-processor-factory';
+import { createEnhancedPromptProcessor } from '../packages/core/prompts/prompt-processor-factory';
 
 async function stepPromptSavingExample() {
     console.log('📝 Step-by-Step Prompt Saving Example\n');

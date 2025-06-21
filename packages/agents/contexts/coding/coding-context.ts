@@ -2,7 +2,7 @@ import { IContext, ITool, IAgent, ToolCallResult, ToolSet as ToolSetInterface, I
 import { z } from 'zod';
 import { logger } from '@continue-reasoning/core';
 import { createTool } from '@continue-reasoning/core';
-import { EditingStrategyToolSet, BashToolSet, EditingStrategyToolExamples, SimpleSnapshotToolSet } from './toolsets';
+import { EditingStrategyToolSet, BashToolSet, EditingStrategyToolExamples } from './toolsets';
 import { ContextHelper } from '@continue-reasoning/core';
 import { IRuntime } from './runtime/interface';
 import { NodeJsSandboxedRuntime } from './runtime/impl/node-runtime';
@@ -10,8 +10,9 @@ import { ISandbox } from './sandbox';
 import { NoSandbox } from './sandbox/no-sandbox';
 import { SeatbeltSandbox } from './sandbox/seatbelt-sandbox';
 import * as os from 'os';
-import { SimpleSnapshotManager } from './snapshot/simple-snapshot-manager';
-import { SnapshotEditingToolSet } from './toolsets/snapshot-enhanced-tools';
+import { SnapshotManager } from './snapshot/snapshot-manager';
+import { SnapshotEditingToolSet } from './snapshot/snapshot-enhanced-tools';
+import { snapshotManagerTools } from './snapshot/snapshot-manager-tools';
 import { ReadToolSet } from './toolsets/editing-strategy-tools';
 import { WebSearchTool } from '@continue-reasoning/core';
 
@@ -26,7 +27,7 @@ export type CodingContextData = z.infer<typeof CodingContextDataSchema>;
 export interface ICodingContext extends IRAGEnabledContext<typeof CodingContextDataSchema> {
   getRuntime(): IRuntime;
   getSandbox(): ISandbox;
-  getSnapshotManager(): SimpleSnapshotManager;
+  getSnapshotManager(): SnapshotManager;
 }
 
 /**
@@ -89,7 +90,7 @@ export function createCodingContext(workspacePath: string, initialData?: Partial
   let sandbox: ISandbox = new NoSandbox();
   
   // Initialize the snapshot manager
-  const snapshotManager = new SimpleSnapshotManager(workspacePath);
+  const snapshotManager = new SnapshotManager(workspacePath);
   
   // Start the async initialization of the sandbox
   initializeSandbox(sandbox).then(newSandbox => {
@@ -98,8 +99,8 @@ export function createCodingContext(workspacePath: string, initialData?: Partial
 
   const allTools: ITool<any, any, IAgent>[] = [
     ...SnapshotEditingToolSet,
+    ...snapshotManagerTools,
     ...ReadToolSet,
-    ...SimpleSnapshotToolSet,
     ...BashToolSet,
     WebSearchTool,
   ];
