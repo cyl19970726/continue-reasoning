@@ -168,9 +168,7 @@ ReadFile → ApplyWholeFileEdit(goal="重构XX模块") → CompareFiles → Bash
 
 **错误回滚**:
 ListSnapshots(recent=3) → ReverseSnapshot(问题快照ID) → 或 ReverseMilestone(问题里程碑ID)
-
-**查看历史**:
-ListMilestones(recent=10) → ReadMilestone(感兴趣的里程碑ID) → ReadSnapshot(具体快照ID)`;
+`;
 
       return {
         workflow: workflow,

@@ -13,7 +13,7 @@ import { LogLevel } from '../packages/core/dist/utils/logger';
 import { OPENAI_MODELS } from '../packages/core/dist/models';
 import path from 'path';
 import fs from 'fs';
-import { ListSnapshotsTool } from '../packages/agents/contexts/coding/snapshot/snapshot-manager-tools';
+import { ConsolidateSnapshotsTool, ListSnapshotsTool } from '../packages/agents/contexts/coding/snapshot/snapshot-manager-tools';
 
 async function runSnapshotTest() {
 
@@ -275,23 +275,30 @@ if __name__ == "__main__":
         console.error('❌ Failed to list final snapshots:', error);
     }
 
+    const listSnapshotsResult_before_consolidate = await ListSnapshotsTool.execute({
+        includeDiffs: true
+    }, agent);
+    console.log('📸 List of snapshots before consolidate:', listSnapshotsResult_before_consolidate.snapshots);
+
+
+    const consolidateResult = await ConsolidateSnapshotsTool.execute({
+       sequenceNumberRange:{
+        start: 1,
+        end: 2
+       },
+        title: 'Consolidate snapshots',
+        description: 'Consolidate snapshots',
+        deleteOriginals: false
+    }, agent);
+
+    console.log('🔄 Consolidate result:', consolidateResult);
+
+
     const listSnapshotsResult = await ListSnapshotsTool.execute({
         includeDiffs: true
     }, agent);
-    console.log('📸 List of snapshots:', listSnapshotsResult.snapshots);
+    console.log('📸 List of snapshots after consolidate:', listSnapshotsResult.snapshots);
 
-    console.log('\n=== Test Completed ===');
-    console.log('✨ This example demonstrated:');
-    console.log('1. Using ApplyWholeFileEdit to create files and generate snapshots');
-    console.log('2. Using BashCommandTool to actually execute Python scripts');
-    console.log('3. Handling external file changes and state continuity issues');
-    console.log('4. Using ApplyWholeFileEdit to modify files and generate diff snapshots');
-    console.log('5. Modular SnapshotManager tracking state continuity');
-    console.log('6. Detecting unknown changes (if files are modified outside the snapshot system)');
-    console.log('7. Generating Git-format diffs for version control');
-    console.log('8. New modular architecture with separate core managers');
-    console.log('9. Using DeleteTool to clean up files with snapshot tracking');
-    console.log('10. Complete snapshot chain with proper sequenceNumber and previousSnapshotId linking');
 }
 
 // Run the test
