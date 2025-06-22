@@ -356,12 +356,13 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
                 executionTime: tr.executionTime
             }));
 
-            // 使用 PromptProcessor 处理步骤结果
-            this.promptProcessor.processStepResult(currentStep);
-
             // 提取结果
             const extractorResult = this.promptProcessor.textExtractor(responseText);
+            logger.debug('[[[extractorResult]]]', { extractorResult });
             currentStep.extractorResult = extractorResult;
+
+            // 使用 PromptProcessor 处理步骤结果
+            this.promptProcessor.processStepResult(currentStep);
 
             // logger.debug('currentStep', { currentStep });
             // 检查是否应该继续
