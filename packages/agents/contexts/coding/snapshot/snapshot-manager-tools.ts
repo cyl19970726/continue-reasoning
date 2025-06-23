@@ -123,7 +123,7 @@ const RevertSnapshotOutputSchema = z.object({
  * ReadSnapshotTool - Read snapshot details
  */
 export const ReadSnapshotTool = createTool({
-  id: 'read_snapshot',
+  id: 'ReadSnapshot',
   name: 'ReadSnapshot',
   description: 'Read detailed information of specified snapshot, including metadata, affected files and optional diff content',
   inputSchema: ReadSnapshotInputSchema,
@@ -184,7 +184,7 @@ export const ReadSnapshotTool = createTool({
  * ListSnapshotsTool - View snapshot history
  */
 export const ListSnapshotsTool = createTool({
-  id: 'list_snapshots',
+  id: 'ListSnapshots',
   name: 'ListSnapshots',
   description: 'Get snapshot history list with support for various filtering conditions and pagination',
   inputSchema: ListSnapshotsInputSchema,
@@ -258,7 +258,7 @@ export const ListSnapshotsTool = createTool({
  * ConsolidateSnapshotsTool - Storage optimization (merge snapshots)
  */
 export const ConsolidateSnapshotsTool = createTool({
-  id: 'consolidate_snapshots',
+  id: 'ConsolidateSnapshots',
   name: 'ConsolidateSnapshots',
   description: 'Merge multiple consecutive snapshots into a single snapshot for storage optimization and snapshot chain simplification',
   inputSchema: ConsolidateSnapshotsInputSchema,
@@ -314,9 +314,9 @@ export const ConsolidateSnapshotsTool = createTool({
              message: `No snapshots found in sequence range ${params.sequenceNumberRange!.start}-${params.sequenceNumberRange!.end}`
            };
          }
-       } else {
+        } else {
          snapshotIds = params.snapshotIds!;
-       }
+        }
       
       // Execute snapshot merge
       const result = await snapshotManager.consolidateSnapshots({
@@ -349,7 +349,7 @@ export const ConsolidateSnapshotsTool = createTool({
  * RevertSnapshotTool - Rollback snapshot
  */
 export const RevertSnapshotTool = createTool({
-  id: 'revert_snapshot',
+  id: 'RevertSnapshot',
   name: 'RevertSnapshot',
   description: 'Rollback the operation of specified snapshot, restoring files to the state before the snapshot',
   inputSchema: RevertSnapshotInputSchema,

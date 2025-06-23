@@ -454,7 +454,7 @@ const DeleteReturnsSchema = z.object({
 });
 
 export const DeleteTool = createTool({
-  id: 'delete',
+  id: 'Delete',
   name: 'Delete',
   description: 'Deletes a file or directory. Generates diffs for files and non-empty directories. Empty directory deletion does not generate diffs.',
   inputSchema: DeleteParamsSchema,

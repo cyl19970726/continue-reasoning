@@ -468,7 +468,7 @@ const DeleteSnapshotParamsSchema = z.object({
 });
 
 export const DeleteTool = createTool({
-  id: 'delete',
+  id: 'Delete',
   name: 'Delete',
   description: 'Deletes a file or directory with automatic snapshot creation for tracking.',
   inputSchema: DeleteSnapshotParamsSchema,
