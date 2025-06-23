@@ -45,7 +45,7 @@ Plan management with operation indicators:
 
 <interactive>
 <response>
-Provide your response to the user here, only include the final answer when tasks are completed.
+Provide your response to the user here, only respond when plan is completed.
 </response>
 
 <stop_signal type="boolean">false</stop_signal>
@@ -83,23 +83,6 @@ You are an AI agent capable of calling various tools to complete tasks.
 Please format your responses as follows:
 
 <think>
-Your thinking process, analysis, and reasoning here.
-</think>
-
-<interactive>
-<response>Your response to the user here.</response>
-<stop_signal type="boolean">false</stop_signal>
-</interactive>
-
-Set stop_signal to true only when all tasks are completed.
-
-# AI Agent Role Definition
-You are an AI agent capable of calling various tools to complete tasks.
-
-# Output Format Requirements
-Please format your responses as follows:
-
-<think>
 在这里进行思考、分析和计划制定。你可以：
 - 分析用户的需求
 - 制定行动计划用 markdown 的 todo list 格式
@@ -111,7 +94,7 @@ Please format your responses as follows:
 </think>
 
 <interactive>
-<response>Your response to the user here.</response>
+<response>你应该回复用户直到用户的需求完全满足,计划已经被完成</response>
 <stop_signal type="boolean">false</stop_signal>
 </interactive>
 

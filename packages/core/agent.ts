@@ -17,6 +17,7 @@ import { ContextManager } from "./context";
 import { createEnhancedPromptProcessor, createStandardPromptProcessor } from "./prompts/prompt-processor-factory";
 import { AgentEventManager } from "./events/agent-event-manager";
 import { getSystemPromptForMode } from "./prompts/system-prompt";
+import { OpenAIChatWrapper } from "./models/openai-chat";
 
 dotenv.config();
 
@@ -152,6 +153,7 @@ export class BaseAgent implements IAgent {
         // 简化的模型配置：直接使用模型
         const selectedModel: SupportedModel = agentOptions?.model || OPENAI_MODELS.GPT_4O;
         const provider = getModelProvider(selectedModel);
+        logger.info(`getModelProvider model: ${selectedModel}, provider: ${provider}`);
 
         // Initialize correct LLM based on provider
         if (provider === 'openai') {
@@ -166,6 +168,10 @@ export class BaseAgent implements IAgent {
             this.llm = new GeminiWrapper(selectedModel, false, temperature, maxTokens);
             (this.llm as any).modelName = selectedModel;
             logger.info(`Using Google model: ${selectedModel}`);
+        } else if (provider === 'deepseek') {
+            this.llm = new OpenAIChatWrapper(selectedModel, false, temperature, maxTokens);
+            (this.llm as any).modelName = selectedModel;
+            logger.info(`Using DeepSeek model: ${selectedModel}`);
         } else {
             throw new Error(`Unsupported LLM provider: ${provider}`);
         }

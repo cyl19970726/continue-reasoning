@@ -1,3 +1,8 @@
+export enum DEEPSEEK_MODELS {
+    REASONER = "deepseek-reasoner",
+    CHAT = "deepseek-chat",
+}
+
 export enum OPENAI_MODELS {
     // Core GPT-4 Models
     GPT_4O = "gpt-4o",
@@ -55,6 +60,10 @@ export enum OPENAI_MODELS {
     GPT_4O_MINI_TRANSCRIBE = "gpt-4o-mini-transcribe",
     GPT_4O_MINI_TTS = "gpt-4o-mini-tts",
     CHATGPT_4O_LATEST = "chatgpt-4o-latest",
+
+    O3 = "o3-mini",
+    O3_MINI = "o3",
+    O3_PRO = "o3-pro",
 }
 
 export enum ANTHROPIC_MODELS {
@@ -136,13 +145,18 @@ export type SupportedModel =
     | ANTHROPIC_MODELS 
     | GOOGLE_MODELS 
     | GOOGLE_IMAGE_MODELS 
-    | GOOGLE_VIDEO_MODELS;
+    | GOOGLE_VIDEO_MODELS
+    | DEEPSEEK_MODELS;
 
 // 模型到提供商的映射
-export function getModelProvider(model: SupportedModel): 'openai' | 'anthropic' | 'google' {
+export function getModelProvider(model: SupportedModel): 'deepseek' | 'openai' | 'anthropic' | 'google' {
     // OpenAI 模型
     if (Object.values(OPENAI_MODELS).includes(model as OPENAI_MODELS)) {
         return 'openai';
+    }
+
+    if (Object.values(DEEPSEEK_MODELS).includes(model as DEEPSEEK_MODELS)) {
+        return 'deepseek';
     }
     
     // Anthropic 模型
