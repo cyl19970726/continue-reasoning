@@ -1,13 +1,13 @@
 /**
  * @continue-reasoning/cli-client
  * 
- * 模块化的 CLI 客户端包，用于与 Continue Reasoning Agent 进行交互
+ * Modular CLI client package for interacting with Continue Reasoning Agent
  */
 
 import { CLIClient } from './CLIClient';
 import { CLIClientConfig, ISessionManager } from './types';
 
-// 导出主要类和接口
+// Export main classes and interfaces
 export { CLIClient };
 export * from './types';
 export * from './commands';
@@ -15,7 +15,7 @@ export * from './utils';
 export * from './utils/display-formatter';
 
 /**
- * 创建默认的 CLI Client 配置
+ * Create default CLI Client configuration
  */
 export function createDefaultConfig(overrides: Partial<CLIClientConfig> = {}): CLIClientConfig {
   return {
@@ -33,7 +33,7 @@ export function createDefaultConfig(overrides: Partial<CLIClientConfig> = {}): C
 }
 
 /**
- * 启动 CLI Client 的工厂函数
+ * Factory function to start CLI Client
  */
 export async function startCLIClient(config: Partial<CLIClientConfig> = {}): Promise<CLIClient> {
   const fullConfig = createDefaultConfig(config);
@@ -43,7 +43,7 @@ export async function startCLIClient(config: Partial<CLIClientConfig> = {}): Pro
 }
 
 /**
- * 创建 CLI Client 实例的工厂函数（不自动启动）
+ * Factory function to create CLI Client instance (without auto-start)
  */
 export function createCLIClient(config: Partial<CLIClientConfig> = {}): CLIClient {
   const fullConfig = createDefaultConfig(config);
@@ -51,19 +51,19 @@ export function createCLIClient(config: Partial<CLIClientConfig> = {}): CLIClien
 }
 
 /**
- * 创建与 SessionManager 集成的 CLI Client
+ * Create CLI Client integrated with SessionManager
  */
 export function createCLIClientWithSession(
-  sessionManager: any, // ISessionManager 类型
+  sessionManager: any, // ISessionManager type
   config: Partial<CLIClientConfig> = {}
 ): CLIClient {
   const fullConfig = createDefaultConfig(config);
   const client = new CLIClient(fullConfig);
   
-  // 使用依赖注入设置 SessionManager
+  // Set SessionManager using dependency injection
   client.setSessionManager(sessionManager);
   
-  // 如果需要，可以自动创建新会话
+  // Automatically create new session if needed
   if (!client.currentSessionId) {
     client.newSession();
   }
@@ -72,10 +72,10 @@ export function createCLIClientWithSession(
 }
 
 /**
- * 启动与 SessionManager 集成的 CLI Client
+ * Start CLI Client integrated with SessionManager
  */
 export async function startCLIClientWithSession(
-  sessionManager: any, // ISessionManager 类型
+  sessionManager: any, // ISessionManager type
   config: Partial<CLIClientConfig> = {}
 ): Promise<CLIClient> {
   const client = createCLIClientWithSession(sessionManager, config);
@@ -83,10 +83,10 @@ export async function startCLIClientWithSession(
   return client;
 }
 
-// 向后兼容的默认导出
+// Backward compatible default export
 export default CLIClient;
 
 /**
- * 版本信息
+ * Version information
  */
 export const VERSION = '0.1.0'; 
