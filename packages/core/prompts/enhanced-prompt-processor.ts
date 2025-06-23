@@ -1,4 +1,4 @@
-import { BasePromptProcessor, IEnhancedPromptProcessor, MessageType } from '../interfaces';
+import { BasePromptProcessor, IEnhancedPromptProcessor, MessageType, ChatHistoryConfig } from '../interfaces';
 import { EnhancedThinkingExtractorResult, ChatMessage, AgentStep } from '../interfaces';
 import { XmlExtractor } from '../utils/xml-extractor';
 import { logger } from '../utils/logger';
@@ -15,8 +15,8 @@ export class EnhancedPromptProcessor
     thinkingMode: 'enhanced' | 'custom' = 'enhanced';
     private xmlExtractor: XmlExtractor;
     
-    constructor(systemPrompt: string = '') {
-        super('enhanced');
+    constructor(systemPrompt: string = '', chatHistoryConfig?: Partial<ChatHistoryConfig>) {
+        super('enhanced', chatHistoryConfig);
         this.systemPrompt = systemPrompt;
         this.xmlExtractor = new XmlExtractor({
             caseSensitive: false,

@@ -26,10 +26,10 @@ const SYSTEM_CONTEXTS = [
 ]
 
 const DEFAULT_CONTEXTS = [
-    // Planning context (计划和组织)
+    // Planning context
     PlanContext,
 
-    // Execution and utility contexts (执行和工具)
+    // Execution and utility contexts
     WebSearchContext,
     MCPContext,
     ToolSetContext,
@@ -68,7 +68,7 @@ export interface AgentOptions {
         customSystemPrompt?: string;
         maxTokens?: number;
     };
-    // 新增 PromptProcessor 选项
+    // PromptProcessor options
     promptProcessorOptions?: {
         type: 'standard' | 'enhanced';
         enableToolCallsForFirstStep?: boolean;
@@ -106,10 +106,10 @@ export class BaseAgent implements IAgent {
 
     contexts: IRAGEnabledContext<any>[] = [];
 
-    // 新增 PromptProcessor 相关属性
+    // PromptProcessor related properties
     promptProcessor: BasePromptProcessor<any>;
 
-    // 🆕 事件管理器
+    // Event manager
     private eventManager?: AgentEventManager;
 
     // 🆕 会话感知能力
@@ -178,7 +178,7 @@ export class BaseAgent implements IAgent {
             this.llm.parallelToolCall = this.enableParallelToolCalls;
         }
 
-        // 🆕 初始化 PromptProcessor - 使用工厂模式，默认为 Standard
+        // Initialize PromptProcessor - using factory pattern, default to Standard
         this.promptProcessor = agentOptions?.promptProcessorOptions?.type === 'enhanced' 
             ? createEnhancedPromptProcessor(
                 this.getBaseSystemPrompt([], 'enhanced'),
@@ -215,7 +215,7 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
         return systemPrompt + toolsPrompt
     }
 
-    // 新增：使用 PromptProcessor 处理步骤
+    // Process step using PromptProcessor
     private async processStepWithPromptProcessor(
         userInput: string,
         stepIndex: number,
@@ -808,30 +808,30 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
         return await this.promptProcessor.formatPrompt(this.currentStep);
     }
 
-    // 新增：设置工具调用控制
+    // Set tool call control
     public setEnableToolCallsForStep(enableFn: (stepIndex: number) => boolean): void {
         this.promptProcessor.setEnableToolCallsForStep(enableFn);
     }
 
-    // 新增：获取PromptProcessor实例
+    // Get PromptProcessor instance
     public getPromptProcessor(): BasePromptProcessor<any> {
         return this.promptProcessor;
     }
 
-    // 🆕 设置PromptProcessor实例
+    // Set PromptProcessor instance
     public setPromptProcessor(processor: BasePromptProcessor<any>): void {
         this.promptProcessor = processor;
-        // 确保新的处理器有正确的上下文管理器
+        // Ensure new processor has correct context manager
         this.promptProcessor.setContextManager(this.contextManager);
         logger.info(`PromptProcessor updated to: ${processor.constructor.name}`);
     }
 
-    // 新增：重置PromptProcessor
+    // Reset PromptProcessor
     public resetPromptProcessor(): void {
         this.promptProcessor.resetPromptProcessor();
     }
 
-    // 新增：获取处理器统计信息
+    // Get processor statistics
     public getPromptProcessorStats(): {
         totalMessages: number;
         currentStep: number;
@@ -851,13 +851,13 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
         };
     }
 
-    // 🆕 设置会话回调
+    // Set session callbacks
     setCallBacks(callbacks: AgentCallbacks): void {
         this.callbacks = callbacks;
         logger.info(`Agent ${this.id}: Session callback set`);
     }
 
-    // 🆕 加载会话状态
+    // Load session state
     async loadAgentStorage(state: AgentStorage): Promise<void> {
         state.agentId = this.id;
         this.sessionId = state.sessionId;

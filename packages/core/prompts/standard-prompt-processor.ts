@@ -1,4 +1,4 @@
-import { BasePromptProcessor, MessageType } from '../interfaces';
+import { BasePromptProcessor, MessageType, ChatHistoryConfig } from '../interfaces';
 import { StandardExtractorResult } from '../interfaces';
 import { XmlExtractor } from '../utils/xml-extractor';
 
@@ -11,8 +11,8 @@ export class StandardPromptProcessor
     
     private xmlExtractor: XmlExtractor;
     
-    constructor(systemPrompt: string = '') {
-        super('standard');
+    constructor(systemPrompt: string = '', chatHistoryConfig?: Partial<ChatHistoryConfig>) {
+        super('standard', chatHistoryConfig);
         this.systemPrompt = systemPrompt;
         this.xmlExtractor = new XmlExtractor({
             caseSensitive: false,

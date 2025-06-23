@@ -26,30 +26,18 @@ Perform logical reasoning and decision-making here:
 Plan management with operation indicators:
 **CRITICAL: Only exist one plan at a time. Always refer to the original plan from chat history.**
 
-**Plan Operations (use one of the following on the first line):**
-- [OP:CREATE_PLAN] - ONLY use when NO previous plan exists in chat history
-- [OP:UPDATE_PLAN] - When modifying existing plan structure or adding/removing tasks
-- [OP:TASK_DONE] - When completing a task (only show the completed task with [x])
-- [OP:PLAN_DONE] - When all tasks in the plan are completed
-
 **IMPORTANT Rules:**
-1. **First execution only**: Use CREATE_PLAN to establish the initial plan
+1. **First execution only**: Use create plan to establish the initial plan
 2. **All subsequent executions**: 
    - Review the original plan from chat history
-   - Use TASK_DONE to mark completed tasks (show only completed tasks)
-   - Use UPDATE_PLAN only if the plan structure needs modification
+   - Use update plan only if the plan structure needs modification
    - NEVER create a new plan unless absolutely necessary
 
 **Format Guidelines:**
-- For CREATE_PLAN and UPDATE_PLAN: Show the complete plan using markdown todo list format
-- For TASK_DONE: Only show the completed task(s) with "- [x] task content"
-- For PLAN_DONE: Indicate all tasks are complete with a summary
+- For create plan and update plan: Show the complete plan using markdown todo list format
+- For task done: Only show the completed task(s) with "- [x] task content"
+- For plan done: Indicate all tasks are complete with a summary
 - Use terms like "task", "phase", "action" instead of "step"
-- When a task is completed, update status from "- [ ]" to "- [x]"
-
-**Example for TASK_DONE:**
-[OP:TASK_DONE]
-- [x] Create news_scraper.py file with scraping logic
 
 **CRITICAL REMINDER**: Before writing this section, ALWAYS review chat history for existing plans. Only use CREATE_PLAN on the very first execution when no plan exists!
 </plan>
@@ -80,12 +68,6 @@ Provide your response to the user here, only include the final answer when tasks
   - You need to perform additional tool calls
   - You're waiting for tool results
   - More steps are required to complete the user's request
-
-## Quality Standards
-- Provide clear, actionable responses
-- Be specific about what you've accomplished and what remains to be done
-- Ask for clarification when user requirements are ambiguous
-- Maintain professional and helpful communication throughout
 
 Remember: Your thinking process should be thorough and systematic, while your responses should be clear and user-focused.
 `;
