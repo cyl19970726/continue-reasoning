@@ -11,8 +11,8 @@ import {
 import { ChromaRAG } from './chromaRAG';
 
 /**
- * RAG构建器实现
- * 使用Builder模式创建和配置不同的RAG实例
+ * RAG builder implementation
+ * Uses Builder pattern to create and configure different RAG instances
  */
 export class RAGBuilder implements IRAGBuilder {
   private name: string = 'default-rag';
@@ -37,7 +37,7 @@ export class RAGBuilder implements IRAGBuilder {
   };
 
   /**
-   * 设置RAG实例名称和描述
+   * Set RAG instance name and description
    */
   setName(name: string, description?: string): RAGBuilder {
     this.name = name;
@@ -48,7 +48,7 @@ export class RAGBuilder implements IRAGBuilder {
   }
 
   /**
-   * 设置向量存储类型和配置
+   * Set vector store type and configuration
    */
   setVectorStore(type: VectorStoreType, config: VectorStoreConfig): RAGBuilder {
     this.vectorStoreType = type;
@@ -57,7 +57,7 @@ export class RAGBuilder implements IRAGBuilder {
   }
 
   /**
-   * 设置嵌入模型和配置
+   * Set embedding model and configuration
    */
   setEmbeddingModel(model: EmbeddingModelType, config?: EmbeddingConfig): RAGBuilder {
     this.embeddingModel = model;
@@ -68,7 +68,7 @@ export class RAGBuilder implements IRAGBuilder {
   }
 
   /**
-   * 设置索引配置
+   * Set index configuration
    */
   setIndexConfig(config: IndexConfig): RAGBuilder {
     this.indexConfig = { ...this.indexConfig, ...config };
@@ -76,7 +76,7 @@ export class RAGBuilder implements IRAGBuilder {
   }
 
   /**
-   * 设置文本分块策略
+   * Set text chunking strategy
    */
   setChunkingStrategy(strategy: ChunkingStrategy): RAGBuilder {
     this.chunkingStrategy = { ...this.chunkingStrategy, ...strategy };
@@ -84,10 +84,10 @@ export class RAGBuilder implements IRAGBuilder {
   }
 
   /**
-   * 构建RAG实例
+   * Build RAG instance
    */
   build(): IRAG {
-    // 根据配置的向量存储类型创建相应的RAG实例
+    // Create corresponding RAG instance based on configured vector store type
     switch (this.vectorStoreType) {
       case 'chroma':
         return new ChromaRAG(
@@ -98,13 +98,13 @@ export class RAGBuilder implements IRAGBuilder {
           this.indexConfig,
           this.chunkingStrategy
         );
-      // 可以在这里添加其他向量数据库的支持
+      // Support for other vector databases can be added here
       // case 'pinecone':
       //   return new PineconeRAG(...);
       // case 'qdrant':
       //   return new QdrantRAG(...);
       default:
-        throw new Error(`不支持的向量存储类型: ${this.vectorStoreType}`);
+        throw new Error(`Unsupported vector store type: ${this.vectorStoreType}`);
     }
   }
 } 

@@ -5,7 +5,7 @@ import { IEventBus } from '../core/events/eventBus';
 import { createCodingContext } from './contexts/coding';
 import { createInteractiveContext } from './contexts/interaction';
 import { logger } from '../core/utils/logger';
-import { SimpleSnapshotManager } from './contexts/coding/snapshot/simple-snapshot-manager';
+import { SnapshotManager } from './contexts/coding/snapshot/snapshot-manager';
 import { ICodingContext } from './contexts/coding/coding-context';
 
 /**
@@ -103,7 +103,7 @@ export class CodingAgent extends BaseAgent {
      * 🔧 获取快照管理器
      * 提供对快照系统的统一访问
      */
-    getSnapshotManager(): SimpleSnapshotManager {
+    getSnapshotManager(): SnapshotManager {
         return this.codingContext.getSnapshotManager();
     }
 

@@ -186,6 +186,86 @@ export interface IEnhancedPromptProcessor<TExtractorResult extends ExtractorResu
 }
 
 /**
+ * Chat history configuration interface
+ * Controls how many steps to keep for each message type
+ */
+export interface ChatHistoryConfig {
+    [MessageType.MESSAGE]: number;        // Keep last n steps for regular messages
+    [MessageType.TOOL_CALL]: number;      // Keep last n steps for tool calls  
+    [MessageType.ERROR]: number;          // Keep last n steps for errors
+    [MessageType.THINKING]: number;       // Keep last n steps for thinking messages
+    [MessageType.ANALYSIS]: number;       // Keep last n steps for analysis messages
+    [MessageType.PLAN]: number;           // Keep last n steps for plan messages
+    [MessageType.REASONING]: number;      // Keep last n steps for reasoning messages
+    [MessageType.INTERACTIVE]: number;    // Keep last n steps for interactive messages
+    [MessageType.RESPONSE]: number;       // Keep last n steps for response messages
+    [MessageType.STOP_SIGNAL]: number;    // Keep last n steps for stop signal messages
+}
+
+/**
+ * Chat history manager interface
+ * Manages filtering of chat history based on message types and step counts
+ */
+export interface IChatHistoryManager {
+    setConfig(config: Partial<ChatHistoryConfig>): void;
+    getConfig(): ChatHistoryConfig;
+    filterChatHistory(chatHistory: ChatMessage[], currentStep: number): ChatMessage[];
+    updateTypeConfig(messageType: MessageType, keepSteps: number): void;
+}
+
+/**
+ * Default chat history manager implementation
+ * Filters chat history based on message type and step count configuration
+ */
+export class ChatHistoryManager implements IChatHistoryManager {
+    private config: ChatHistoryConfig;
+    
+    constructor(config?: Partial<ChatHistoryConfig>) {
+        // Default configuration - keep reasonable amounts for each type
+        this.config = {
+            [MessageType.MESSAGE]: 100,        // Keep last 100 steps for messages
+            [MessageType.TOOL_CALL]: 5,      // Keep last 10 steps for tool calls
+            [MessageType.ERROR]: 5,          // Keep last 20 steps for errors  
+            [MessageType.THINKING]: 5,        // Keep last 8 steps for thinking messages
+            [MessageType.ANALYSIS]: 5,        // Keep last 8 steps for analysis messages
+            [MessageType.PLAN]: 5,            // Keep last 8 steps for plan messages
+            [MessageType.REASONING]: 5,       // Keep last 8 steps for reasoning messages
+            [MessageType.INTERACTIVE]: 5,     // Keep last 5 steps for interactive messages
+            [MessageType.RESPONSE]: 5,       // Keep last 10 steps for response messages
+            [MessageType.STOP_SIGNAL]: 2,     // Keep last 3 steps for stop signal messages
+            ...config
+        };
+    }
+
+    setConfig(config: Partial<ChatHistoryConfig>): void {
+        this.config = { ...this.config, ...config };
+    }
+
+    getConfig(): ChatHistoryConfig {
+        return { ...this.config };
+    }
+
+    updateTypeConfig(messageType: MessageType, keepSteps: number): void {
+        this.config[messageType] = keepSteps;
+    }
+
+    filterChatHistory(chatHistory: ChatMessage[], currentStep: number): ChatMessage[] {
+        return chatHistory.filter(message => {
+            // Use MESSAGE as default type if not specified
+            const messageType = message.type || MessageType.MESSAGE;
+            const keepSteps = this.config[messageType];
+            
+            // Always keep if keepSteps is 0 or negative (means keep all)
+            if (keepSteps <= 0) return true;
+            
+            // Keep if message is within the allowed step range
+            const stepDifference = currentStep - message.step;
+            return stepDifference <= keepSteps;
+        });
+    }
+}
+
+/**
  * PromptProcessor abstract base
  * Provides basic implementation, subclasses need to implement abstract methods
  */
@@ -197,8 +277,9 @@ export abstract class BasePromptProcessor<TExtractorResult extends ExtractorResu
     chatHistory: ChatMessage[] = [];
     stopSignal: boolean | null = null;
 
-    constructor(type: 'standard' | 'enhanced') {
+    constructor(type: 'standard' | 'enhanced', chatHistoryConfig?: Partial<ChatHistoryConfig>) {
         this.type = type;
+        this.chatHistoryManager = new ChatHistoryManager(chatHistoryConfig);
     }
 
     enableToolCallsForStep: (stepIndex: number) => boolean = () => true;
@@ -206,6 +287,7 @@ export abstract class BasePromptProcessor<TExtractorResult extends ExtractorResu
     // Enhanced base functionality
     stepPrompts: string[] = [];
     protected contextManager?: IContextManager;
+    protected chatHistoryManager: IChatHistoryManager;
 
     setEnableToolCallsForStep(enableToolCallsForStep: (stepIndex: number) => boolean): void {
         this.enableToolCallsForStep = enableToolCallsForStep;
@@ -294,6 +376,27 @@ export abstract class BasePromptProcessor<TExtractorResult extends ExtractorResu
     }
 
     /**
+     * Set chat history configuration
+     */
+    setChatHistoryConfig(config: Partial<ChatHistoryConfig>): void {
+        this.chatHistoryManager.setConfig(config);
+    }
+    
+    /**
+     * Get current chat history configuration
+     */
+    getChatHistoryConfig(): ChatHistoryConfig {
+        return this.chatHistoryManager.getConfig();
+    }
+    
+    /**
+     * Update configuration for specific message type
+     */
+    updateChatHistoryTypeConfig(messageType: MessageType, keepSteps: number): void {
+        this.chatHistoryManager.updateTypeConfig(messageType, keepSteps);
+    }
+
+    /**
      * Set context manager (for dynamic injection)
      */
     setContextManager(contextManager: IContextManager): void {
@@ -334,11 +437,15 @@ export abstract class BasePromptProcessor<TExtractorResult extends ExtractorResu
             }
         }
         
-        // 3. ExecutionHistory (ChatHistory List)
+        // 3. ExecutionHistory (ChatHistory List) - Now with filtering
         if (this.chatHistory.length > 0) {
-            prompt += '\n## Chat History List\n';
-            this.chatHistory.forEach(message => {
-                prompt += `
+            // Filter chat history based on current step and configuration
+            const filteredHistory = this.chatHistoryManager.filterChatHistory(this.chatHistory, stepIndex);
+            
+            if (filteredHistory.length > 0) {
+                prompt += '\n## Chat History\n';
+                filteredHistory.forEach(message => {
+                    prompt += `
 <chat_history>
 role: ${message.role}
 step: ${message.step}
@@ -347,7 +454,8 @@ content: ${message.content}
 timestamp: ${message.timestamp}
 </chat_history>
 `;
-            });
+                });
+            }
         }
 
         // Add current step indicator

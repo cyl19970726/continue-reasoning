@@ -2,7 +2,7 @@ import { IContext, ITool, IAgent, ToolCallResult, ToolSet as ToolSetInterface, I
 import { z } from 'zod';
 import { logger } from '@continue-reasoning/core';
 import { createTool } from '@continue-reasoning/core';
-import { EditingStrategyToolSet, BashToolSet, EditingStrategyToolExamples, SimpleSnapshotToolSet } from './toolsets';
+import { EditingStrategyToolSet, BashToolSet, EditingStrategyToolExamples } from './toolsets';
 import { ContextHelper } from '@continue-reasoning/core';
 import { IRuntime } from './runtime/interface';
 import { NodeJsSandboxedRuntime } from './runtime/impl/node-runtime';
@@ -10,8 +10,9 @@ import { ISandbox } from './sandbox';
 import { NoSandbox } from './sandbox/no-sandbox';
 import { SeatbeltSandbox } from './sandbox/seatbelt-sandbox';
 import * as os from 'os';
-import { SimpleSnapshotManager } from './snapshot/simple-snapshot-manager';
-import { SnapshotEditingToolSet } from './toolsets/snapshot-enhanced-tools';
+import { SnapshotManager } from './snapshot/snapshot-manager';
+import { SnapshotEditingToolSet } from './snapshot/snapshot-enhanced-tools';
+import { snapshotManagerTools } from './snapshot/snapshot-manager-tools';
 import { ReadToolSet } from './toolsets/editing-strategy-tools';
 import { WebSearchTool } from '@continue-reasoning/core';
 
@@ -26,7 +27,7 @@ export type CodingContextData = z.infer<typeof CodingContextDataSchema>;
 export interface ICodingContext extends IRAGEnabledContext<typeof CodingContextDataSchema> {
   getRuntime(): IRuntime;
   getSandbox(): ISandbox;
-  getSnapshotManager(): SimpleSnapshotManager;
+  getSnapshotManager(): SnapshotManager;
 }
 
 /**
@@ -89,7 +90,7 @@ export function createCodingContext(workspacePath: string, initialData?: Partial
   let sandbox: ISandbox = new NoSandbox();
   
   // Initialize the snapshot manager
-  const snapshotManager = new SimpleSnapshotManager(workspacePath);
+  const snapshotManager = new SnapshotManager(workspacePath);
   
   // Start the async initialization of the sandbox
   initializeSandbox(sandbox).then(newSandbox => {
@@ -98,8 +99,8 @@ export function createCodingContext(workspacePath: string, initialData?: Partial
 
   const allTools: ITool<any, any, IAgent>[] = [
     ...SnapshotEditingToolSet,
+    ...snapshotManagerTools,
     ...ReadToolSet,
-    ...SimpleSnapshotToolSet,
     ...BashToolSet,
     WebSearchTool,
   ];
@@ -111,65 +112,58 @@ export function createCodingContext(workspacePath: string, initialData?: Partial
     dataSchema: CodingContextDataSchema,
     initialData: parsedInitialData,
     renderPromptFn: (data: CodingContextData): PromptCtx => {
-      // 工作流程：详细但简洁的编程流程
-      const workflow = `**编程工作流程**：
-1. **分析需求** → 确定要创建/修改的文件和功能
-2. **读取现有代码** → 使用 ReadFile 或者 BashCommand 了解当前状态
-3. **选择编辑策略** → 根据修改范围选择合适的编辑工具
-4. **实施修改** → 应用代码变更并自动生成快照
-5. **创建里程碑** → 将相关快照组织为逻辑单元
-6. **测试验证** → 运行代码确保功能正确
-7. **回滚处理** → 如有问题可回滚快照或里程碑`;
+      // Workflow: Detailed but concise programming process
+      const workflow = `**Programming Workflow**:
+1. **Analyze Requirements** → Based on development requirements, add files that need to be ignored to .snapshotignore file, these files will not generate diffs and will not be managed by snapshot tools
+2. **Read Existing Code** → Use ReadFile or BashCommand to run Grep command to understand current state
+3. **Choose Editing Strategy** → Select appropriate editing tools based on modification scope
+4. **Implement Changes** → Apply code changes and automatically generate snapshots
+5. **Merge Snapshots** → Organize related snapshots into logical units with ConsolidateSnapshots
+6. **Test Validation** → Run code to ensure functionality is correct
+7. **Rollback Handling** → Use RevertSnapshot for issues if problems occur`;
 
-      // 状态信息：包含更多上下文
-      let status = `**工作目录**: ${data.current_workspace}`;
+      // Status information: Contains more context
+      let status = `**Working Directory**: ${data.current_workspace}`;
 
-      // 指导原则：具体的最佳实践
-      const guideline = `**编程最佳实践**：
+      // Guidelines: Specific best practices
+      const guideline = `**Programming Best Practices**:
 
-**📝 代码编辑工具** (自动创建快照):
-• ${SnapshotEditingToolSet.map(tool => tool.name).join(', ')} - 所有编辑操作都会生成对应的snapshot,都需要 goal 参数描述目的.
-• 优先使用 ApplyWholeFileEdit 进行完整文件操作
-• 小范围修改使用 ApplyEditBlock 或 ApplyRangedEdit
-• 删除文件使用 Delete 工具
-• 应用现有diff使用 ApplyUnifiedDiff
+**📝 Code Editing Tools** (automatically create snapshots):
+• ${SnapshotEditingToolSet.map(tool => tool.name).join(', ')} - All editing operations generate corresponding snapshots, all require 'goal' parameter to describe purpose.
+• Prefer ApplyWholeFileEdit for complete file operations
+• Use ApplyEditBlock or ApplyRangedEdit for small-scope modifications
+• Use Delete tool for file removal
+• Use ApplyUnifiedDiff for applying existing diffs
 
-**📊 快照管理工具**:
-• ReadSnapshot - 查看快照内容和差异
-• ListSnapshots - 查看快照历史 (支持 recent 参数)
-• ReverseSnapshot - 回滚单个快照
+**📊 Snapshot Management Tools**:
+• ReadSnapshot - View snapshot content and differences
+• ListSnapshots - View snapshot history (supports limit parameter)
+• RevertSnapshot - Rollback individual snapshots
+• ConsolidateSnapshots - Merge multiple snapshots for optimization
 
-**🎯 里程碑管理工具**:
-• CreateMilestoneByRange - 自动创建里程碑 (从上个里程碑到指定快照)
-• ReadMilestone - 查看里程碑详细内容
-• ListMilestones - 查看里程碑列表 (支持 recent, tags 参数)
-• ReverseMilestone - 回滚整个里程碑
-
-**🔄 工作流程建议**:
-• 修改前先用 ReadFile 了解代码结构
-• 每次编辑都会自动创建快照，记录所有变更
-• 完成一个功能模块后使用 CreateMilestoneByRange 创建里程碑
-• 测试时如发现问题，优先使用 ReverseSnapshot 回滚最近的修改
-• 大的功能回滚使用 ReverseMilestone
+**🔄 Workflow Recommendations**:
+• Before modification, use ReadFile or run Grep with BashCommand to understand code structure
+• Each edit automatically creates snapshots, recording all changes
+• After completing a feature module, use ConsolidateSnapshots to create milestones
+• When testing reveals issues, prioritize using RevertSnapshot to rollback recent modifications
+• For major feature rollbacks, use ConsolidateSnapshots with rollback strategy
 `;
 
-      // 示例：常见的工作模式
-      const examples = `**常见工作模式**：
+      // Examples: Common working patterns
+      const examples = `**Common Working Patterns**:
 
-**新功能开发**:
-ReadFile → ApplyWholeFileEdit(goal="实现XX功能") → BashCommand(测试) → CreateMilestoneByRange(title="XX功能完成")
+**New Feature Development**:
+ReadFile → ApplyWholeFileEdit(goal="Implement XX feature") → BashCommand(test) → ConsolidateSnapshots(title="XX feature completed")
 
-**代码修复**:
-ListSnapshots(recent=5) → ReadSnapshot(查看问题) → ApplyEditBlock(goal="修复XX问题") → BashCommand(验证)
+**Code Fixing**:
+ListSnapshots(limit=5) → ReadSnapshot(check issues) → ApplyEditBlock(goal="Fix XX problem") → BashCommand(verify)
 
-**重构代码**:
-ReadFile → ApplyWholeFileEdit(goal="重构XX模块") → CompareFiles → BashCommand → CreateMilestone
+**Code Refactoring**:
+ReadFile → ApplyWholeFileEdit(goal="Refactor XX module") → CompareFiles → BashCommand → ConsolidateSnapshots
 
-**错误回滚**:
-ListSnapshots(recent=3) → ReverseSnapshot(问题快照ID) → 或 ReverseMilestone(问题里程碑ID)
-
-**查看历史**:
-ListMilestones(recent=10) → ReadMilestone(感兴趣的里程碑ID) → ReadSnapshot(具体快照ID)`;
+**Error Rollback**:
+ListSnapshots(limit=3) → RevertSnapshot(problematic snapshot ID) → or ConsolidateSnapshots(with rollback strategy)
+`;
 
       return {
         workflow: workflow,

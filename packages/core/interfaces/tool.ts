@@ -76,13 +76,6 @@ export interface ToolExecutionResult {
 }
 
 /**
- * Simple user input processing tool interface
- */
-export interface IUserInputTool extends ITool<any, any, any> {
-    handleUserMessage(message: string, sessionId: string): Promise<any>;
-}
-
-/**
  * Task queue related interfaces
  */
 export interface ITask{

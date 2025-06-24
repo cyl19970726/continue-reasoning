@@ -8,7 +8,8 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import { SimpleSnapshotManager, SnapshotConfig } from './simple-snapshot-manager';
+import { SnapshotManager } from '../snapshot-manager';
+import { SnapshotConfig } from '../interfaces';
 
 // Mock runtime for testing
 class MockRuntime {
@@ -44,7 +45,7 @@ async function runBasicSnapshotTest(): Promise<boolean> {
       excludeFromChecking: ['*.log', '*.tmp', 'node_modules/**']
     };
     
-    const snapshotManager = new SimpleSnapshotManager(testWorkspace, config);
+    const snapshotManager = new SnapshotManager(testWorkspace, config);
     await snapshotManager.initialize();
     
     // Create a test file
@@ -135,7 +136,7 @@ async function runAutoIntegrationTest(): Promise<boolean> {
       excludeFromChecking: ['*.log', '*.tmp']
     };
     
-    const snapshotManager = new SimpleSnapshotManager(testWorkspace, config);
+    const snapshotManager = new SnapshotManager(testWorkspace, config);
     await snapshotManager.initialize();
     
     // Create initial file

@@ -3,7 +3,7 @@ import { CodingAgent } from '../packages/agents';
 import path from 'path';
 import fs from 'fs';
 import { SessionManager } from '../packages/core/session/sessionManager';
-import { createEnhancedPromptProcessor } from '../packages/core/prompt-processor-factory';
+import { createEnhancedPromptProcessor } from '../packages/core/prompts/prompt-processor-factory';
 
 async function stepPromptSavingExample() {
     console.log('📝 Step-by-Step Prompt Saving Example\n');
@@ -66,7 +66,7 @@ async function stepPromptSavingExample() {
 
         // 执行任务
         const task = `
-请帮我创建一个Python网页爬虫项目，具体要求如下：
+帮我创建一个Python网页爬虫项目，具体要求如下：
 1. **目标网站**: https://news.ycombinator.com (Hacker News首页)
 2. **提取内容**: 提取首页前20条新闻的标题和链接
 3. **技术栈**: 使用 requests 和 BeautifulSoup 库

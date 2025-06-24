@@ -22,7 +22,7 @@ const BashCommandReturnsSchema = z.object({
 });
 
 export const BashCommandTool = createTool({
-  id: 'bash_command',
+  id: 'BashCommand',
   name: 'BashCommand',
   description: 'Executes a bash command using the configured runtime and its sandbox, with specific execution options.',
   inputSchema: BashCommandParamsSchema,

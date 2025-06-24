@@ -29,6 +29,10 @@ import {
 import {
   formatThinking,
   formatFinalAnswer,
+  formatAnalysis,
+  formatPlan,
+  formatReasoning,
+  formatResponse,
   formatToolCallStart,
   formatToolCallResult,
   formatCompleteToolCall,
@@ -41,21 +45,23 @@ import {
   createFileImporter
 } from './utils/file-importer';
 
-// 从本地类型定义导入接口类型
+// Import interface types from local type definitions
 import {
   IClient,
   ISessionManager,
   ISessionManagerCallbacks,
   AgentStep,
+  StandardExtractorResult,
+  EnhancedThinkingExtractorResult,
   ToolCallParams,
   ToolExecutionResult
 } from './core-types';
 
 /**
- * 模块化的 CLI 客户端，实现 IClient 接口
+ * Modular CLI client that implements IClient interface
  */
 export class CLIClient implements IClient {
-  // IClient 接口属性
+  // IClient interface properties
   public name: string;
   public currentSessionId?: string;
   public sessionManager?: ISessionManager;
@@ -64,25 +70,25 @@ export class CLIClient implements IClient {
   private rl: readline.Interface;
   private commands: Record<string, CommandHandler>;
   
-  // 状态管理
+  // State management
   private currentState: InputState = 'single';
   private multilineState: MultilineState;
   private history: HistoryItem[] = [];
   private stats: CLIStats;
   
-  // Tool call 状态管理
+  // Tool call state management
   private activeToolCalls: Map<string, ToolCallDisplayState> = new Map();
   
-  // 等待队列（用于处理用户输入请求）
+  // Waiting queue (for handling user input requests)
   private pendingPrompts: Array<{
     resolve: (input: string) => void;
     reject: (error: Error) => void;
   }> = [];
 
-  // 文件导入器
+  // File importer
   private fileImporter: FileImporter;
 
-  // 添加一个计数器来控制提示显示频率
+  // Add a counter to control prompt display frequency
   private promptCounter: number = 0;
 
   constructor(config: CLIClientConfig) {
@@ -97,14 +103,14 @@ export class CLIClient implements IClient {
       ...config
     };
 
-    // 设置 IClient 属性
+    // Set IClient properties
     this.name = this.config.name || 'cli-client';
     this.currentSessionId = this.config.sessionId;
 
-    // 获取workspace目录
+    // Get workspace directory
     const workspaceDir = getWorkspaceDirectory();
 
-    // 初始化组件
+    // Initialize components
     this.rl = createReadlineInterface({
       workingDirectory: workspaceDir,
       maxResults: 10,
@@ -114,17 +120,17 @@ export class CLIClient implements IClient {
     });
     this.commands = getAllCommands(this.config.customCommands);
 
-    // 初始化文件导入器
+    // Initialize file importer
     this.fileImporter = createFileImporter({
       workingDirectory: workspaceDir,
       maxFileSize: 1024 * 1024, // 1MB
       maxDepth: 3,
       showFilePath: true,
-      // 可以从 config 中获取文件导入配置
+      // Can get file import configuration from config
       ...this.config.fileImporter
     });
 
-    // 初始化状态
+    // Initialize state
     this.multilineState = {
       isActive: false,
       buffer: [],
@@ -139,7 +145,7 @@ export class CLIClient implements IClient {
       lastInputTime: 0
     };
 
-    // 加载历史记录
+    // Load history
     if (this.config.enableHistory && this.config.historyFile) {
       this.history = loadHistory(this.config.historyFile);
     }
@@ -148,16 +154,16 @@ export class CLIClient implements IClient {
   }
 
   // ===========================================
-  // IClient 接口实现
+  // IClient interface implementation
   // ===========================================
 
   /**
-   * 设置会话管理器
+   * Set session manager
    */
   setSessionManager(sessionManager: ISessionManager): void {
     this.sessionManager = sessionManager;
     
-    // 设置回调
+    // Set callbacks
     sessionManager.setCallbacks({
       onAgentStep: (step) => this.handleAgentStep(step),
       onToolCall: (toolCall) => this.handleToolCall(toolCall),
@@ -172,29 +178,27 @@ export class CLIClient implements IClient {
   }
 
   /**
-   * 处理 Agent 步骤事件
+   * Handle Agent step events - supports both Standard and Enhanced modes
    */
   handleAgentStep(step: AgentStep<any>): void {
     try {
-      // 处理不同类型的 Agent 步骤
+      // Handle different types of Agent steps
       if (step.extractorResult) {
-        // 处理思考内容
-        if (step.extractorResult.thinking) {
-          console.log(formatThinking(step.extractorResult.thinking));
-        }
-
-        // 处理最终答案
-        if (step.extractorResult.finalAnswer) {
-          console.log(formatFinalAnswer(step.extractorResult.finalAnswer));
+        // Check if this is an Enhanced mode result
+        if (this.isEnhancedResult(step.extractorResult)) {
+          this.handleEnhancedResult(step.extractorResult as EnhancedThinkingExtractorResult);
+        } else {
+          // Handle as Standard mode result
+          this.handleStandardResult(step.extractorResult as StandardExtractorResult);
         }
       }
 
-      // 处理错误
+      // Handle errors
       if (step.error) {
         console.log(formatError(step.error));
       }
 
-      // 显示步骤信息
+      // Display step information
       if (this.config.enableTimestamps) {
         console.log(formatSystemInfo(`Step ${step.stepIndex} completed`));
       }
@@ -204,13 +208,67 @@ export class CLIClient implements IClient {
   }
 
   /**
-   * 处理工具调用开始事件
+   * Check if the result is an Enhanced mode result
+   */
+  private isEnhancedResult(result: any): result is EnhancedThinkingExtractorResult {
+    return result && (
+      result.analysis !== undefined ||
+      result.plan !== undefined ||
+      result.reasoning !== undefined
+    );
+  }
+
+  /**
+   * Handle Enhanced mode result
+   */
+  private handleEnhancedResult(result: EnhancedThinkingExtractorResult): void {
+    // Handle structured thinking content
+    if (result.analysis) {
+      console.log(formatAnalysis(result.analysis));
+    }
+    
+    if (result.plan) {
+      console.log(formatPlan(result.plan));
+    }
+    
+    if (result.reasoning) {
+      console.log(formatReasoning(result.reasoning));
+    }
+    
+    // Handle interactive response
+    if (result.response) {
+      console.log(formatResponse(result.response));
+    }
+  }
+
+  /**
+   * Handle Standard mode result
+   */
+  private handleStandardResult(result: StandardExtractorResult): void {
+    // Handle thinking content
+    if (result.thinking) {
+      console.log(formatThinking(result.thinking));
+    }
+
+    // Handle final answer (legacy field)
+    if (result.finalAnswer) {
+      console.log(formatFinalAnswer(result.finalAnswer));
+    }
+    
+    // Handle response content
+    if (result.response) {
+      console.log(formatFinalAnswer(result.response));
+    }
+  }
+
+  /**
+   * Handle tool call start events
    */
   handleToolCall(toolCall: ToolCallParams): void {
     try {
       const { name, call_id, parameters } = toolCall;
       
-      // 记录工具调用状态
+      // Record tool call status
       this.activeToolCalls.set(call_id, {
         callId: call_id,
         name: name,
@@ -219,7 +277,7 @@ export class CLIClient implements IClient {
         isActive: true
       });
 
-      // 显示工具调用开始
+      // Display tool call start
       console.log(formatToolCallStart(name, parameters));
     } catch (error) {
       console.error('Error handling tool call:', error);
@@ -227,31 +285,31 @@ export class CLIClient implements IClient {
   }
 
   /**
-   * 处理工具调用结果事件
+   * Handle tool call result events
    */
   handleToolCallResult(result: ToolExecutionResult): void {
     try {
       const { name, call_id, status, result: toolResult, message } = result;
       
-      // 获取对应的工具调用状态
+      // Get corresponding tool call status
       const toolCallState = this.activeToolCalls.get(call_id);
       if (toolCallState) {
-        // 显示工具调用结果
+        // Display tool call result
         const success = status === 'succeed';
         const displayResult = toolResult || message || 'No result';
         
         console.log(formatToolCallResult(displayResult, success));
         
-        // 清理状态
+        // Clean up status
         this.activeToolCalls.delete(call_id);
         
-        // 显示执行时间
+        // Display execution time
         if (this.config.enableTimestamps) {
           const executionTime = Date.now() - toolCallState.startTime;
           console.log(formatSystemInfo(`${name} completed in ${executionTime}ms`));
         }
       } else {
-        // 如果没有对应的开始状态，直接显示结果
+        // If no corresponding start status, display result directly
         console.log(formatCompleteToolCall(name, {}, result.result || result.message, result.status === 'succeed'));
       }
     } catch (error) {
@@ -260,7 +318,7 @@ export class CLIClient implements IClient {
   }
 
   /**
-   * 发送消息给 Agent - 简化的方法签名
+   * Send message to Agent - simplified method signature
    */
   async sendMessageToAgent(message: string): Promise<void> {
     if (!this.sessionManager) {
@@ -276,7 +334,7 @@ export class CLIClient implements IClient {
     try {
       console.log(formatSystemInfo('Sending message to agent...'));
       
-      // 使用会话管理器发送消息
+      // Use session manager to send message
       await this.sessionManager.sendMessageToAgent(
         message, 
         this.config.maxSteps || 10, 
@@ -290,7 +348,7 @@ export class CLIClient implements IClient {
   }
 
   /**
-   * 创建新会话 - 简化的方法签名
+   * Create new session - simplified method signature
    */
   newSession(): void {
     if (!this.sessionManager) {
@@ -299,7 +357,7 @@ export class CLIClient implements IClient {
     }
 
     try {
-      // 使用会话管理器创建新会话
+      // Use session manager to create new session
       this.currentSessionId = this.sessionManager.createSession(
         this.config.userId,
         this.config.agentId
@@ -307,7 +365,7 @@ export class CLIClient implements IClient {
       
       console.log(formatSystemInfo(`New session created: ${this.currentSessionId}`));
       
-      // 显示会话信息
+      // Display session information
       this.showSessionInfo();
     } catch (error) {
       console.log(formatError(`Failed to create session: ${error}`));
@@ -315,25 +373,25 @@ export class CLIClient implements IClient {
   }
 
   // ===========================================
-  // CLI 客户端核心功能
+  // CLI client core functionality
   // ===========================================
 
   /**
-   * 启动 CLI 客户端
+   * Start CLI client
    */
   public async start(): Promise<void> {
     try {
-      // 获取 workspace 信息（如果有 SessionManager 的话）
+      // Get workspace information (if there is a SessionManager)
       let workspace: string | undefined;
       if (this.sessionManager && this.sessionManager.agent) {
-        // 尝试从 CodingAgent 获取 workspace 路径
+        // Try to get workspace path from CodingAgent
         const agent = this.sessionManager.agent;
         if (typeof (agent as any).getWorkspacePath === 'function') {
           workspace = (agent as any).getWorkspacePath();
         }
       }
 
-      // 显示欢迎信息
+      // Display welcome information
       showWelcome({
         name: this.config.name,
         userId: this.config.userId,
@@ -341,7 +399,7 @@ export class CLIClient implements IClient {
         workspace: workspace
       });
 
-      // 开始输入循环
+      // Start input loop
       this.startInputLoop();
 
       console.log('🚀 CLI Client started successfully');
@@ -352,16 +410,16 @@ export class CLIClient implements IClient {
   }
 
   /**
-   * 停止 CLI 客户端
+   * Stop CLI client
    */
   public async stop(): Promise<void> {
     try {
-      // 保存历史记录
+      // Save history
       if (this.config.enableHistory && this.config.historyFile) {
         saveHistory(this.config.historyFile, this.history);
       }
 
-      // 关闭 readline
+      // Close readline
       safeExit(this.rl);
 
       console.log('👋 CLI Client stopped');
@@ -371,10 +429,10 @@ export class CLIClient implements IClient {
   }
 
   /**
-   * 显示会话信息
+   * Display session information
    */
   private showSessionInfo(): void {
-    // 显示workspace信息
+    // Display workspace information
     const workspaceDir = this.fileImporter.getConfig().workingDirectory;
     console.log(formatSystemInfo(`Workspace: ${workspaceDir}`));
     
@@ -388,34 +446,34 @@ export class CLIClient implements IClient {
   }
 
   /**
-   * 设置事件监听器
+   * Set event listeners
    */
   private setupEventListeners(): void {
-    // 处理用户输入
+    // Handle user input
     this.rl.on('line', this.handleUserInput.bind(this));
 
-    // 处理退出信号
+    // Handle exit signal
     this.rl.on('SIGINT', this.handleExit.bind(this));
     this.rl.on('close', this.handleExit.bind(this));
 
-    // 处理错误
+    // Handle errors
     this.rl.on('error', (error) => {
       console.error('Readline error:', error);
     });
   }
 
   /**
-   * 开始输入循环
+   * Start input loop
    */
   private startInputLoop(): void {
     this.showPrompt();
   }
 
   /**
-   * 显示输入提示符
+   * Display input prompt
    */
   private showPrompt(): void {
-    // 在单行模式下，每5次提示显示一次多行模式的提示
+    // In single-line mode, display multi-line mode prompt every 5 times
     if (this.currentState === 'single' && this.promptCounter % 5 === 0) {
       console.log('💡 Tip: Type ### to start multi-line input mode');
     }
@@ -432,39 +490,39 @@ export class CLIClient implements IClient {
   }
 
   /**
-   * 处理用户输入
+   * Handle user input
    */
   private async handleUserInput(input: string): Promise<void> {
     try {
       this.stats.totalInputs++;
       this.stats.lastInputTime = Date.now();
 
-      // 处理等待中的提示
+      // Handle pending prompts
       if (this.pendingPrompts.length > 0) {
         const prompt = this.pendingPrompts.shift()!;
         prompt.resolve(input);
         return;
       }
 
-      // 处理多行模式
+      // Handle multi-line mode
       if (this.currentState === 'multiline') {
         await this.handleMultilineInput(input);
         return;
       }
 
-      // 检查是否为多行模式切换
+      // Check if it's a multi-line mode switch
       if (input.trim() === this.multilineState.delimiter) {
         this.toggleMultilineMode();
         return;
       }
 
-      // 处理命令
+      // Handle command
       if (isCommand(input)) {
         await this.handleCommand(input);
         return;
       }
 
-      // 处理普通消息
+      // Handle normal message
       await this.handleUserMessage(input);
 
     } catch (error) {
@@ -475,21 +533,21 @@ export class CLIClient implements IClient {
   }
 
   /**
-   * 处理多行输入
+   * Handle multi-line input
    */
   private async handleMultilineInput(input: string): Promise<void> {
-    // 检查是否结束多行模式
+    // Check if multi-line mode ends
     if (input.trim() === this.multilineState.delimiter) {
       await this.submitMultilineInput();
       return;
     }
 
-    // 添加到缓冲区
+    // Add to buffer
     this.multilineState.buffer.push(input);
   }
 
   /**
-   * 提交多行输入
+   * Submit multi-line input
    */
   private async submitMultilineInput(): Promise<void> {
     const content = this.multilineState.buffer.join('\n').trim();
@@ -504,25 +562,25 @@ export class CLIClient implements IClient {
       console.log('\n❌ Empty multi-line input cancelled\n');
     }
 
-    // 退出多行模式
+    // Exit multi-line mode
     this.currentState = 'single';
     this.multilineState.isActive = false;
     this.multilineState.buffer = [];
   }
 
   /**
-   * 切换多行模式
+   * Toggle multi-line mode
    */
   public toggleMultilineMode(): void {
     if (this.currentState === 'multiline') {
-      // 退出多行模式
+      // Exit multi-line mode
       this.currentState = 'single';
       this.multilineState.isActive = false;
       this.multilineState.buffer = [];
       console.log('\n📝 Exited multi-line mode');
       console.log('💬 Back to single-line input mode\n');
     } else {
-      // 进入多行模式
+      // Enter multi-line mode
       this.currentState = 'multiline';
       this.multilineState.isActive = true;
       this.multilineState.buffer = [];
@@ -536,7 +594,7 @@ export class CLIClient implements IClient {
   }
 
   /**
-   * 处理命令
+   * Handle command
    */
   private async handleCommand(input: string): Promise<void> {
     const { command, args } = parseCommand(input);
@@ -565,16 +623,16 @@ export class CLIClient implements IClient {
   }
 
   /**
-   * 处理用户消息
+   * Handle user message
    */
   private async handleUserMessage(content: string): Promise<void> {
     if (!content.trim()) return;
 
     try {
-      // 处理文件导入语法 @file_path
+      // Handle file import syntax @file_path
       const processedContent = await this.fileImporter.processInput(content);
       
-      // 如果内容发生了变化，显示处理后的内容预览
+      // If content has changed, display processed content preview
       if (processedContent !== content) {
         const previewLength = 200;
         const preview = processedContent.length > previewLength 
@@ -588,9 +646,9 @@ export class CLIClient implements IClient {
         console.log(`Total length: ${processedContent.length} characters\n`);
       }
 
-      this.addToHistory(content, 'single'); // 保存原始输入到历史
+      this.addToHistory(content, 'single'); // Save original input to history
 
-      // 直接通过 SessionManager 发送处理后的消息
+      // Directly send processed message through SessionManager
       if (this.sessionManager) {
         console.log('✅ SessionManager found, sending message...');
         await this.sendMessageToAgent(processedContent);
@@ -604,7 +662,7 @@ export class CLIClient implements IClient {
   }
 
   /**
-   * 添加到历史记录
+   * Add to history
    */
   private addToHistory(command: string, type: 'single' | 'multiline' | 'command'): void {
     if (!this.config.enableHistory) return;
@@ -617,7 +675,7 @@ export class CLIClient implements IClient {
 
     this.history.push(item);
 
-    // 限制历史记录大小
+    // Limit history size
     const maxSize = this.config.maxHistorySize || 1000;
     if (this.history.length > maxSize) {
       this.history = this.history.slice(-maxSize);
@@ -625,7 +683,7 @@ export class CLIClient implements IClient {
   }
 
   /**
-   * 处理退出
+   * Handle exit
    */
   private handleExit(): void {
     console.log('\n👋 Goodbye!');
@@ -633,7 +691,7 @@ export class CLIClient implements IClient {
   }
 
   /**
-   * 提示用户输入（用于处理特殊输入请求）
+   * Prompt user input (for handling special input requests)
    */
   public async promptUserInput(prompt: string): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -644,28 +702,28 @@ export class CLIClient implements IClient {
   }
 
   /**
-   * 获取统计信息
+   * Get statistics
    */
   public getStats(): CLIStats {
     return { ...this.stats };
   }
 
   /**
-   * 获取配置
+   * Get configuration
    */
   public getConfig(): CLIClientConfig {
     return this.config;
   }
 
   /**
-   * 获取历史记录
+   * Get history
    */
   public getHistory(): HistoryItem[] {
     return [...this.history];
   }
 
   /**
-   * 获取文件导入器
+   * Get file importer
    */
   public getFileImporter(): FileImporter {
     return this.fileImporter;

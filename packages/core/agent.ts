@@ -1,5 +1,5 @@
 import { AnyTool, IContextManager, IAgent, ILLM, IContext, ToolCallDefinition, ToolCallParams, ToolCallResult, IRAGEnabledContext, asRAGEnabledContext, AgentStatus, AgentStep, StandardExtractorResult, ChatMessage, ToolSet, AgentStorage, AgentCallbacks, MessageType, BasePromptProcessor, ExtractorResult } from "./interfaces";
-import { SystemToolNames, HackernewsContext, DeepWikiContext, FireCrawlContext } from "./contexts/index";
+import { SystemToolNames, DeepWikiContext, FireCrawlContext } from "./contexts/index";
 import { ITaskQueue, TaskQueue } from "./taskQueue";
 import dotenv from "dotenv";
 import { PlanContext } from "./contexts/plan";
@@ -14,9 +14,10 @@ import { LogLevel, Logger } from "./utils/logger";
 import { ToolSetContext } from "./contexts/toolset";
 import { logger } from "./utils/logger";
 import { ContextManager } from "./context";
-import { createEnhancedPromptProcessor, createStandardPromptProcessor } from "./prompt-processor-factory";
+import { createEnhancedPromptProcessor, createStandardPromptProcessor } from "./prompts/prompt-processor-factory";
 import { AgentEventManager } from "./events/agent-event-manager";
-import { getSystemPromptForMode } from "./prompts/enhanced-thinking-system-prompt";
+import { getSystemPromptForMode } from "./prompts/system-prompt";
+import { OpenAIChatWrapper } from "./models/openai-chat";
 
 dotenv.config();
 
@@ -26,14 +27,13 @@ const SYSTEM_CONTEXTS = [
 ]
 
 const DEFAULT_CONTEXTS = [
-    // Planning context (计划和组织)
+    // Planning context
     PlanContext,
 
-    // Execution and utility contexts (执行和工具)
+    // Execution and utility contexts
     WebSearchContext,
     MCPContext,
     ToolSetContext,
-    HackernewsContext,
     DeepWikiContext,
     FireCrawlContext,
 ]
@@ -68,7 +68,7 @@ export interface AgentOptions {
         customSystemPrompt?: string;
         maxTokens?: number;
     };
-    // 新增 PromptProcessor 选项
+    // PromptProcessor options
     promptProcessorOptions?: {
         type: 'standard' | 'enhanced';
         enableToolCallsForFirstStep?: boolean;
@@ -106,10 +106,10 @@ export class BaseAgent implements IAgent {
 
     contexts: IRAGEnabledContext<any>[] = [];
 
-    // 新增 PromptProcessor 相关属性
+    // PromptProcessor related properties
     promptProcessor: BasePromptProcessor<any>;
 
-    // 🆕 事件管理器
+    // Event manager
     private eventManager?: AgentEventManager;
 
     // 🆕 会话感知能力
@@ -152,6 +152,7 @@ export class BaseAgent implements IAgent {
         // 简化的模型配置：直接使用模型
         const selectedModel: SupportedModel = agentOptions?.model || OPENAI_MODELS.GPT_4O;
         const provider = getModelProvider(selectedModel);
+        logger.info(`getModelProvider model: ${selectedModel}, provider: ${provider}`);
 
         // Initialize correct LLM based on provider
         if (provider === 'openai') {
@@ -166,6 +167,10 @@ export class BaseAgent implements IAgent {
             this.llm = new GeminiWrapper(selectedModel, false, temperature, maxTokens);
             (this.llm as any).modelName = selectedModel;
             logger.info(`Using Google model: ${selectedModel}`);
+        } else if (provider === 'deepseek') {
+            this.llm = new OpenAIChatWrapper(selectedModel, false, temperature, maxTokens);
+            (this.llm as any).modelName = selectedModel;
+            logger.info(`Using DeepSeek model: ${selectedModel}`);
         } else {
             throw new Error(`Unsupported LLM provider: ${provider}`);
         }
@@ -178,7 +183,7 @@ export class BaseAgent implements IAgent {
             this.llm.parallelToolCall = this.enableParallelToolCalls;
         }
 
-        // 🆕 初始化 PromptProcessor - 使用工厂模式，默认为 Standard
+        // Initialize PromptProcessor - using factory pattern, default to Standard
         this.promptProcessor = agentOptions?.promptProcessorOptions?.type === 'enhanced' 
             ? createEnhancedPromptProcessor(
                 this.getBaseSystemPrompt([], 'enhanced'),
@@ -206,13 +211,16 @@ export class BaseAgent implements IAgent {
         `
 ## Tool Usage Guidelines
 - Call tools when you need to perform actions or gather information
+- Always explain what you're doing and why
+- Analyze tool results thoroughly before proceeding
+- If a tool call fails, try alternative approaches or inform the user
 - Available Tools:
 ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
 
         return systemPrompt + toolsPrompt
     }
 
-    // 新增：使用 PromptProcessor 处理步骤
+    // Process step using PromptProcessor
     private async processStepWithPromptProcessor(
         userInput: string,
         stepIndex: number,
@@ -353,13 +361,13 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
                 executionTime: tr.executionTime
             }));
 
-            // 使用 PromptProcessor 处理步骤结果
-            this.promptProcessor.processStepResult(currentStep);
-
             // 提取结果
             const extractorResult = this.promptProcessor.textExtractor(responseText);
-            logger.debug('extractorResult', { extractorResult });
+            logger.debug('[[[extractorResult]]]', { extractorResult });
             currentStep.extractorResult = extractorResult;
+
+            // 使用 PromptProcessor 处理步骤结果
+            this.promptProcessor.processStepResult(currentStep);
 
             // logger.debug('currentStep', { currentStep });
             // 检查是否应该继续
@@ -805,30 +813,30 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
         return await this.promptProcessor.formatPrompt(this.currentStep);
     }
 
-    // 新增：设置工具调用控制
+    // Set tool call control
     public setEnableToolCallsForStep(enableFn: (stepIndex: number) => boolean): void {
         this.promptProcessor.setEnableToolCallsForStep(enableFn);
     }
 
-    // 新增：获取PromptProcessor实例
+    // Get PromptProcessor instance
     public getPromptProcessor(): BasePromptProcessor<any> {
         return this.promptProcessor;
     }
 
-    // 🆕 设置PromptProcessor实例
+    // Set PromptProcessor instance
     public setPromptProcessor(processor: BasePromptProcessor<any>): void {
         this.promptProcessor = processor;
-        // 确保新的处理器有正确的上下文管理器
+        // Ensure new processor has correct context manager
         this.promptProcessor.setContextManager(this.contextManager);
         logger.info(`PromptProcessor updated to: ${processor.constructor.name}`);
     }
 
-    // 新增：重置PromptProcessor
+    // Reset PromptProcessor
     public resetPromptProcessor(): void {
         this.promptProcessor.resetPromptProcessor();
     }
 
-    // 新增：获取处理器统计信息
+    // Get processor statistics
     public getPromptProcessorStats(): {
         totalMessages: number;
         currentStep: number;
@@ -848,13 +856,13 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
         };
     }
 
-    // 🆕 设置会话回调
+    // Set session callbacks
     setCallBacks(callbacks: AgentCallbacks): void {
         this.callbacks = callbacks;
         logger.info(`Agent ${this.id}: Session callback set`);
     }
 
-    // 🆕 加载会话状态
+    // Load session state
     async loadAgentStorage(state: AgentStorage): Promise<void> {
         state.agentId = this.id;
         this.sessionId = state.sessionId;

@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 
 /**
- * 格式化 Agent 思考内容的显示
+ * 格式化 Agent 思考内容的显示 (Standard mode)
  */
 export function formatThinking(thinking: string): string {
   const stars = '✻ ✻ ✻ ✻ ✻ ✻ ✻ ✻ ✻ ✻ ✻ ✻';
@@ -15,6 +15,48 @@ export function formatThinking(thinking: string): string {
 }
 
 /**
+ * 格式化 Enhanced 模式的分析内容
+ */
+export function formatAnalysis(analysis: string): string {
+  const separator = '━'.repeat(50);
+  const lines = [
+    chalk.magenta(separator),
+    chalk.magenta('🔍 Analysis:'),
+    chalk.white(analysis),
+    chalk.magenta(separator)
+  ];
+  return lines.join('\n');
+}
+
+/**
+ * 格式化 Enhanced 模式的计划内容
+ */
+export function formatPlan(plan: string): string {
+  const separator = '━'.repeat(50);
+  const lines = [
+    chalk.blue(separator),
+    chalk.blue('📋 Plan:'),
+    chalk.white(plan),
+    chalk.blue(separator)
+  ];
+  return lines.join('\n');
+}
+
+/**
+ * 格式化 Enhanced 模式的推理内容
+ */
+export function formatReasoning(reasoning: string): string {
+  const separator = '━'.repeat(50);
+  const lines = [
+    chalk.yellow(separator),
+    chalk.yellow('🤔 Reasoning:'),
+    chalk.white(reasoning),
+    chalk.yellow(separator)
+  ];
+  return lines.join('\n');
+}
+
+/**
  * 格式化 Agent 最终回复的显示
  */
 export function formatFinalAnswer(content: string): string {
@@ -23,6 +65,20 @@ export function formatFinalAnswer(content: string): string {
     chalk.cyan(separator),
     chalk.green('↩️  agent:'),
     content,
+    chalk.cyan(separator)
+  ];
+  return lines.join('\n');
+}
+
+/**
+ * 格式化 Enhanced 模式的响应内容
+ */
+export function formatResponse(response: string): string {
+  const separator = '━'.repeat(50);
+  const lines = [
+    chalk.cyan(separator),
+    chalk.green('💬 Response:'),
+    chalk.white(response),
     chalk.cyan(separator)
   ];
   return lines.join('\n');

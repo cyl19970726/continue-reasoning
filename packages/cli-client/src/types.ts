@@ -2,42 +2,42 @@ import { FileImporterConfig } from './utils/file-importer';
 import { FileCompleterConfig } from './utils/file-completer';
 
 /**
- * CLI Client 配置接口
+ * CLI Client configuration interface
  */
 export interface CLIClientConfig {
-  // 基础配置
+  // Basic configuration
   name: string;
   userId?: string;
   sessionId?: string;
   agentId?: string;
   
-  // Agent 配置
+  // Agent configuration
   maxSteps?: number;
   
-  // 输入配置
+  // Input configuration
   enableMultilineInput?: boolean;
   multilineDelimiter?: string;
   enableHistory?: boolean;
   historyFile?: string;
   maxHistorySize?: number;
   
-  // 显示配置
+  // Display configuration
   enableColors?: boolean;
   enableTimestamps?: boolean;
   promptPrefix?: string;
   
-  // 文件导入配置
+  // File import configuration
   fileImporter?: FileImporterConfig;
   
-  // 文件补全配置
+  // File completion configuration
   fileCompleter?: FileCompleterConfig;
   
-  // 扩展配置
+  // Extension configuration
   customCommands?: Record<string, CommandHandler>;
 }
 
 /**
- * 会话管理器接口（简化版本，用于类型检查）
+ * Session manager interface (simplified version for type checking)
  */
 export interface ISessionManager {
   agent: any;
@@ -48,7 +48,7 @@ export interface ISessionManager {
 }
 
 /**
- * 命令处理器接口
+ * Command handler interface
  */
 export interface CommandHandler {
   name: string;
@@ -57,12 +57,12 @@ export interface CommandHandler {
 }
 
 /**
- * 输入状态
+ * Input state
  */
 export type InputState = 'single' | 'multiline' | 'waiting';
 
 /**
- * 多行输入状态
+ * Multi-line input state
  */
 export interface MultilineState {
   isActive: boolean;
@@ -71,7 +71,7 @@ export interface MultilineState {
 }
 
 /**
- * 命令历史项
+ * Command history item
  */
 export interface HistoryItem {
   command: string;
@@ -80,7 +80,7 @@ export interface HistoryItem {
 }
 
 /**
- * CLI 统计信息
+ * CLI statistics
  */
 export interface CLIStats {
   totalInputs: number;
@@ -91,7 +91,7 @@ export interface CLIStats {
 }
 
 /**
- * Tool 调用显示状态
+ * Tool call display state
  */
 export interface ToolCallDisplayState {
   callId: string;

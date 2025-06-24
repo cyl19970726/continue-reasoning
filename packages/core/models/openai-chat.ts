@@ -3,7 +3,8 @@ import { z } from "zod";
 import { ILLM, ToolCallDefinition, ToolCallParams } from "../interfaces";
 import dotenv from "dotenv";
 import { zodToJsonNostrict, zodToJsonStrict } from "../utils/jsonHelper";
-import { SupportedModel } from "../models";
+import { DEEPSEEK_MODELS, SupportedModel } from "../models";
+import { logger } from "../utils/logger";
 
 dotenv.config();
 
@@ -69,7 +70,17 @@ export class OpenAIChatWrapper implements ILLM {
 		messages: string,
 		tools: ToolCallDefinition[]
 	): Promise<{ text: string; toolCalls: ToolCallParams[] }> {
-		const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+		let client: OpenAI;
+		if (Object.values(DEEPSEEK_MODELS).includes(this.model as DEEPSEEK_MODELS)) {
+			logger.info(`Using DeepSeek model: ${this.model}`);
+			client = new OpenAI({ 
+				baseURL: 'https://api.deepseek.com',
+				apiKey: process.env.DEEPSEEK_API_KEY 
+			});
+		} else {
+			logger.info(`Using OpenAI model: ${this.model}`);
+			client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+		}
 
 		const functions = tools.map((tool) => convertToOpenaiChatFunction(tool, false));
 
@@ -116,7 +127,17 @@ export class OpenAIChatWrapper implements ILLM {
 		messages: string,
 		tools: ToolCallDefinition[]
 	): Promise<{ text: string; toolCalls: ToolCallParams[] }> {
-		const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+		let client: OpenAI;
+		if (Object.values(DEEPSEEK_MODELS).includes(this.model as DEEPSEEK_MODELS)) {
+			logger.info(`Using DeepSeek model: ${this.model}`);
+			client = new OpenAI({ 
+				baseURL: 'https://api.deepseek.com',
+				apiKey: process.env.DEEPSEEK_API_KEY 
+			});
+		} else {
+			logger.info(`Using OpenAI model: ${this.model}`);
+			client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+		}
 
 		const functions = tools.map((tool) => convertToOpenaiChatFunction(tool, false));
 

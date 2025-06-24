@@ -1,7 +1,7 @@
-import { BasePromptProcessor, IContextManager } from './interfaces';
+import { BasePromptProcessor, IContextManager, ChatHistoryConfig } from '../interfaces';
 import { StandardPromptProcessor } from './standard-prompt-processor';
 import { EnhancedPromptProcessor } from './enhanced-prompt-processor';
-import { logger } from './utils/logger';
+import { logger } from '../utils/logger';
 
 /**
  * Prompt processor types
@@ -15,6 +15,7 @@ export interface PromptProcessorConfig {
     type: PromptProcessorType;
     systemPrompt: string;
     contextManager?: IContextManager;
+    chatHistoryConfig?: Partial<ChatHistoryConfig>;
     options?: {
         thinkingMode?: 'enhanced' | 'custom'; // Only for EnhancedPromptProcessor
         [key: string]: any;
@@ -33,17 +34,17 @@ export interface FactoryConfig {
  * Create a prompt processor based on configuration
  */
 export function createPromptProcessor(config: PromptProcessorConfig): BasePromptProcessor<any> {
-    const { type, systemPrompt, contextManager, options } = config;
+    const { type, systemPrompt, contextManager, chatHistoryConfig, options } = config;
     
     let processor: BasePromptProcessor<any>;
     
     switch (type) {
         case 'standard':
-            processor = new StandardPromptProcessor(systemPrompt);
+            processor = new StandardPromptProcessor(systemPrompt, chatHistoryConfig);
             break;
             
         case 'enhanced':
-            processor = new EnhancedPromptProcessor(systemPrompt);
+            processor = new EnhancedPromptProcessor(systemPrompt, chatHistoryConfig);
             if (options?.thinkingMode) {
                 (processor as EnhancedPromptProcessor).setThinkingMode(options.thinkingMode);
             }
@@ -67,9 +68,10 @@ export function createPromptProcessor(config: PromptProcessorConfig): BasePrompt
  */
 export function createStandardPromptProcessor(
     systemPrompt: string,
-    contextManager?: IContextManager
+    contextManager?: IContextManager,
+    chatHistoryConfig?: Partial<ChatHistoryConfig>
 ): StandardPromptProcessor {
-    const processor = new StandardPromptProcessor(systemPrompt);
+    const processor = new StandardPromptProcessor(systemPrompt, chatHistoryConfig);
     if (contextManager) {
         processor.setContextManager(contextManager);
     }
@@ -82,9 +84,10 @@ export function createStandardPromptProcessor(
 export function createEnhancedPromptProcessor(
     systemPrompt: string,
     contextManager?: IContextManager,
-    thinkingMode: 'enhanced' | 'custom' = 'enhanced'
+    thinkingMode: 'enhanced' | 'custom' = 'enhanced',
+    chatHistoryConfig?: Partial<ChatHistoryConfig>
 ): EnhancedPromptProcessor {
-    const processor = new EnhancedPromptProcessor(systemPrompt);
+    const processor = new EnhancedPromptProcessor(systemPrompt, chatHistoryConfig);
     if (contextManager) {
         processor.setContextManager(contextManager);
     }
@@ -102,26 +105,28 @@ export class PromptProcessorFactory {
         this.config = config;
     }
     
-    create(type?: PromptProcessorType, systemPrompt?: string, contextManager?: IContextManager): BasePromptProcessor<any> {
+    create(type?: PromptProcessorType, systemPrompt?: string, contextManager?: IContextManager, chatHistoryConfig?: Partial<ChatHistoryConfig>): BasePromptProcessor<any> {
         const processorType = type || this.config.defaultType;
         
         return createPromptProcessor({
             type: processorType,
             systemPrompt: systemPrompt || '',
-            contextManager
+            contextManager,
+            chatHistoryConfig
         });
     }
     
-    createStandard(systemPrompt: string, contextManager?: IContextManager): StandardPromptProcessor {
-        return createStandardPromptProcessor(systemPrompt, contextManager);
+    createStandard(systemPrompt: string, contextManager?: IContextManager, chatHistoryConfig?: Partial<ChatHistoryConfig>): StandardPromptProcessor {
+        return createStandardPromptProcessor(systemPrompt, contextManager, chatHistoryConfig);
     }
     
     createEnhanced(
         systemPrompt: string, 
         contextManager?: IContextManager,
-        thinkingMode: 'enhanced' | 'custom' = 'enhanced'
+        thinkingMode: 'enhanced' | 'custom' = 'enhanced',
+        chatHistoryConfig?: Partial<ChatHistoryConfig>
     ): EnhancedPromptProcessor {
-        return createEnhancedPromptProcessor(systemPrompt, contextManager, thinkingMode);
+        return createEnhancedPromptProcessor(systemPrompt, contextManager, thinkingMode, chatHistoryConfig);
     }
 }
 

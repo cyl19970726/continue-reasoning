@@ -1,7 +1,6 @@
-import { BasePromptProcessor, MessageType } from './interfaces';
-import { StandardExtractorResult, ChatMessage, AgentStep } from './interfaces';
-import { XmlExtractor } from './utils/xml-extractor';
-import { logger } from './utils/logger';
+import { BasePromptProcessor, MessageType, ChatHistoryConfig } from '../interfaces';
+import { StandardExtractorResult } from '../interfaces';
+import { XmlExtractor } from '../utils/xml-extractor';
 
 /**
  * Standard Prompt Processor for basic thinking and final answer workflow
@@ -12,8 +11,8 @@ export class StandardPromptProcessor
     
     private xmlExtractor: XmlExtractor;
     
-    constructor(systemPrompt: string = '') {
-        super('standard');
+    constructor(systemPrompt: string = '', chatHistoryConfig?: Partial<ChatHistoryConfig>) {
+        super('standard', chatHistoryConfig);
         this.systemPrompt = systemPrompt;
         this.xmlExtractor = new XmlExtractor({
             caseSensitive: false,
@@ -28,12 +27,13 @@ export class StandardPromptProcessor
      */
     textExtractor(responseText: string): StandardExtractorResult {
         const thinking = this.extractThinking(responseText);
-        const response = this.extractResponse(responseText);
+        // const response = this.extractResponse(responseText);
+        const interactive = this.extractInteractiveContent(responseText);
         
         return {
             thinking,
-            response,
-            stopSignal: !!response // If response exists, signal to stop
+            response: interactive.response,
+            stopSignal: interactive.stopSignal // If response exists, signal to stop
         };
     }
     
@@ -57,8 +57,8 @@ export class StandardPromptProcessor
             this.chatHistory.push({
                 role: 'agent',
                 step: stepIndex,
-                type: MessageType.MESSAGE,
-                content: `<final_answer>${extractorResult.response}</final_answer>`,
+                type: MessageType.RESPONSE,
+                content: `<response>${extractorResult.response}</response>`,
                 timestamp: new Date().toISOString()
             });
         }
@@ -104,4 +104,33 @@ export class StandardPromptProcessor
 
         return undefined;
     }
+
+      /**
+     * Extract interactive content with typed stop signal
+     */
+      extractInteractiveContent(responseText: string): {
+        response?: string;
+        stopSignal?: boolean;
+    } {
+        const interactiveResult = this.xmlExtractor.extract(responseText, 'interactive');
+        if (!interactiveResult.success) {
+            return {};
+        }
+        
+        const interactiveContent = interactiveResult.content;
+        const response = this.xmlExtractor.extract(interactiveContent, 'response').content || undefined;
+        
+        // Extract stop signal with type support
+        const stopSignalResult = this.xmlExtractor.extractWithType(interactiveContent, 'stop_signal');
+        const stopSignal = stopSignalResult.success ? 
+            (stopSignalResult.type === 'boolean' ? stopSignalResult.value : 
+             stopSignalResult.content.toLowerCase() === 'true') : 
+            undefined;
+        
+        return {
+            response,
+            stopSignal
+        };
+    }
+    
 } 
