@@ -1,5 +1,5 @@
 import { AnyTool, IContextManager, IAgent, ILLM, IContext, ToolCallDefinition, ToolCallParams, ToolCallResult, IRAGEnabledContext, asRAGEnabledContext, AgentStatus, AgentStep, StandardExtractorResult, ChatMessage, ToolSet, AgentStorage, AgentCallbacks, MessageType, BasePromptProcessor, ExtractorResult } from "./interfaces";
-import { SystemToolNames, HackernewsContext, DeepWikiContext, FireCrawlContext } from "./contexts/index";
+import { SystemToolNames, DeepWikiContext, FireCrawlContext } from "./contexts/index";
 import { ITaskQueue, TaskQueue } from "./taskQueue";
 import dotenv from "dotenv";
 import { PlanContext } from "./contexts/plan";
@@ -34,7 +34,6 @@ const DEFAULT_CONTEXTS = [
     WebSearchContext,
     MCPContext,
     ToolSetContext,
-    HackernewsContext,
     DeepWikiContext,
     FireCrawlContext,
 ]
