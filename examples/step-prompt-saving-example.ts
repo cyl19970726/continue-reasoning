@@ -1,4 +1,4 @@
-import { LogLevel, globalEventBus, logger, OPENAI_MODELS } from '../packages/core';
+import { LogLevel, globalEventBus, logger, OPENAI_MODELS, DEEPSEEK_MODELS } from '../packages/core';
 import { CodingAgent } from '../packages/agents';
 import path from 'path';
 import fs from 'fs';
@@ -10,7 +10,7 @@ async function stepPromptSavingExample() {
 
     await globalEventBus.start();
     
-    const workspacePath = path.join(process.cwd(), 'test-step-prompt-saving');
+    const workspacePath = path.join(process.cwd(), 'test-step-prompt-saving-think');
     if (!fs.existsSync(workspacePath)) {
         fs.mkdirSync(workspacePath, { recursive: true });
     }
@@ -24,11 +24,11 @@ async function stepPromptSavingExample() {
         5, // 运行5步来生成足够的示例
         LogLevel.DEBUG,
         {
-            model: OPENAI_MODELS.GPT_4O_MINI,
+            model: OPENAI_MODELS.O3,
             enableParallelToolCalls: true,
             temperature: 0.1,
             promptProcessorOptions: {
-                type: 'enhanced'
+                type: 'standard'
             }
         },
         [],

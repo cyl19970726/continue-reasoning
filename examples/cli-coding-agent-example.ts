@@ -1,4 +1,4 @@
-import { LogLevel, globalEventBus, logger, OPENAI_MODELS } from '@continue-reasoning/core';
+import { LogLevel, globalEventBus, logger, OPENAI_MODELS, DEEPSEEK_MODELS } from '@continue-reasoning/core';
 import { CodingAgent } from '@continue-reasoning/agents';
 import { createCLIClient, createCLIClientWithSession } from '../packages/cli-client/src/index';
 import { SessionManager } from '../packages/core/session/sessionManager';
@@ -28,10 +28,10 @@ async function cliCodingAgentExample() {
             'Interactive Coding Assistant',
             'A coding agent that works through CLI interface for interactive development',
             workspacePath,
-            50, // 允许更多步骤进行交互
+            500, // 允许更多步骤进行交互
             LogLevel.NONE,
             {
-                model: OPENAI_MODELS.GPT_4O_MINI,
+                model: OPENAI_MODELS.O3,
                 enableParallelToolCalls: true,
                 temperature: 0.1,
             },

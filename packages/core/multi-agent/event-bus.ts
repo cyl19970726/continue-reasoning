@@ -1,15 +1,45 @@
 import { EventEmitter } from 'events';
-import { 
-  InteractiveMessage, 
-  MessageHandler, 
-  EventFilter, 
-  SubscriptionConfig,
-  BaseEvent,
-  AllEventMessages
-} from './types';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
+import { MultiAgentEvents } from '../interfaces/multi-agent';
 
+// 基础事件接口
+export interface BaseEvent {
+  id: string;
+  timestamp: number;
+  source: 'user' | 'agent' | 'system' | 'multi-agent';
+  sessionId?: string;
+}
+
+// Multi-Agent 事件类型
+export type MultiAgentEvent<K extends keyof MultiAgentEvents = keyof MultiAgentEvents> = BaseEvent & {
+  type: K;
+  payload: MultiAgentEvents[K];
+};
+
+// 所有事件类型的联合
+export type AllEventMessages = MultiAgentEvent<keyof MultiAgentEvents>;
+
+// 事件处理器类型
+export type MessageHandler = (message: AllEventMessages) => Promise<void>;
+
+// 事件过滤器
+export interface EventFilter {
+  eventTypes?: string[];
+  sources?: BaseEvent['source'][];
+  sessionId?: string;
+  afterTimestamp?: number;
+  beforeTimestamp?: number;
+}
+
+// 订阅配置
+export interface SubscriptionConfig {
+  filter?: EventFilter;
+  persistent?: boolean;
+  maxEvents?: number;
+}
+
+// 订阅信息
 interface Subscription {
   id: string;
   handler: MessageHandler;
@@ -17,6 +47,7 @@ interface Subscription {
   createdAt: number;
 }
 
+// 事件历史条目
 interface EventHistoryEntry {
   event: AllEventMessages;
   timestamp: number;
@@ -24,76 +55,66 @@ interface EventHistoryEntry {
   errors?: Error[];
 }
 
+// EventBus 接口
 export interface IEventBus {
   // 核心发布订阅功能
   publish(event: Omit<AllEventMessages, 'id' | 'timestamp'>): Promise<void>;
   subscribe(eventTypes: string | string[], handler: MessageHandler, config?: SubscriptionConfig): string;
   unsubscribe(subscriptionId: string): boolean;
   
-  // 事件查询和管理
+  // 事件查询
   getEventHistory(filter?: EventFilter, limit?: number): EventHistoryEntry[];
   getActiveSubscriptions(): Subscription[];
   clearEventHistory(filter?: EventFilter): number;
   
-  // 会话管理
-  createSession(): string;
-  closeSession(sessionId: string): void;
-  getActiveSessions(): string[];
-  
   // 系统管理
   start(): Promise<void>;
   stop(): Promise<void>;
-  getStats(): EventBusStats;
 }
 
+// EventBus 统计信息
 export interface EventBusStats {
   totalEventsPublished: number;
   totalSubscriptions: number;
   activeSubscriptions: number;
-  activeSessions: number;
   eventHistorySize: number;
   averageProcessingTime: number;
   errorRate: number;
 }
 
+/**
+ * 简化版 EventBus - 专为 Multi-Agent 系统设计
+ */
 export class EventBus implements IEventBus {
   private emitter: EventEmitter;
   private subscriptions: Map<string, Subscription> = new Map();
   private eventHistory: EventHistoryEntry[] = [];
-  private activeSessions: Set<string> = new Set();
   private stats: EventBusStats;
   private maxHistorySize: number;
   private isRunning: boolean = false;
   private processingTimes: number[] = [];
   private errorCount: number = 0;
 
-  constructor(maxHistorySize: number = 10000) {
+  constructor(maxHistorySize: number = 1000) {
     this.emitter = new EventEmitter();
     this.maxHistorySize = maxHistorySize;
     this.stats = {
       totalEventsPublished: 0,
       totalSubscriptions: 0,
       activeSubscriptions: 0,
-      activeSessions: 0,
       eventHistorySize: 0,
       averageProcessingTime: 0,
       errorRate: 0
     };
 
-    // 设置最大监听器数量
-    this.emitter.setMaxListeners(1000);
+    this.emitter.setMaxListeners(100);
   }
 
   async start(): Promise<void> {
     if (this.isRunning) return;
     
     this.isRunning = true;
-    logger.info('EventBus started');
-    
-    // 定期清理统计数据
-    setInterval(() => {
-      this.cleanupStats();
-    }, 60000); // 每分钟清理一次
+    logger.info('Multi-Agent EventBus started');
   }
 
   async stop(): Promise<void> {
@@ -102,8 +123,7 @@ export class EventBus implements IEventBus {
     this.isRunning = false;
     this.emitter.removeAllListeners();
     this.subscriptions.clear();
-    this.activeSessions.clear();
-    logger.info('EventBus stopped');
+    logger.info('Multi-Agent EventBus stopped');
   }
 
   async publish(event: Omit<AllEventMessages, 'id' | 'timestamp'>): Promise<void> {
@@ -127,7 +147,7 @@ export class EventBus implements IEventBus {
       this.stats.totalEventsPublished++;
       this.stats.eventHistorySize = this.eventHistory.length;
       
-      // 异步处理订阅
+      // 处理订阅
       await this.processSubscriptions(fullEvent);
       
       // 记录处理时间
@@ -135,12 +155,12 @@ export class EventBus implements IEventBus {
       this.processingTimes.push(processingTime);
       this.updateAverageProcessingTime();
       
-      logger.debug(`Event published: ${fullEvent.type} (${fullEvent.id})`);
+      logger.debug(`Multi-Agent event published: ${fullEvent.type} (${fullEvent.id})`);
       
     } catch (error) {
       this.errorCount++;
       this.updateErrorRate();
-      logger.error(`Error publishing event ${fullEvent.type}:`, error);
+      logger.error(`Error publishing Multi-Agent event ${fullEvent.type}:`, error);
       throw error;
     }
   }
@@ -158,7 +178,7 @@ export class EventBus implements IEventBus {
       handler,
       config: {
         persistent: false,
-        maxEvents: 1000,
+        maxEvents: 100,
         filter: {
           eventTypes: types,
           ...config.filter
@@ -169,11 +189,10 @@ export class EventBus implements IEventBus {
     };
 
     this.subscriptions.set(subscriptionId, subscription);
-
     this.stats.totalSubscriptions++;
     this.stats.activeSubscriptions = this.subscriptions.size;
     
-    logger.debug(`Subscription created: ${subscriptionId} for events: ${types.join(', ')}`);
+    logger.debug(`Multi-Agent subscription created: ${subscriptionId} for events: ${types.join(', ')}`);
     return subscriptionId;
   }
 
@@ -184,11 +203,11 @@ export class EventBus implements IEventBus {
     this.subscriptions.delete(subscriptionId);
     this.stats.activeSubscriptions = this.subscriptions.size;
     
-    logger.debug(`Subscription removed: ${subscriptionId}`);
+    logger.debug(`Multi-Agent subscription removed: ${subscriptionId}`);
     return true;
   }
 
-  getEventHistory(filter?: EventFilter, limit: number = 100): EventHistoryEntry[] {
+  getEventHistory(filter?: EventFilter, limit: number = 50): EventHistoryEntry[] {
     let filtered = this.eventHistory;
 
     if (filter) {
@@ -196,7 +215,7 @@ export class EventBus implements IEventBus {
     }
 
     return filtered
-      .sort((a, b) => b.event.timestamp - a.event.timestamp) // 按事件时间戳排序，而不是条目时间戳
+      .sort((a, b) => b.event.timestamp - a.event.timestamp)
       .slice(0, limit);
   }
 
@@ -217,31 +236,8 @@ export class EventBus implements IEventBus {
     }
 
     this.stats.eventHistorySize = this.eventHistory.length;
-    logger.debug(`Cleared ${removed} events from history`);
+    logger.debug(`Cleared ${removed} Multi-Agent events from history`);
     return removed;
-  }
-
-  createSession(): string {
-    const sessionId = uuidv4();
-    this.activeSessions.add(sessionId);
-    this.stats.activeSessions = this.activeSessions.size;
-    
-    logger.debug(`Session created: ${sessionId}`);
-    return sessionId;
-  }
-
-  closeSession(sessionId: string): void {
-    this.activeSessions.delete(sessionId);
-    this.stats.activeSessions = this.activeSessions.size;
-    
-    // 清理该会话的相关事件
-    this.clearEventHistory({ sessionId });
-    
-    logger.debug(`Session closed: ${sessionId}`);
-  }
-
-  getActiveSessions(): string[] {
-    return Array.from(this.activeSessions);
   }
 
   getStats(): EventBusStats {
@@ -251,21 +247,20 @@ export class EventBus implements IEventBus {
   private async processSubscriptions(event: AllEventMessages): Promise<void> {
     const promises: Promise<void>[] = [];
     
-    for (const subscription of this.subscriptions.values()) {
+    for (const subscription of Array.from(this.subscriptions.values())) {
       if (this.shouldProcessSubscription(subscription, event)) {
         promises.push(this.handleSubscription(subscription, event));
       }
     }
     
-    // 并行处理所有符合条件的订阅
     await Promise.allSettled(promises);
     
-    // 触发EventEmitter事件，但设置错误处理避免未捕获异常
+    // 触发 EventEmitter 事件
     try {
       this.emitter.emit(event.type, event);
-      this.emitter.emit('*', event); // 通用事件监听器
+      this.emitter.emit('*', event);
     } catch (error) {
-      logger.warn('Error emitting event to EventEmitter:', error);
+      logger.warn('Error emitting Multi-Agent event to EventEmitter:', error);
     }
   }
 
@@ -277,9 +272,8 @@ export class EventBus implements IEventBus {
     } catch (error) {
       this.errorCount++;
       this.updateErrorRate();
-      logger.error(`Error in subscription handler ${subscription.id}:`, error);
+      logger.error(`Error in Multi-Agent subscription handler ${subscription.id}:`, error);
       
-      // 更新历史记录中的错误信息
       const historyEntry = this.eventHistory.find(entry => entry.event.id === event.id);
       if (historyEntry) {
         historyEntry.errors = historyEntry.errors || [];
@@ -292,9 +286,7 @@ export class EventBus implements IEventBus {
     const filter = subscription.config.filter;
     if (!filter || !filter.eventTypes) return true;
     
-    // 检查事件类型是否匹配
     const typeMatches = filter.eventTypes.includes(event.type);
-    
     return typeMatches && this.matchesFilter(event, filter);
   }
 
@@ -306,22 +298,18 @@ export class EventBus implements IEventBus {
   }
 
   private matchesFilter(event: AllEventMessages, filter: EventFilter): boolean {
-    // 检查事件类型
     if (filter.eventTypes && !filter.eventTypes.includes(event.type)) {
       return false;
     }
     
-    // 检查来源
     if (filter.sources && !filter.sources.includes(event.source)) {
       return false;
     }
     
-    // 检查会话ID
     if (filter.sessionId && event.sessionId !== filter.sessionId) {
       return false;
     }
     
-    // 检查时间范围
     if (filter.afterTimestamp && event.timestamp <= filter.afterTimestamp) {
       return false;
     }
@@ -342,7 +330,6 @@ export class EventBus implements IEventBus {
 
     this.eventHistory.push(entry);
     
-    // 保持历史记录大小在限制内
     if (this.eventHistory.length > this.maxHistorySize) {
       this.eventHistory = this.eventHistory.slice(-this.maxHistorySize);
     }
@@ -351,8 +338,8 @@ export class EventBus implements IEventBus {
   }
 
   private updateAverageProcessingTime(): void {
-    if (this.processingTimes.length > 100) {
-      this.processingTimes = this.processingTimes.slice(-100); // 保持最近100次的时间
+    if (this.processingTimes.length > 50) {
+      this.processingTimes = this.processingTimes.slice(-50);
     }
     
     const sum = this.processingTimes.reduce((a, b) => a + b, 0);
@@ -364,29 +351,22 @@ export class EventBus implements IEventBus {
       ? (this.errorCount / this.stats.totalEventsPublished) * 100 
       : 0;
   }
-
-  private cleanupStats(): void {
-    // 每小时重置处理时间统计
-    if (this.processingTimes.length > 3600) {
-      this.processingTimes = this.processingTimes.slice(-1800);
-    }
-  }
 }
 
-// 单例模式的全局事件总线
+// 全局实例
 export const globalEventBus = new EventBus();
 
 // 工具函数
-export function createEvent<T extends AllEventMessages>(
-  type: T['type'],
-  payload: T['payload'],
-  source: BaseEvent['source'] = 'system',
+export function createMultiAgentEvent<K extends keyof MultiAgentEvents>(
+  type: K,
+  payload: MultiAgentEvents[K],
+  source: BaseEvent['source'] = 'multi-agent',
   sessionId?: string
-): Omit<T, 'id' | 'timestamp'> {
+): Omit<MultiAgentEvent<K>, 'id' | 'timestamp'> {
   return {
     type,
     payload,
     source,
     sessionId: sessionId || 'default'
-  } as unknown as Omit<T, 'id' | 'timestamp'>;
+  };
 } 

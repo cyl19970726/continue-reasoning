@@ -1,9 +1,7 @@
 import { z } from "zod";
-import { ITool, IAgent, IContext, ToolCallDefinition, IMemoryManager, IRAGEnabledContext, IRAG, RAGResult, QueryOptions, AnyTool, ToolSet } from "./interfaces";
+import { ITool, IAgent, IContext, IRAGEnabledContext, IRAG, RAGResult, QueryOptions } from "./interfaces";
 import { randomUUID } from "crypto";
 import { logger } from "./utils/logger";
-import fs from "fs";
-import path from "path";
 
 /** Utility type to preserve type information */
 export type Pretty<type> = { [key in keyof type]: type[key] } & unknown;

@@ -15,7 +15,7 @@ import { ToolSetContext } from "./contexts/toolset";
 import { logger } from "./utils/logger";
 import { ContextManager } from "./context";
 import { createEnhancedPromptProcessor, createStandardPromptProcessor } from "./prompts/prompt-processor-factory";
-import { AgentEventManager } from "./events/agent-event-manager";
+// AgentEventManager removed with eventBus system
 import { getSystemPromptForMode } from "./prompts/system-prompt";
 import { OpenAIChatWrapper } from "./models/openai-chat";
 
@@ -109,8 +109,7 @@ export class BaseAgent implements IAgent {
     // PromptProcessor related properties
     promptProcessor: BasePromptProcessor<any>;
 
-    // Event manager
-    private eventManager?: AgentEventManager;
+    // Event manager removed with eventBus system
 
     // 🆕 会话感知能力
     private sessionId?: string;
@@ -284,18 +283,8 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
                     };
                     toolResults.push(errorResult);
 
-                    // 🆕 发布工具执行结果事件
-                    if (this.eventManager) {
-                        await this.eventManager.publishToolExecutionResult(
-                            toolCall.name,
-                            errorResult.call_id,
-                            false,
-                            undefined,
-                            errorResult.message,
-                            0,
-                            stepIndex
-                        );
-                    }
+                    // Tool execution error - using simple logging instead of events
+                    logger.error(`Tool ${toolCall.name} failed:`, errorResult.message);
                     continue;
                 }
 
@@ -335,18 +324,8 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
                     };
                     toolResults.push(errorResult);
 
-                    // 🆕 发布工具执行结果事件
-                    if (this.eventManager) {
-                        await this.eventManager.publishToolExecutionResult(
-                            tool.name,
-                            errorResult.call_id,
-                            false,
-                            undefined,
-                            errorResult.message,
-                            executionTime,
-                            stepIndex
-                        );
-                    }
+                    // Tool execution error - using simple logging instead of events
+                    logger.error(`Tool ${tool.name} failed:`, errorResult.message);
                 }
             }
 
@@ -453,10 +432,8 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
 
         logger.debug(`Agent state changed: ${oldState} -> ${newState}${reason ? ` (${reason})` : ''}`);
 
-        // 🆕 使用事件管理器发布状态变更事件
-        if (this.eventManager) {
-            await this.eventManager.publishStateChange(oldState, newState, reason, this.currentStep);
-        }
+        // State change - using simple logging instead of events
+        logger.info(`Agent state changed: ${oldState} -> ${newState}${reason ? ` (${reason})` : ''}`);
     }
 
     /**
@@ -774,9 +751,8 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
         logger.info(`Agent execution mode changed: ${oldMode} -> ${mode}`);
 
         // 🆕 使用事件管理器发布执行模式变更事件
-        if (this.eventManager) {
-            await this.eventManager.publishExecutionModeChange(oldMode, mode, 'User requested mode change');
-        }
+        // Execution mode change - using simple logging instead of events
+        logger.info(`Agent execution mode changed: ${oldMode} -> ${mode}`);
     }
 
     /**

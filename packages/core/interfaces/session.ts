@@ -77,15 +77,3 @@ export interface SessionSummary {
     isActive: boolean;
     lastActiveTime: string;
 }
-
-/**
- * Chat context interface for session management
- */
-export interface ChatContext {
-    fullHistory: any[];
-    optimizedContext: any[];
-    historySummaries: any[];
-    totalMessages: number;
-    compressionRatio: number;
-    lastOptimizedAt: number;
-} 
