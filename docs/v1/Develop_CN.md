@@ -8,9 +8,10 @@
 2. [工具开发指南](#工具开发指南)
 3. [上下文开发指南](#上下文开发指南)
 4. [智能体开发指南](#智能体开发指南)
-5. [提示词编写指南](#提示词编写指南)
-6. [提示处理器（PromptProcessor）开发指南](#提示处理器（PromptProcessor）开发指南)
-7. [最佳实践](#最佳实践)
+5. [多智能体系统开发指南](#多智能体系统开发指南)
+6. [提示词编写指南](#提示词编写指南)
+7. [提示处理器（PromptProcessor）开发指南](#提示处理器（PromptProcessor）开发指南)
+8. [最佳实践](#最佳实践)
 
 ## 框架概述
 
@@ -330,6 +331,733 @@ await weatherAgent.startWithUserInput(
     }
 );
 ```
+
+## 多智能体系统开发指南
+
+### 1. 多智能体架构概述
+
+Continue Reasoning 框架提供了完整的多智能体系统支持，允许您创建和管理多个专业化的智能体，并通过智能任务委托实现协作。
+
+核心组件包括：
+- **MultiAgentBase**：多智能体基础类，扩展了 BaseAgent
+- **SimpleAgentHub**：智能体中心，负责注册、管理和任务委托
+- **TaskManager**：任务生命周期管理器
+- **RoutingStrategy**：智能体选择策略（关键词、向量、LLM、混合）
+- **EventBus**：事件系统，支持多智能体事件通知
+
+```typescript
+import { 
+    MultiAgentBase, 
+    SimpleAgentHub, 
+    DEFAULT_MULTI_AGENT_CONFIG 
+} from '@continue-reasoning/core/multi-agent';
+import { EventBus } from '@continue-reasoning/core/events/eventBus';
+```
+
+### 2. MultiAgentBase 开发指南
+
+#### 2.1 创建多智能体
+
+`MultiAgentBase` 继承自 `BaseAgent`，增加了多智能体协作能力：
+
+```typescript
+import { MultiAgentBase } from '@continue-reasoning/core/multi-agent';
+import { LogLevel } from '@continue-reasoning/core/utils/logger';
+import { OPENAI_MODELS } from '@continue-reasoning/core/models';
+import { WebSearchContext, FireCrawlContext } from '@continue-reasoning/core/contexts';
+
+// 创建专业化的编程智能体
+const codingAgent = new MultiAgentBase(
+    'coding-agent-001',
+    '编程助手',
+    '专门处理编程任务的智能体',
+    ['coding', 'programming', 'development', 'debugging'],
+    10, // maxSteps
+    {
+        maxConcurrentTasks: 2,
+        logLevel: LogLevel.INFO,
+        agentOptions: {
+            model: OPENAI_MODELS.GPT_4O,
+            temperature: 0.3, // 较低温度保证代码准确性
+            enableParallelToolCalls: true
+        }
+        // 使用默认的 contexts，包含基础编程工具
+    }
+);
+
+// 创建具备网络搜索能力的研究智能体
+const researchAgent = new MultiAgentBase(
+    'research-agent-001',
+    '研究助手',
+    '专门处理研究和分析任务的智能体',
+    ['research', 'analysis', 'investigation', 'data'],
+    10, // maxSteps
+    {
+        maxConcurrentTasks: 3,
+        logLevel: LogLevel.INFO,
+        agentOptions: {
+            model: OPENAI_MODELS.GPT_4O,
+            temperature: 0.5,
+            enableParallelToolCalls: true
+        },
+        contexts: [
+            WebSearchContext,   // 🔍 网络搜索能力
+            FireCrawlContext,   // 🕷️ 网页爬取能力
+            // DeepWikiContext     // 📚 深度知识库查询
+        ]
+    }
+);
+```
+
+#### 2.2 自定义多智能体类
+
+```typescript
+export class CustomDataAnalystAgent extends MultiAgentBase {
+    constructor() {
+        super(
+            'data-analyst',
+            '数据分析专家',
+            '专门处理数据分析、统计计算和数据可视化任务',
+            ['data_analysis', 'statistics', 'visualization', 'sql'],
+            10, // maxSteps
+            {
+                maxConcurrentTasks: 1,
+                logLevel: LogLevel.INFO,
+                agentOptions: {
+                    model: OPENAI_MODELS.GPT_4O,
+                    temperature: 0.4, // 平衡准确性和创造性
+                    enableParallelToolCalls: true
+                },
+                contexts: [
+                    WebSearchContext,   // 🔍 数据搜索能力
+                    FireCrawlContext    // 🕷️ 数据采集能力
+                ]
+            }
+        );
+    }
+    
+    // 重写任务处理能力判断
+    canHandleTask(task: Task): boolean {
+        const description = task.description.toLowerCase();
+        
+        // 数据相关关键词
+        const dataKeywords = ['数据', 'data', '分析', 'analysis', '统计', 'statistics', 
+                             'sql', '图表', 'chart', '可视化', 'visualization'];
+        
+        const hasDataKeyword = dataKeywords.some(keyword => 
+            description.includes(keyword)
+        );
+        
+        return hasDataKeyword && super.canHandleTask(task);
+    }
+    
+    // 添加专业方法
+    async analyzeDataset(data: any[]): Promise<any> {
+        return await this.executeTask({
+            id: `analysis-${Date.now()}`,
+            description: `分析数据集：${JSON.stringify(data.slice(0, 3))}...`,
+            agentId: this.id,
+            priority: 'high',
+            context: { dataset: data },
+            timeout: 60000,
+            createdAt: Date.now(),
+            status: 'pending'
+        });
+    }
+}
+```
+
+### 3. SimpleAgentHub 使用指南
+
+#### 3.1 创建和配置智能体中心
+
+```typescript
+import { EventBus } from '@continue-reasoning/core/events/eventBus';
+
+// 创建事件总线
+const eventBus = new EventBus();
+await eventBus.start();
+
+// 创建智能体中心
+const hub = new SimpleAgentHub(eventBus, {
+    ...DEFAULT_MULTI_AGENT_CONFIG,
+    logLevel: 'info',
+    routing: {
+        strategy: 'keyword',  // 'keyword' | 'vector' | 'llm' | 'hybrid'
+        keywordConfig: {
+            minMatchScore: 0.3,
+            fuzzyMatch: true
+        }
+    },
+    taskManager: {
+        maxConcurrentTasks: 10,
+        taskTimeout: 300000,  // 5分钟
+        enableTaskQueue: true,
+        queueSize: 100
+    }
+});
+
+// 监听多智能体事件
+const subscriptionId = eventBus.subscribe(
+    ['multi_agent_task_created', 'multi_agent_task_completed', 'multi_agent_agent_registered'],
+    async (event) => {
+        console.log(`📢 事件通知: ${event.type}`, event.data);
+    }
+);
+```
+
+#### 3.2 注册和管理智能体
+
+```typescript
+// 注册智能体
+await hub.registerAgent(codingAgent);
+await hub.registerAgent(researchAgent);
+await hub.registerAgent(new CustomDataAnalystAgent());
+
+console.log(`✅ 已注册 ${hub.getSystemStatus().totalAgents} 个智能体`);
+
+// 获取系统状态
+const systemStatus = hub.getSystemStatus();
+console.log('📊 系统状态:', {
+    totalAgents: systemStatus.totalAgents,
+    availableAgents: systemStatus.availableAgents,
+    completedTasks: systemStatus.completedTasks,
+    failedTasks: systemStatus.failedTasks
+});
+
+// 获取所有智能体状态
+const agentStatuses = hub.getAllAgentStatuses();
+console.log('📋 智能体状态:', agentStatuses);
+
+// 按能力查找智能体
+const codingAgents = hub.findAgentsByCapability('coding');
+const researchAgents = hub.findAgentsByCapability('research');
+
+// 注销智能体
+await hub.unregisterAgent('agent-id');
+```
+
+### 4. 任务委托和路由策略
+
+#### 4.1 直接任务委托
+
+```typescript
+// 指定智能体执行任务
+try {
+    const result = await hub.delegateTask(
+        'coding-agent-001',
+        '创建一个计算斐波那契数列的 Python 函数',
+        {
+            priority: 'high',
+            timeout: 60000,
+            context: { language: 'python', style: 'recursive' }
+        }
+    );
+    
+    console.log('✅ 任务完成:', result.status);
+    console.log('📝 结果:', result.result);
+} catch (error) {
+    console.error('❌ 任务失败:', error);
+}
+```
+
+#### 4.2 智能任务委托
+
+```typescript
+// 自动选择最佳智能体
+const tasks = [
+    '研究人工智能在医疗领域的最新应用',
+    '编写一个处理JSON数据的JavaScript工具类',
+    '分析股票市场数据并生成报告',
+    '撰写一篇关于可持续发展的博客文章'
+];
+
+for (const taskDescription of tasks) {
+    try {
+        console.log(`📋 执行任务: ${taskDescription}`);
+        
+        const result = await hub.smartDelegateTask(taskDescription, {
+            priority: 'medium',
+            timeout: 120000,
+            requiredCapability: 'analysis' // 可选：指定必需能力
+        });
+        
+        console.log(`✅ 完成 (${result.executionTime}ms) - 智能体: ${result.agentId}`);
+        
+    } catch (error) {
+        console.error(`❌ 失败: ${error}`);
+    }
+}
+```
+
+#### 4.3 路由策略配置
+
+```typescript
+// 关键词路由策略
+const keywordConfig = {
+    strategy: 'keyword' as const,
+    keywordConfig: {
+        minMatchScore: 0.4,      // 最小匹配分数
+        fuzzyMatch: true,        // 启用模糊匹配
+        caseSensitive: false     // 不区分大小写
+    }
+};
+
+// 向量路由策略
+const vectorConfig = {
+    strategy: 'vector' as const,
+    vectorConfig: {
+        similarityThreshold: 0.3,  // 相似度阈值
+        embeddingModel: 'text-embedding-ada-002',
+        maxCandidates: 3           // 最大候选数量
+    }
+};
+
+// 混合路由策略
+const hybridConfig = {
+    strategy: 'hybrid' as const,
+    hybridConfig: {
+        strategies: ['keyword', 'vector'],
+        weights: { keyword: 0.6, vector: 0.4 },
+        requireConsensus: false    // 不要求一致性
+    }
+};
+
+// 更新路由策略
+hub.updateRoutingStrategy(hybridConfig);
+```
+
+### 5. 事件系统集成
+
+#### 5.1 事件监听和处理
+
+```typescript
+// 监听特定事件类型
+const taskEventSubscription = eventBus.subscribe(
+    ['multi_agent_task_created', 'multi_agent_task_completed', 'multi_agent_task_failed'],
+    async (event) => {
+        switch (event.type) {
+            case 'multi_agent_task_created':
+                console.log(`🆕 新任务创建: ${event.data.task.id}`);
+                break;
+                
+            case 'multi_agent_task_completed':
+                console.log(`✅ 任务完成: ${event.data.taskId}, 耗时: ${event.data.result.executionTime}ms`);
+                break;
+                
+            case 'multi_agent_task_failed':
+                console.error(`❌ 任务失败: ${event.data.taskId}, 错误: ${event.data.error}`);
+                break;
+        }
+    }
+);
+
+// 监听智能体注册事件
+const agentEventSubscription = eventBus.subscribe(
+    ['multi_agent_agent_registered', 'multi_agent_agent_unregistered'],
+    async (event) => {
+        if (event.type === 'multi_agent_agent_registered') {
+            console.log(`🤖 智能体注册: ${event.data.agentId}`);
+            console.log(`🔧 能力列表: ${event.data.capabilities.join(', ')}`);
+        } else if (event.type === 'multi_agent_agent_unregistered') {
+            console.log(`🗑️ 智能体注销: ${event.data.agentId}`);
+        }
+    }
+);
+```
+
+#### 5.2 自定义事件处理
+
+```typescript
+// 创建自定义事件处理器
+class MultiAgentEventHandler {
+    private taskMetrics = new Map<string, any>();
+    
+    constructor(private eventBus: EventBus) {
+        this.setupEventListeners();
+    }
+    
+    private setupEventListeners(): void {
+        this.eventBus.subscribe(
+            ['multi_agent_task_started'],
+            this.handleTaskStart.bind(this)
+        );
+        
+        this.eventBus.subscribe(
+            ['multi_agent_task_completed', 'multi_agent_task_failed'],
+            this.handleTaskEnd.bind(this)
+        );
+    }
+    
+    private async handleTaskStart(event: any): Promise<void> {
+        const { taskId, agentId } = event.data;
+        this.taskMetrics.set(taskId, {
+            agentId,
+            startTime: Date.now(),
+            status: 'running'
+        });
+        
+        // 发送开始通知
+        await this.sendNotification(`任务 ${taskId} 已分配给智能体 ${agentId}`);
+    }
+    
+    private async handleTaskEnd(event: any): Promise<void> {
+        const taskId = event.data.taskId;
+        const metrics = this.taskMetrics.get(taskId);
+        
+        if (metrics) {
+            const duration = Date.now() - metrics.startTime;
+            const success = event.type === 'multi_agent_task_completed';
+            
+            // 更新统计信息
+            this.updateAgentPerformance(metrics.agentId, { duration, success });
+            
+            // 清理任务指标
+            this.taskMetrics.delete(taskId);
+            
+            // 发送完成通知
+            const status = success ? '成功完成' : '执行失败';
+            await this.sendNotification(`任务 ${taskId} ${status}，耗时 ${duration}ms`);
+        }
+    }
+    
+    private updateAgentPerformance(agentId: string, metrics: { duration: number; success: boolean }): void {
+        // 实现智能体性能统计逻辑
+        console.log(`更新智能体 ${agentId} 性能统计:`, metrics);
+    }
+    
+    private async sendNotification(message: string): Promise<void> {
+        // 实现通知发送逻辑（例如：发送到监控系统、日志等）
+        console.log(`📤 通知: ${message}`);
+    }
+}
+
+// 使用事件处理器
+const eventHandler = new MultiAgentEventHandler(eventBus);
+```
+
+### 6. 高级功能和扩展
+
+#### 6.1 自定义任务管理器
+
+```typescript
+import { BasicTaskManager, Task, TaskResult } from '@continue-reasoning/core/multi-agent';
+
+export class AdvancedTaskManager extends BasicTaskManager {
+    private taskPriorities = new Map<string, number>();
+    private taskDependencies = new Map<string, string[]>();
+    
+    async createTask(task: Task): Promise<string> {
+        const taskId = await super.createTask(task);
+        
+        // 设置任务优先级
+        this.taskPriorities.set(taskId, this.getPriorityScore(task.priority));
+        
+        // 处理任务依赖
+        if (task.dependsOn) {
+            this.taskDependencies.set(taskId, task.dependsOn);
+        }
+        
+        return taskId;
+    }
+    
+    async getNextTask(): Promise<Task | null> {
+        const pendingTasks = Array.from(this.tasks.values())
+            .filter(task => task.status === 'pending');
+        
+        if (pendingTasks.length === 0) {
+            return null;
+        }
+        
+        // 按优先级和依赖关系排序
+        const sortedTasks = pendingTasks
+            .filter(task => this.areDependenciesMet(task.id))
+            .sort((a, b) => {
+                const aPriority = this.taskPriorities.get(a.id) || 0;
+                const bPriority = this.taskPriorities.get(b.id) || 0;
+                return bPriority - aPriority; // 高优先级在前
+            });
+        
+        return sortedTasks[0] || null;
+    }
+    
+    private getPriorityScore(priority: 'low' | 'medium' | 'high'): number {
+        switch (priority) {
+            case 'high': return 3;
+            case 'medium': return 2;
+            case 'low': return 1;
+            default: return 2;
+        }
+    }
+    
+    private areDependenciesMet(taskId: string): boolean {
+        const dependencies = this.taskDependencies.get(taskId);
+        if (!dependencies || dependencies.length === 0) {
+            return true;
+        }
+        
+        return dependencies.every(depId => {
+            const depTask = this.tasks.get(depId);
+            return depTask?.status === 'completed';
+        });
+    }
+}
+```
+
+#### 6.2 负载均衡和智能体选择
+
+```typescript
+export class LoadBalancedAgentHub extends SimpleAgentHub {
+    private agentLoads = new Map<string, number>();
+    private agentPerformance = new Map<string, {
+        totalTasks: number;
+        successTasks: number;
+        averageTime: number;
+    }>();
+    
+    protected async selectBestAgent(
+        availableAgents: MultiAgentBase[],
+        task: Task
+    ): Promise<MultiAgentBase | null> {
+        if (availableAgents.length === 0) {
+            return null;
+        }
+        
+        // 计算每个智能体的综合评分
+        const agentScores = availableAgents.map(agent => {
+            const load = this.agentLoads.get(agent.id) || 0;
+            const performance = this.agentPerformance.get(agent.id) || {
+                totalTasks: 1,
+                successTasks: 1,
+                averageTime: 1000
+            };
+            
+            // 计算评分：成功率 + 响应速度 - 当前负载
+            const successRate = performance.successTasks / performance.totalTasks;
+            const speedScore = 1000 / Math.max(performance.averageTime, 100);
+            const loadPenalty = load * 0.1;
+            
+            const score = successRate + speedScore - loadPenalty;
+            
+            return { agent, score };
+        });
+        
+        // 选择评分最高的智能体
+        agentScores.sort((a, b) => b.score - a.score);
+        return agentScores[0].agent;
+    }
+    
+    async delegateTask(
+        agentId: string,
+        taskDescription: string,
+        options?: TaskOptions
+    ): Promise<TaskResult> {
+        // 增加智能体负载
+        const currentLoad = this.agentLoads.get(agentId) || 0;
+        this.agentLoads.set(agentId, currentLoad + 1);
+        
+        try {
+            const startTime = Date.now();
+            const result = await super.delegateTask(agentId, taskDescription, options);
+            const duration = Date.now() - startTime;
+            
+            // 更新性能统计
+            this.updatePerformanceStats(agentId, duration, result.status === 'success');
+            
+            return result;
+        } finally {
+            // 减少智能体负载
+            const newLoad = this.agentLoads.get(agentId)! - 1;
+            this.agentLoads.set(agentId, Math.max(0, newLoad));
+        }
+    }
+    
+    private updatePerformanceStats(agentId: string, duration: number, success: boolean): void {
+        const current = this.agentPerformance.get(agentId) || {
+            totalTasks: 0,
+            successTasks: 0,
+            averageTime: 0
+        };
+        
+        const newStats = {
+            totalTasks: current.totalTasks + 1,
+            successTasks: current.successTasks + (success ? 1 : 0),
+            averageTime: (current.averageTime * current.totalTasks + duration) / (current.totalTasks + 1)
+        };
+        
+        this.agentPerformance.set(agentId, newStats);
+    }
+}
+```
+
+### 7. 多智能体最佳实践
+
+#### 7.1 智能体设计原则
+
+- **职责专一**：每个智能体应专注于特定领域或任务类型
+- **能力明确**：清晰定义智能体的能力标签，便于任务路由
+- **工具专业**：为不同智能体配置专业的工具和上下文
+- **并发控制**：合理设置并发任务数量，避免资源竞争
+
+```typescript
+// 好的实践：专业化智能体
+const securityAgent = new MultiAgentBase(
+    'security-expert',
+    '安全专家',
+    '专门处理安全审计、漏洞检测和安全建议',
+    ['security', 'audit', 'vulnerability', 'compliance'],
+    5, // 较少的步骤，专注快速响应
+    {
+        maxConcurrentTasks: 1, // 安全任务需要专注处理
+        contexts: [SecurityScanContext, ComplianceContext]
+    }
+);
+```
+
+#### 7.2 任务委托策略
+
+- **明确任务描述**：使用清晰、具体的任务描述
+- **合理设置超时**：根据任务复杂度设置合适的超时时间
+- **优先级管理**：为紧急任务设置高优先级
+- **错误恢复**：实现任务失败后的重试和降级机制
+
+```typescript
+// 好的实践：结构化任务委托
+async function delegateComplexTask(hub: SimpleAgentHub, taskType: string, details: any) {
+    const taskOptions = {
+        priority: details.urgent ? 'high' : 'medium',
+        timeout: details.complexity === 'high' ? 180000 : 60000,
+        context: {
+            requirements: details.requirements,
+            constraints: details.constraints,
+            expectedOutput: details.expectedOutput
+        }
+    };
+    
+    try {
+        const result = await hub.smartDelegateTask(
+            `${taskType}: ${details.description}`,
+            taskOptions
+        );
+        return result;
+    } catch (error) {
+        // 降级策略：使用通用智能体
+        console.warn('智能委托失败，尝试降级处理:', error);
+        return await hub.delegateTask('general-agent', details.description, taskOptions);
+    }
+}
+```
+
+#### 7.3 性能监控和优化
+
+- **指标收集**：收集任务执行时间、成功率等关键指标
+- **负载监控**：监控智能体负载分布，避免负载不均
+- **资源管理**：及时清理完成的任务和过期的会话
+- **性能调优**：根据监控数据调整路由策略和智能体配置
+
+```typescript
+// 性能监控示例
+class MultiAgentPerformanceMonitor {
+    private metrics = {
+        taskCompletionRate: 0,
+        averageResponseTime: 0,
+        agentUtilization: new Map<string, number>(),
+        errorRate: 0
+    };
+    
+    async generatePerformanceReport(): Promise<any> {
+        const hubStats = this.hub.getHubStats();
+        const systemStatus = this.hub.getSystemStatus();
+        
+        return {
+            overview: {
+                totalAgents: systemStatus.totalAgents,
+                totalTasks: systemStatus.totalTasksProcessed,
+                successRate: systemStatus.completedTasks / systemStatus.totalTasksProcessed,
+                avgResponseTime: hubStats.averageTaskDuration
+            },
+            agentPerformance: this.getAgentPerformanceBreakdown(),
+            recommendations: this.generateOptimizationRecommendations()
+        };
+    }
+    
+    private generateOptimizationRecommendations(): string[] {
+        const recommendations: string[] = [];
+        
+        // 基于统计数据生成优化建议
+        if (this.metrics.averageResponseTime > 30000) {
+            recommendations.push('考虑增加智能体数量或优化任务复杂度');
+        }
+        
+        if (this.metrics.errorRate > 0.1) {
+            recommendations.push('检查智能体配置和任务描述质量');
+        }
+        
+        return recommendations;
+    }
+}
+```
+
+#### 7.4 资源管理和清理
+
+```typescript
+// 资源清理工具
+class MultiAgentResourceManager {
+    constructor(private hub: SimpleAgentHub, private eventBus: EventBus) {}
+    
+    async cleanup(): Promise<void> {
+        console.log('🧹 开始清理多智能体系统资源...');
+        
+        // 清理过期任务
+        const expiredTasks = await this.hub.getTaskManager().cleanupExpiredTasks();
+        console.log(`清理了 ${expiredTasks} 个过期任务`);
+        
+        // 取消事件订阅
+        this.eventBus.unsubscribeAll();
+        
+        // 停止事件总线
+        await this.eventBus.stop();
+        
+        console.log('✅ 资源清理完成');
+    }
+    
+    async gracefulShutdown(): Promise<void> {
+        console.log('🛑 开始优雅关闭多智能体系统...');
+        
+        // 等待当前任务完成
+        await this.waitForTasksToComplete(30000); // 最多等待30秒
+        
+        // 执行清理
+        await this.cleanup();
+        
+        console.log('✅ 系统已安全关闭');
+    }
+    
+    private async waitForTasksToComplete(timeout: number): Promise<void> {
+        const startTime = Date.now();
+        
+        while (Date.now() - startTime < timeout) {
+            const status = this.hub.getSystemStatus();
+            if (status.totalTasksProcessed === status.completedTasks + status.failedTasks) {
+                break; // 所有任务都已完成
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 1000)); // 等待1秒
+        }
+    }
+}
+
+// 使用方式
+const resourceManager = new MultiAgentResourceManager(hub, eventBus);
+
+// 程序退出时清理资源
+process.on('SIGINT', async () => {
+    await resourceManager.gracefulShutdown();
+    process.exit(0);
+});
+```
+
+通过这些指南和最佳实践，您可以构建高效、可靠的多智能体系统，实现智能体间的协作和任务的智能分配。
 
 ## 提示词编写指南
 

@@ -2,8 +2,11 @@
 export * from './interfaces';
 
 // Agent and context management
-export { BaseAgent } from './agent';
+export * from './agent';
 export * from './context';
+export { BaseAgent } from './agent';
+export type { AgentOptions } from './agent';
+export { LogLevel } from './utils/logger';
 
 // Models and LLM wrappers
 export * from './models';
@@ -12,22 +15,9 @@ export { OpenAIWrapper, AnthropicWrapper, OpenAIChatWrapper, GeminiWrapper } fro
 // Utilities
 export * from './utils';
 
-// Event system
-export { EventBus, globalEventBus } from './events/eventBus';
-export type { IEventBus } from './events/eventBus';
-export type { 
-  InteractiveMessage,
-  StatusUpdateEvent,
-  MessageHandler,
-  EventFilter,
-  SubscriptionConfig,
-  InteractiveCapabilities
-} from './events/types';
-export { BaseInteractiveLayer } from './events/interactiveLayer';
-export { AgentEventManager } from './events/agent-event-manager';
-
-// Hub functionality  
-export { InteractionHub } from './hub/interaction-hub';
+// Event system (Multi-Agent only)
+// Note: eventBus is now only available in multi-agent module
+// Other systems use simplified logging instead
 
 // Context implementations
 export * from './contexts';

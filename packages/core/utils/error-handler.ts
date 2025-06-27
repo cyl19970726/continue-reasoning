@@ -4,7 +4,7 @@
  */
 
 import { logger } from './logger';
-import { IEventBus } from '../events/eventBus';
+// Removed eventBus dependency as it's not effectively used
 
 // 错误类型枚举
 export enum ErrorType {
@@ -249,12 +249,12 @@ export class RecoveryStrategyDecider {
 
 // Claude 风格错误处理器
 export class ClaudeErrorHandler {
-  private eventBus?: IEventBus;
+  // Removed eventBus as it's not effectively used
   private errorHistory: StructuredError[] = [];
   private retryTracker: Map<string, number> = new Map();
 
-  constructor(eventBus?: IEventBus) {
-    this.eventBus = eventBus;
+  constructor() {
+    // Simplified constructor - eventBus removed
   }
 
   /**
@@ -404,44 +404,14 @@ export class ClaudeErrorHandler {
   }
 
   /**
-   * 发布错误事件
+   * 发布错误事件 - 简化版，仅记录日志
    */
   private async publishErrorEvent(error: StructuredError): Promise<void> {
-    if (!this.eventBus) return;
-
-    // 将 ErrorType 映射到事件期望的类型
-    let eventErrorType: 'runtime_error' | 'validation_error' | 'permission_error' | 'network_error';
-    
-    switch (error.type) {
-      case ErrorType.VALIDATION_ERROR:
-      case ErrorType.TOOL_INVALID_PARAMS:
-      case ErrorType.CONFIG_INVALID:
-        eventErrorType = 'validation_error';
-        break;
-      case ErrorType.FILE_PERMISSION_DENIED:
-        eventErrorType = 'permission_error';
-        break;
-      case ErrorType.NETWORK_ERROR:
-      case ErrorType.CONNECTION_TIMEOUT:
-      case ErrorType.CONNECTION_REFUSED:
-        eventErrorType = 'network_error';
-        break;
-      default:
-        eventErrorType = 'runtime_error';
-        break;
-    }
-
-    await this.eventBus.publish({
-      type: 'error_occurred',
-      source: 'error_handler',
-      sessionId: error.context.sessionId || 'unknown',
-      payload: {
-        errorId: error.id,
-        errorType: eventErrorType,
-        message: error.userFriendly.description,
-        stack: error.details.stackTrace,
-        context: error.context
-      }
+    // EventBus removed - only log errors now
+    logger.error(`Error event: ${error.type} - ${error.message}`, {
+      errorId: error.id,
+      context: error.context,
+      userFriendly: error.userFriendly
     });
   }
 
@@ -480,21 +450,12 @@ export class ClaudeErrorHandler {
         break;
 
       case RecoveryStrategy.MANUAL:
-        logger.warn('Manual intervention required');
-        // 发布需要人工干预的事件
-        if (this.eventBus) {
-          await this.eventBus.publish({
-            type: 'manual_intervention_required',
-            source: 'error_handler',
-            sessionId: error.context.sessionId || 'unknown',
-            payload: {
-              errorId: error.id,
-              message: error.message,
-              suggestedActions: error.recovery.suggestions,
-              context: error.context
-            }
-          });
-        }
+        logger.warn('Manual intervention required', {
+          errorId: error.id,
+          message: error.message,
+          suggestedActions: error.recovery.suggestions,
+          context: error.context
+        });
         break;
     }
   }
@@ -571,8 +532,8 @@ export class ClaudeErrorHandler {
 }
 
 // 导出便捷函数
-export function createClaudeErrorHandler(eventBus?: IEventBus): ClaudeErrorHandler {
-  return new ClaudeErrorHandler(eventBus);
+export function createClaudeErrorHandler(): ClaudeErrorHandler {
+  return new ClaudeErrorHandler();
 }
 
 // 全局错误处理器实例
