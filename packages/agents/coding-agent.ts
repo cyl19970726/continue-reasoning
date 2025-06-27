@@ -1,7 +1,6 @@
 import { BaseAgent, AgentOptions } from '../core/agent';
 import { LogLevel } from '../core/utils/logger';
 import { AnyTool, IContext, ToolCallResult } from '../core/interfaces';
-import { IEventBus } from '../core/events/eventBus';
 import { createCodingContext } from './contexts/coding';
 import { createInteractiveContext } from './contexts/interaction';
 import { logger } from '../core/utils/logger';
