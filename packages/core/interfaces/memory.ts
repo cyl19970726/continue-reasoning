@@ -97,32 +97,3 @@ export interface IRAGBuilder {
     setChunkingStrategy(strategy: ChunkingStrategy): IRAGBuilder;
     build(): IRAG;
 }
-
-export interface IMemoryManager{
-    id: string;
-    name: string;
-    description: string;
-    createContainer<T>(name: string, description: string): Container<T>;
-    getContainer<T>(id: string): Container<T>;
-    listContainer(): Container<any>[];
-    deleteContainer(id: string): void;
-    // return the memoryId which used to mark the memoryData
-    saveMemory<T>(memory: MemoryData<T>, containerId: string): string;
-    loadMemory<T>(id: string, containerId: string): MemoryData<T>;
-    deleteMemory(id: string, containerId: string): void;
-    renderPrompt(): string;
-}
-
-// Enhanced memory manager interface integrating RAG functionality
-export interface IEnhancedMemoryManager extends IMemoryManager {
-    // RAG specific operations
-    registerRAG(rag: IRAG): void;
-    getRag(id: string): IRAG;
-    queryRag(ragId: string, query: string, options?: QueryOptions): Promise<RAGResult[]>;
-    
-    // Memory classification
-    storeReasoning(plan: any): Promise<string>; // Store plan, problem-solving data
-    storeClientData(data: any, source: string, category: string): Promise<string>; // Store client data
-    storeWebContent(content: string, url: string, metadata: RAGMetadata): Promise<string>; // Store web content
-    storeUserInteraction(interaction: any): Promise<string>; // Store user interaction history
-} 

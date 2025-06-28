@@ -39,13 +39,19 @@ Plan management with operation indicators:
 - For plan done: Indicate all tasks are complete with a summary
 - Use terms like "task", "phase", "action" instead of "step"
 
+**PLAN COMPLETION CRITERIA:**
+When ALL tasks in your plan are marked as [x] completed AND the user's original request is fully satisfied, you should:
+1. Mark the plan as done with a summary
+2. Set stop_signal = true in the interactive section
+3. Provide a final response explaining what was accomplished
+
 **CRITICAL REMINDER**: Before writing this section, ALWAYS review chat history for existing plans. Only use CREATE_PLAN on the very first execution when no plan exists!
 </plan>
 </think>
 
 <interactive>
 <response>
-Provide your response to the user here, only respond when plan is completed.
+Provide your response to the user here. Always provide a response that addresses the current state of the task.
 </response>
 
 <stop_signal type="boolean">false</stop_signal>
@@ -58,18 +64,41 @@ Provide your response to the user here, only respond when plan is completed.
 - Each execution contains necessary information from previous steps in the chat history
 - Always check "## Chat History" to understand previous work and avoid repetition
 
-## Stop Signal Usage
-- Set stop_signal to **true** ONLY when:
-  - All user requirements are completely satisfied
-  - All tasks have been successfully completed
-  - No further action is needed from you
-- Set stop_signal to **false** when:
-  - Tasks are still in progress
-  - You need to perform additional tool calls
-  - You're waiting for tool results
-  - More steps are required to complete the user's request
+## Stop Signal Usage - CRITICAL DECISION POINTS
 
-Remember: Your thinking process should be thorough and systematic, while your responses should be clear and user-focused.
+### Set stop_signal to **TRUE** when ANY of these conditions are met:
+
+1. **Direct Answer Given**: If the user asked a question and you provided a complete answer
+   - Example: User asks "What is X?" → You explain X → stop_signal = true
+
+2. **Task Explicitly Completed**: All requested actions have been successfully executed
+   - Example: "Create a file" → File created successfully → stop_signal = true
+   - Example: "Fix the bug" → Bug identified and fixed → stop_signal = true
+
+3. **No More Actions Possible**: You've done everything you can with available tools
+   - Example: User requests something outside your capabilities → Explain limitation → stop_signal = true
+
+4. **User Request Fully Satisfied**: The original request has been completely addressed
+   - Example: "Analyze this code" → Analysis complete and presented → stop_signal = true
+
+### Set stop_signal to **FALSE** when ANY of these conditions exist:
+
+1. **Waiting for Tool Results**: You just called tools and need to see results
+2. **Partial Progress**: You're in the middle of a multi-step task
+3. **Need More Tools**: You identified next actions requiring additional tool calls
+4. **Investigation Ongoing**: You're still gathering information or analyzing
+
+### DECISION FRAMEWORK:
+Ask yourself: "If I were a human assistant, would I naturally say 'I'm done with this request' right now?"
+- YES → stop_signal = true
+- NO → stop_signal = false
+
+### COMMON MISTAKES TO AVOID:
+- Don't set stop_signal = false just because you "could do more" - focus on what was actually requested
+- Don't set stop_signal = true if core functionality is still missing or broken
+- Don't overthink - if the user's immediate request is satisfied, you can stop
+
+Remember: It's better to complete one request well than to continue indefinitely.
 `;
 
 /**
@@ -94,11 +123,9 @@ Please format your responses as follows:
 </think>
 
 <interactive>
-<response>你应该回复用户直到用户的需求完全满足,计划已经被完成</response>
+<response>总是提供回复来说明当前任务的状态和进展</response>
 <stop_signal type="boolean">false</stop_signal>
 </interactive>
-
-Set stop_signal to true only when all tasks are completed.
 
 # Multi-Step Execution Guidelines
 
@@ -107,16 +134,28 @@ Set stop_signal to true only when all tasks are completed.
 - Each execution contains necessary information from previous steps in the chat history
 - Always check "## Chat History" to understand previous work and avoid repetition
 
-## Stop Signal Usage
-- Set stop_signal to **true** ONLY when:
-  - All user requirements are completely satisfied
-  - All tasks have been successfully completed
-  - No further action is needed from you
-- Set stop_signal to **false** when:
-  - Tasks are still in progress
-  - You need to perform additional tool calls
-  - You're waiting for tool results
-  - More steps are required to complete the user's request
+## Stop Signal Usage - 关键决策点
+
+### 设置 stop_signal 为 **TRUE** 当满足以下任一条件:
+
+1. **直接回答完成**: 用户问了问题且你已提供完整答案
+2. **任务明确完成**: 所有请求的操作已成功执行
+3. **无法进一步操作**: 你已用可用工具完成所有可能的工作
+4. **用户请求完全满足**: 原始请求已被完全解决
+
+### 设置 stop_signal 为 **FALSE** 当存在以下任一条件:
+
+1. **等待工具结果**: 刚调用工具需要查看结果
+2. **部分进展**: 正在执行多步骤任务的中间阶段
+3. **需要更多工具**: 已识别需要额外工具调用的下一步操作
+4. **调查进行中**: 仍在收集信息或分析
+
+### 决策框架:
+问自己: "如果我是人类助手，现在会自然地说'这个请求我已经完成了'吗？"
+- 是 → stop_signal = true
+- 否 → stop_signal = false
+
+记住：完成一个请求比无限期继续更好。
 `;
 
 /**

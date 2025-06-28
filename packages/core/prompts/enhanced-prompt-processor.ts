@@ -1,5 +1,6 @@
-import { BasePromptProcessor, IEnhancedPromptProcessor, MessageType, ChatHistoryConfig } from '../interfaces';
-import { EnhancedThinkingExtractorResult, ChatMessage, AgentStep } from '../interfaces';
+import { IPromptProcessor, MessageType, ChatHistoryConfig, IEnhancedPromptProcessor } from '../interfaces';
+import { BasePromptProcessor } from './index';
+import { EnhancedThinkingExtractorResult } from '../interfaces';
 import { XmlExtractor } from '../utils/xml-extractor';
 import { logger } from '../utils/logger';
 

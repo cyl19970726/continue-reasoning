@@ -22,9 +22,6 @@ export * from './utils';
 // Context implementations
 export * from './contexts';
 
-// Memory management
-export * from './memory/baseMemory';
-
 // RAG functionality
 export * from './rag';
 

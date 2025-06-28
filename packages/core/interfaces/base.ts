@@ -75,11 +75,6 @@ export type MemoryData<T> = {
 };
 
 /**
- * Client send function type
- */
-export type ClientSendFnType = (clientInfo: {clientId: string, userId: string}, incomingMessages: Message) => void;
-
-/**
  * LLM Model enumeration
  */
 export const LLMModel = z.enum(['openai', 'anthropic', 'google']); 
