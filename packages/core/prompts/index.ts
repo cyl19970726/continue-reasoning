@@ -1,4 +1,4 @@
-export { BasePromptProcessor } from './base-prompt-processor';
+export { BasePromptProcessor } from '../interfaces/base-prompt-processor';
 export { StandardPromptProcessor } from './standard-prompt-processor';
 export { EnhancedPromptProcessor } from './enhanced-prompt-processor';
 export { ChatHistoryManager } from './chat-history-manager';

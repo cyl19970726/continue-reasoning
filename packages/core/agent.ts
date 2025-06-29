@@ -821,7 +821,7 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
     } {
         // Get the last response message from chat history
         const lastResponse = this.promptProcessor.chatHistory
-            .filter(msg => msg.role === 'agent' && msg.type === MessageType.MESSAGE)
+            .filter((msg: ChatMessage) => msg.role === 'agent' && msg.type === MessageType.MESSAGE)
             .pop();
         
         return {
@@ -848,4 +848,3 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
         logger.debug(`Agent ${this.id}: Loaded session state for ${state.sessionId}, currentStep: ${state.currentStep}`);
     }
 }
-

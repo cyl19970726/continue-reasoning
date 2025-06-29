@@ -1,14 +1,14 @@
-import { ExtractorResult } from "../interfaces/prompt";
-import { ChatMessage } from "../interfaces/base";
-import { ChatHistoryConfig } from "../interfaces/prompt";
-import { ChatHistoryManager } from "./chat-history-manager";
-import { IContextManager } from "../interfaces/context";
-import { IChatHistoryManager } from "../interfaces/prompt";
-import { IPromptProcessor } from "../interfaces/prompt";
-import { AgentStep } from "../interfaces/prompt";
+import { ExtractorResult } from "./prompt";
+import { ChatMessage } from "./base";
+import { ChatHistoryConfig } from "./prompt";
+import { ChatHistoryManager } from "../prompts/chat-history-manager";
+import { IContextManager } from "./context";
+import { IChatHistoryManager } from "./prompt";
+import { IPromptProcessor } from "./prompt";
+import { AgentStep } from "./prompt";
 import { logger } from "../utils/logger";
-import { PromptCtx } from "../interfaces/prompt";
-import { MessageType } from "../interfaces/base";
+import { PromptCtx } from "./prompt";
+import { MessageType } from "./base";
 
 /**
  * PromptProcessor abstract base
