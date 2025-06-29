@@ -19,6 +19,12 @@ export {
 // Re-export bash tools for system operations and simple file reading
 export { BashToolSet } from './bash';
 
+// Re-export grep tools for code search and pattern matching
+export { GrepTool, GrepToolSet } from './grep';
+
+// Re-export error handling utilities
+export { formatDetailedError, extractErrorInfo, createErrorResponse, logEnhancedError } from './error-utils';
+
 // Export snapshot system utilities
 export {
   initializeSnapshotSystem,

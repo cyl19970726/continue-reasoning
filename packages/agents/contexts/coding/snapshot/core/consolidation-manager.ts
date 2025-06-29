@@ -76,9 +76,9 @@ export class ConsolidationManager {
       // Sort by sequence number
       const sortedSnapshots = snapshots.sort((a, b) => a.sequenceNumber - b.sequenceNumber);
       
-      // Calculate consolidation metadata
-      const totalLinesChanged = sortedSnapshots.reduce((sum, s) => sum + s.metadata.linesChanged, 0);
-      const totalFileSize = sortedSnapshots.reduce((sum, s) => sum + s.metadata.filesSizeBytes, 0);
+      // Calculate consolidation metadata (safely handle undefined metadata)
+      const totalLinesChanged = sortedSnapshots.reduce((sum, s) => sum + (s.metadata?.linesChanged || 0), 0);
+      const totalFileSize = sortedSnapshots.reduce((sum, s) => sum + (s.metadata?.filesSizeBytes || 0), 0);
       
       // Merge all diffs
       const diffs = sortedSnapshots.map(s => s.diff);
@@ -330,6 +330,9 @@ export class ConsolidationManager {
   ): Promise<void> {
     const consolidatedRange = consolidatedSnapshot.sequenceRange;
     const maxConsolidatedSequence = consolidatedRange[1];
+    const minConsolidatedSequence = consolidatedRange[0];
+    const mergedCount = consolidatedRange[1] - consolidatedRange[0] + 1; // Number of original snapshots merged
+    const sequenceReduction = mergedCount - 1; // How much to reduce subsequent sequence numbers
     
     // Find snapshots that come after the consolidated range
     const subsequentSnapshots = allSnapshots.filter(s => 
@@ -360,6 +363,64 @@ export class ConsolidationManager {
         );
       }
     }
+    
+    // 重新编号后续快照的sequence numbers
+    await this.renumberSubsequentSnapshots(
+      consolidatedSnapshot,
+      allSnapshots,
+      coreManager,
+      sequenceReduction
+    );
+  }
+
+  /**
+   * Renumber subsequent snapshots after consolidation
+   * 重新编号合并后的后续快照，确保sequence number连续性
+   */
+  async renumberSubsequentSnapshots(
+    consolidatedSnapshot: ConsolidatedSnapshot,
+    allSnapshots: any[],
+    coreManager: any,
+    sequenceReduction: number
+  ): Promise<void> {
+    const consolidatedRange = consolidatedSnapshot.sequenceRange;
+    const maxConsolidatedSequence = consolidatedRange[1];
+    
+    // Find all snapshots that come after the consolidated range
+    const subsequentSnapshots = allSnapshots.filter(s => 
+      s.sequenceNumber > maxConsolidatedSequence && 
+      !consolidatedSnapshot.consolidatedFrom.includes(s.id)
+    );
+    
+    if (subsequentSnapshots.length === 0 || sequenceReduction <= 0) {
+      return;
+    }
+    
+    // Sort by sequence number to process in order
+    subsequentSnapshots.sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+    
+    console.log(
+      `Renumbering ${subsequentSnapshots.length} subsequent snapshots, reducing sequence numbers by ${sequenceReduction}`
+    );
+    
+    // Update sequence numbers for all subsequent snapshots
+    for (const snapshot of subsequentSnapshots) {
+      const oldSequenceNumber = snapshot.sequenceNumber;
+      const newSequenceNumber = oldSequenceNumber - sequenceReduction;
+      
+      console.log(
+        `Updating snapshot ${snapshot.id.substring(0, 6)}: sequence ${oldSequenceNumber} -> ${newSequenceNumber}`
+      );
+      
+      // Update the snapshot's sequence number
+      snapshot.sequenceNumber = newSequenceNumber;
+      
+      // Save the updated snapshot (this will update both file and cache)
+      await coreManager.saveSnapshot(snapshot);
+    }
+    
+    // Also need to update the core manager's internal cache
+    await coreManager.reloadCache();
   }
 
   /**

@@ -25,7 +25,7 @@ export { ConsolidationManager } from './core/consolidation-manager';
 export { 
   ReadSnapshotTool,
   ListSnapshotsTool,
-  ConsolidateSnapshotsTool,
+  MergeSnapshotTool,
   RevertSnapshotTool,
   snapshotManagerTools
 } from './snapshot-manager-tools';

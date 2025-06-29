@@ -132,7 +132,8 @@ describe('CheckpointManager', () => {
       expect(loadedCheckpoint).not.toBeNull();
       expect(loadedCheckpoint!.id).toBe(checkpointId);
       expect(loadedCheckpoint!.snapshotId).toBe('snap-789');
-      expect(loadedCheckpoint!.files['test1.txt']).toBe('Initial content 1');
+      expect(loadedCheckpoint!.fileHashes['test1.txt']).toBeDefined();
+      expect(loadedCheckpoint!.fileHashes['test2.txt']).toBeDefined();
       
       // Load latest checkpoint (should be the same)
       const latestCheckpoint = await manager.loadFileCheckpoint();
@@ -179,12 +180,12 @@ describe('CheckpointManager', () => {
       const info = manager.getCheckpointInfo();
       expect(info).toHaveProperty('hasLatestCheckpoint');
       expect(info).toHaveProperty('latestCheckpointFiles');
-      expect(info).toHaveProperty('latestCheckpointSize');
+      expect(info).toHaveProperty('latestCheckpointId');
       
       // Initially should have no checkpoint
       expect(info.hasLatestCheckpoint).toBe(false);
       expect(info.latestCheckpointFiles).toBe(0);
-      expect(info.latestCheckpointSize).toBe(0);
+      expect(info.latestCheckpointId).toBeUndefined();
     });
 
     it('should update checkpoint info after creating checkpoint', async () => {
@@ -196,7 +197,7 @@ describe('CheckpointManager', () => {
       const info = manager.getCheckpointInfo();
       expect(info.hasLatestCheckpoint).toBe(true);
       expect(info.latestCheckpointFiles).toBe(1);
-      expect(info.latestCheckpointSize).toBeGreaterThan(0);
+      expect(info.latestCheckpointId).toBeDefined();
     });
   });
 

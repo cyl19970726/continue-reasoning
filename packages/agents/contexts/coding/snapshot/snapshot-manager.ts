@@ -35,7 +35,10 @@ const DEFAULT_CONFIG: SnapshotConfig = {
     '*.tmp',
     '*_generated.*',
     'node_modules/**'
-  ]
+  ],
+  saveLatestFiles: true, // Enable by default to support accurate diff generation
+  saveDiffFiles: true, // Enable diff file storage by default for better readability
+  diffFileFormat: 'md' // Use Markdown format for best readability
 };
 
 export class SnapshotManager {
@@ -72,6 +75,10 @@ export class SnapshotManager {
    * Initialize all components
    */
   async initialize(): Promise<void> {
+    if (this.isInitialized) {
+      return;
+    }
+
     // Initialize all modular components
     await Promise.all([
       this.coreManager.initialize(),
@@ -81,6 +88,19 @@ export class SnapshotManager {
     
     // Load current state
     await this.loadCurrentState();
+    
+    // Create initial checkpoint if none exists
+    const checkpointInfo = this.checkpointManager.getCheckpointInfo();
+    if (!checkpointInfo.hasLatestCheckpoint) {
+      try {
+        const initialCheckpointId = await this.checkpointManager.createInitialCheckpoint(
+          this.generateId.bind(this)
+        );
+        console.log(`📸 Created initial baseline checkpoint: ${initialCheckpointId}`);
+      } catch (error) {
+        console.warn('Failed to create initial checkpoint:', error);
+      }
+    }
     
     this.isInitialized = true;
   }
@@ -115,7 +135,9 @@ export class SnapshotManager {
     // 🔍 STEP 1: Detect unknown changes before creating the intended snapshot
     if (this.config.enableUnknownChangeDetection) {
       try {
-        const unknownChanges = await this.detectUnknownChanges(filteredAffectedFiles);
+        // Don't exclude affected files from unknown change detection
+        // We want to detect if they were modified externally before our intended operation
+        const unknownChanges = await this.detectUnknownChanges([]);
         
         if (unknownChanges.length > 0) {
           // Create unknown change snapshot
@@ -169,6 +191,8 @@ export class SnapshotManager {
       affectedFiles: string[];
       sequenceNumber: number;
       previousSnapshotId?: string;
+      diffPath?: string;
+      reverseDiffPath?: string;
       metadata?: {
         filesSizeBytes: number;
         linesChanged: number;
@@ -193,6 +217,8 @@ export class SnapshotManager {
           affectedFiles: snapshot.affectedFiles,
           sequenceNumber: snapshot.sequenceNumber,
           previousSnapshotId: snapshot.previousSnapshotId,
+          diffPath: snapshot.diffPath,
+          reverseDiffPath: snapshot.reverseDiffPath,
           metadata: snapshot.metadata
         }
       };
@@ -663,6 +689,9 @@ export class SnapshotManager {
       diff?: string;
     }> = [];
 
+    // Get latest checkpoint for content comparison
+    const latestCheckpoint = await this.checkpointManager.loadFileCheckpoint();
+
     for (const filePath of filteredFiles) {
       // Skip files that are being actively modified
       if (excludeFiles.includes(filePath)) {
@@ -687,19 +716,69 @@ export class SnapshotManager {
           console.warn(`Failed to generate diff for new file ${filePath}:`, error);
         }
       } else if (lastKnownHash !== undefined && currentHash !== lastKnownHash && currentHash !== '') {
-        // File modified
-        unknownChanges.push({
-          filePath,
-          changeType: 'modified',
-          diff: `--- a/${filePath}\n+++ b/${filePath}\n@@ -1,1 +1,1 @@\n-[modified]\n+[modified]`
-        });
+        // File modified - generate proper diff if we have stored content
+        try {
+          let diff: string;
+          
+                     if (latestCheckpoint?.fileContents && latestCheckpoint.fileContents[filePath]) {
+             // Use stored content to generate accurate diff
+             const oldContent = latestCheckpoint.fileContents[filePath];
+             const newContent = await fs.readFile(path.join(this.workspacePath, filePath), 'utf-8');
+             
+             // Import diff utility
+             const { generateUnifiedDiff } = await import('../runtime/diff');
+             diff = await generateUnifiedDiff(oldContent, newContent, {
+               oldPath: `a/${filePath}`,
+               newPath: `b/${filePath}`
+             });
+           } else {
+            // Fallback to simple placeholder diff
+            diff = `--- a/${filePath}\n+++ b/${filePath}\n@@ -1,1 +1,1 @@\n-[modified]\n+[modified]`;
+          }
+          
+          unknownChanges.push({
+            filePath,
+            changeType: 'modified',
+            diff
+          });
+        } catch (error) {
+          console.warn(`Failed to generate diff for modified file ${filePath}:`, error);
+          // Add with simple placeholder diff
+          unknownChanges.push({
+            filePath,
+            changeType: 'modified',
+            diff: `--- a/${filePath}\n+++ b/${filePath}\n@@ -1,1 +1,1 @@\n-[modified]\n+[modified]`
+          });
+        }
       } else if (lastKnownHash !== undefined && currentHash === '') {
-        // File deleted
-        unknownChanges.push({
-          filePath,
-          changeType: 'deleted',
-          diff: `--- a/${filePath}\n+++ /dev/null\n@@ -1,1 +1,0 @@\n-[deleted]`
-        });
+        // File deleted - show old content if available
+        try {
+          let diff: string;
+          
+          if (latestCheckpoint?.fileContents && latestCheckpoint.fileContents[filePath]) {
+            // Use stored content to show what was deleted
+            const oldContent = latestCheckpoint.fileContents[filePath];
+            const lines = oldContent.split('\n');
+            diff = `--- a/${filePath}\n+++ /dev/null\n@@ -1,${lines.length} +1,0 @@\n` +
+                   lines.map((line: string) => `-${line}`).join('\n');
+          } else {
+            // Fallback to simple placeholder diff
+            diff = `--- a/${filePath}\n+++ /dev/null\n@@ -1,1 +1,0 @@\n-[deleted]`;
+          }
+          
+          unknownChanges.push({
+            filePath,
+            changeType: 'deleted',
+            diff
+          });
+        } catch (error) {
+          console.warn(`Failed to generate diff for deleted file ${filePath}:`, error);
+          unknownChanges.push({
+            filePath,
+            changeType: 'deleted',
+            diff: `--- a/${filePath}\n+++ /dev/null\n@@ -1,1 +1,0 @@\n-[deleted]`
+          });
+        }
       }
     }
 
@@ -811,11 +890,8 @@ export class SnapshotManager {
     const latestCheckpoint = await this.checkpointManager.loadFileCheckpoint();
     
     if (latestCheckpoint) {
-      // Use checkpoint file states as known state
-      this.currentFileHashes = {};
-      for (const [filePath, content] of Object.entries(latestCheckpoint.files)) {
-        this.currentFileHashes[filePath] = await this.calculateHashFromContent(content);
-      }
+      // Use checkpoint file hashes as known state
+      this.currentFileHashes = { ...latestCheckpoint.fileHashes };
     } else {
       // Fallback: scan current files
       const allFiles = await this.scanWorkspaceFiles();

@@ -9,6 +9,7 @@ import { IAgent } from '@continue-reasoning/core';
 import { IRuntime } from '../runtime/interface';
 import { ICodingContext } from '../coding-context';
 import { generateUnifiedDiff } from '../runtime/diff';
+import { formatDetailedError, logEnhancedError } from '../toolsets/error-utils';
 import * as path from 'path';
 
 /**
@@ -27,7 +28,8 @@ function getSnapshotManager(agent?: IAgent) {
 const SnapshotToolReturnSchema = z.object({
   success: z.boolean().describe("Whether the operation was successful"),
   message: z.string().describe("Descriptive message about the operation result"),
-  snapshotId: z.string().optional().describe("ID of the created snapshot (if successful)")
+  snapshotId: z.string().optional().describe("ID of the created snapshot (if successful)"),
+  diffPath: z.string().optional().describe("Path to the diff file (if diff files are enabled)")
 });
 
 // ApplyWholeFileEdit Snapshot Tool
@@ -137,16 +139,22 @@ export const ApplyWholeFileEditTool = createTool({
         }
       });
 
+      // Get snapshot details to extract diffPath
+      const snapshotResult = await snapshotManager.readSnapshotDiff(snapshotId);
+      const diffPath = snapshotResult.snapshot?.diffPath;
+
       return {
         success: true,
-        message: `Successfully ${fileExists ? 'updated' : 'created'} file: ${params.path}. Goal: ${params.goal}`,
-        snapshotId
+        message: `Successfully ${fileExists ? 'updated' : 'created'} file: ${params.path}. Goal: ${params.goal}. ${diffPath ? `Diff available at: ${diffPath}` : 'Snapshot created: ' + snapshotId}`,
+        snapshotId,
+        diffPath
       };
     } catch (error: any) {
-      console.error(`ApplyWholeFileEdit error: ${error.message || error}`);
+      logEnhancedError(error, 'ApplyWholeFileEdit');
+      const detailedMessage = formatDetailedError(error, `ApplyWholeFileEdit - File: ${params.path}, ContentLength: ${params.content?.length || 0} chars, Goal: ${params.goal}`);
       return {
         success: false,
-        message: `Failed to ${params.dryRun ? 'preview' : 'write'} file ${params.path}: ${error.message || 'Unknown error'}. Goal: ${params.goal}`
+        message: detailedMessage
       };
     }
   }
@@ -229,21 +237,32 @@ export const ApplyUnifiedDiffTool = createTool({
       const isPartialApplication = result.multiFileResults && 
         result.multiFileResults.some((r: any) => !r.success);
 
+      // Get snapshot details to extract diffPath
+      const snapshotResult = await snapshotManager.readSnapshotDiff(snapshotId);
+      const diffPath = snapshotResult.snapshot?.diffPath;
+
       let message = `Successfully applied unified diff. Goal: ${params.goal}`;
       if (isPartialApplication) {
         message = `Partially applied unified diff - some changes failed. Goal: ${params.goal}. Check snapshot ${snapshotId} for actual applied changes.`;
+      }
+      
+      // Add diff path info to message
+      if (diffPath) {
+        message += ` Diff available at: ${diffPath}`;
       }
 
       return {
         success: true,
         message,
-        snapshotId
+        snapshotId,
+        diffPath
       };
     } catch (error: any) {
-      console.error(`ApplyUnifiedDiff error: ${error.message || error}`);
+      logEnhancedError(error, 'ApplyUnifiedDiff');
+      const detailedMessage = formatDetailedError(error, `ApplyUnifiedDiff - DiffLength: ${params.diffContent?.length || 0} chars, BaseDir: ${params.baseDir || 'default'}, Goal: ${params.goal}`);
       return {
         success: false,
-        message: `Failed to apply unified diff: ${error.message || 'Unknown error'}. Goal: ${params.goal}`
+        message: detailedMessage
       };
     }
   }
@@ -336,16 +355,22 @@ export const ApplyEditBlockTool = createTool({
         }
       });
 
+      // Get snapshot details to extract diffPath
+      const snapshotResult = await snapshotManager.readSnapshotDiff(snapshotId);
+      const diffPath = snapshotResult.snapshot?.diffPath;
+
       return {
         success: true,
-        message: `Successfully applied edit block to: ${params.path}. Goal: ${params.goal}`,
-        snapshotId
+        message: `Successfully applied edit block to: ${params.path}. Goal: ${params.goal}. ${diffPath ? `Diff available at: ${diffPath}` : 'Snapshot created: ' + snapshotId}`,
+        snapshotId,
+        diffPath
       };
     } catch (error: any) {
-      console.error(`ApplyEditBlock error: ${error.message || error}`);
+      logEnhancedError(error, 'ApplyEditBlock');
+      const detailedMessage = formatDetailedError(error, `ApplyEditBlock - File: ${params.path}, SearchBlock: ${params.searchBlock?.length || 0} chars, ReplaceBlock: ${params.replaceBlock?.length || 0} chars, Goal: ${params.goal}`);
       return {
         success: false,
-        message: `Failed to apply edit block: ${error.message || 'Unknown error'}. Goal: ${params.goal}`
+        message: detailedMessage
       };
     }
   }
@@ -444,16 +469,22 @@ export const ApplyRangedEditTool = createTool({
         }
       });
 
+      // Get snapshot details to extract diffPath
+      const snapshotResult = await snapshotManager.readSnapshotDiff(snapshotId);
+      const diffPath = snapshotResult.snapshot?.diffPath;
+
       return {
         success: true,
-        message: `Successfully applied ranged edit to: ${params.path} (lines ${params.startLine}-${params.endLine}). Goal: ${params.goal}`,
-        snapshotId
+        message: `Successfully applied ranged edit to: ${params.path} (lines ${params.startLine}-${params.endLine}). Goal: ${params.goal}. ${diffPath ? `Diff available at: ${diffPath}` : 'Snapshot created: ' + snapshotId}`,
+        snapshotId,
+        diffPath
       };
     } catch (error: any) {
-      console.error(`ApplyRangedEdit error: ${error.message || error}`);
+      logEnhancedError(error, 'ApplyRangedEdit');
+      const detailedMessage = formatDetailedError(error, `ApplyRangedEdit - File: ${params.path}, Lines: ${params.startLine}-${params.endLine}, ContentLength: ${params.content?.length || 0} chars, Goal: ${params.goal}`);
       return {
         success: false,
-        message: `Failed to apply ranged edit: ${error.message || 'Unknown error'}. Goal: ${params.goal}`
+        message: detailedMessage
       };
     }
   }
@@ -609,16 +640,22 @@ export const DeleteTool = createTool({
         }
       });
 
+      // Get snapshot details to extract diffPath
+      const snapshotResult = await snapshotManager.readSnapshotDiff(snapshotId);
+      const diffPath = snapshotResult.snapshot?.diffPath;
+
       return {
         success: true,
-        message: `Successfully deleted ${targetStatus.type} ${params.path} (${deletedFiles.length} files). Goal: ${params.goal}`,
-        snapshotId
+        message: `Successfully deleted ${targetStatus.type} ${params.path} (${deletedFiles.length} files). Goal: ${params.goal}. ${diffPath ? `Diff available at: ${diffPath}` : 'Snapshot created: ' + snapshotId}`,
+        snapshotId,
+        diffPath
       };
     } catch (error: any) {
-      console.error(`Delete error: ${error.message || error}`);
+      logEnhancedError(error, 'Delete');
+      const detailedMessage = formatDetailedError(error, `Delete - Path: ${params.path}, Recursive: ${params.recursive || false}, Goal: ${params.goal}`);
       return {
         success: false,
-        message: `Failed to delete ${params.path}: ${error.message || 'Unknown error'}. Goal: ${params.goal}`
+        message: detailedMessage
       };
     }
   }
