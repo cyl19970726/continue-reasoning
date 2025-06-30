@@ -9,11 +9,11 @@ import { ApplyWholeFileEditTool, DeleteTool } from '../packages/agents/contexts/
 import { BashCommandTool } from '../packages/agents/contexts/coding/toolsets/bash';
 import { SnapshotManager } from '../packages/agents/contexts/coding/snapshot/snapshot-manager';
 import { CodingAgent } from '../packages/agents';
-import { LogLevel } from '../packages/core/dist/utils/logger';
-import { OPENAI_MODELS } from '../packages/core/dist/models';
+import { LogLevel } from '@continue-reasoning/core';
+import { OPENAI_MODELS } from '@continue-reasoning/core';
 import path from 'path';
 import fs from 'fs';
-import { ConsolidateSnapshotsTool, ListSnapshotsTool } from '../packages/agents/contexts/coding/snapshot/snapshot-manager-tools';
+import { MergeSnapshotTool, ListSnapshotsTool } from '../packages/agents/contexts/coding/snapshot/snapshot-manager-tools';
 
 async function runSnapshotTest() {
 
@@ -281,14 +281,13 @@ if __name__ == "__main__":
     console.log('📸 List of snapshots before consolidate:', listSnapshotsResult_before_consolidate.snapshots);
 
 
-    const consolidateResult = await ConsolidateSnapshotsTool.execute({
+    const consolidateResult = await MergeSnapshotTool.execute({
        sequenceNumberRange:{
         start: 1,
-        end: 2
+        end: 3
        },
         title: 'Consolidate snapshots',
-        description: 'Consolidate snapshots',
-        deleteOriginals: false
+        goal: 'Consolidate snapshots'
     }, agent);
 
     console.log('🔄 Consolidate result:', consolidateResult);

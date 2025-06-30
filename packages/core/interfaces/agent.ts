@@ -4,7 +4,7 @@ import { IContextManager } from './context';
 import { ITaskQueue, ToolSet, AnyTool, ToolCallDefinition, ToolCallParams, ToolExecutionResult } from './tool';
 import { AgentStep } from './prompt';
 import { AgentStatus, ChatMessage } from './base';
-import { BasePromptProcessor } from './prompt';
+import { BasePromptProcessor } from './base-prompt-processor';
 
 /**
  * Agent storage type - Basic information for session persistence

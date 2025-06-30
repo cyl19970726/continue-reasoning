@@ -4,6 +4,7 @@ import { createTool } from '@continue-reasoning/core';
 import { IAgent } from '@continue-reasoning/core';
 import { IRuntime } from '../runtime/interface';
 import { reverseDiff } from '../runtime/diff';
+import { formatDetailedError, logEnhancedError, createErrorResponse } from './error-utils';
 import * as path from 'path';
 // For diff generation, we might need a library or a utility function.
 // For now, we'll return a placeholder diff.
@@ -121,10 +122,11 @@ export const ApplyWholeFileEditTool = createTool({
         diff: diffString
       };
     } catch (error: any) {
-      console.error(`ApplyWholeFileEditTool error: ${error.message || error}`);
+      logEnhancedError(error, 'ApplyWholeFileEditTool');
+      const detailedMessage = formatDetailedError(error, `ApplyWholeFileEdit - File: ${params.path}, ContentLength: ${params.content?.length || 0} chars`);
       return {
         success: false,
-        message: `Failed to write to file ${params.path}: ${error.message || 'Unknown error'}`
+        message: detailedMessage
       };
     }
   },
@@ -237,10 +239,11 @@ export const ApplyUnifiedDiffTool = createTool({
         error: result.success ? undefined : result.message
       };
     } catch (error: any) {
-      console.error(`ApplyUnifiedDiffTool error: ${error.message || error}`);
+      logEnhancedError(error, 'ApplyUnifiedDiffTool');
+      const detailedMessage = formatDetailedError(error, `ApplyUnifiedDiff - BaseDir: ${baseDir}, DiffLength: ${params.diffContent?.length || 0} chars, DryRun: ${params.dryRun || false}`);
       return {
         success: false,
-        message: `Failed to apply diff: ${error.message || 'Unknown error'}`
+        message: detailedMessage
       };
     }
   },
@@ -332,10 +335,11 @@ export const ApplyEditBlockTool = createTool({
         changesApplied: result.changesApplied || 0
       };
     } catch (error: any) {
-      console.error(`ApplyEditBlockTool error: ${error.message || error}`);
+      logEnhancedError(error, 'ApplyEditBlockTool');
+      const detailedMessage = formatDetailedError(error, `ApplyEditBlock - File: ${filePath}, SearchBlock: ${params.searchBlock?.length || 0} chars, ReplaceBlock: ${params.replaceBlock?.length || 0} chars`);
       return {
         success: false,
-        message: `Failed to apply edit block: ${error.message || 'Unknown error'}`,
+        message: detailedMessage,
         changesApplied: 0
       };
     }
@@ -429,10 +433,11 @@ export const ApplyRangedEditTool = createTool({
         changesApplied: result.changesApplied || 0
       };
     } catch (error: any) {
-      console.error(`ApplyRangedEditTool error: ${error.message || error}`);
+      logEnhancedError(error, 'ApplyRangedEditTool');
+      const detailedMessage = formatDetailedError(error, `ApplyRangedEdit - File: ${filePath}, Lines: ${params.startLine}-${params.endLine}, ContentLength: ${params.content?.length || 0} chars`);
       return {
         success: false,
-        message: `Failed to apply ranged edit: ${error.message || 'Unknown error'}`,
+        message: detailedMessage,
         changesApplied: 0
       };
     }

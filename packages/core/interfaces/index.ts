@@ -9,6 +9,7 @@ export * from './tool';
 
 // Export prompt processor interfaces
 export * from './prompt';
+export * from './base-prompt-processor';
 
 // Export memory and RAG interfaces
 export * from './memory';
@@ -20,4 +21,7 @@ export * from './context';
 export * from './agent';
 
 // Export session interfaces
-export * from './session'; 
+export * from './session';
+
+// Export client interfaces
+export * from './client'; 

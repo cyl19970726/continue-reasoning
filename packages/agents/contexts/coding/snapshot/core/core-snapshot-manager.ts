@@ -101,7 +101,31 @@ export class CoreSnapshotManager {
   async saveSnapshot(snapshot: SnapshotData): Promise<void> {
     const snapshotPath = this.getSnapshotPath(snapshot.timestamp, snapshot.id);
     await fs.mkdir(path.dirname(snapshotPath), { recursive: true });
-    await fs.writeFile(snapshotPath, JSON.stringify(snapshot, null, 2));
+    
+    // Create a copy of snapshot for JSON storage
+    const snapshotForJson = { ...snapshot };
+    
+    // Handle diff file storage if enabled
+    if (this.config.saveDiffFiles !== false) { // Default to true
+      const diffFormat = this.config.diffFileFormat || 'md';
+      
+      // Save diff content to separate file
+      if (snapshot.diff) {
+        const diffPath = await this.saveDiffToFile(snapshot.id, snapshot.diff, diffFormat, snapshot.timestamp);
+        snapshotForJson.diffPath = diffPath;
+        // Keep diff content for backward compatibility but mark it as stored externally
+        snapshotForJson.diff = `[Stored in ${diffPath}]`;
+      }
+      
+      // Save reverse diff content if exists
+      if (snapshot.reverseDiff) {
+        const reverseDiffPath = await this.saveDiffToFile(snapshot.id, snapshot.reverseDiff, diffFormat, snapshot.timestamp, 'reverse');
+        snapshotForJson.reverseDiffPath = reverseDiffPath;
+        snapshotForJson.reverseDiff = `[Stored in ${reverseDiffPath}]`;
+      }
+    }
+    
+    await fs.writeFile(snapshotPath, JSON.stringify(snapshotForJson, null, 2));
 
     // Update cache
     const indexEntry: SnapshotIndexEntry = {
@@ -125,7 +149,18 @@ export class CoreSnapshotManager {
       if (!snapshotPath) return null;
       
       const content = await fs.readFile(snapshotPath, 'utf-8');
-      return JSON.parse(content);
+      const snapshot = JSON.parse(content) as SnapshotData;
+      
+      // Load diff content from external files if they exist
+      if (snapshot.diffPath && snapshot.diff?.startsWith('[Stored in ')) {
+        snapshot.diff = await this.readDiffFromFile(snapshot.diffPath);
+      }
+      
+      if (snapshot.reverseDiffPath && snapshot.reverseDiff?.startsWith('[Stored in ')) {
+        snapshot.reverseDiff = await this.readDiffFromFile(snapshot.reverseDiffPath);
+      }
+      
+      return snapshot;
     } catch (error) {
       console.warn(`Failed to load snapshot ${id}:`, error);
       return null;
@@ -189,6 +224,14 @@ export class CoreSnapshotManager {
   }
 
   /**
+   * Reload cache from disk
+   */
+  async reloadCache(): Promise<void> {
+    this.clearCache();
+    await this.loadCache();
+  }
+
+  /**
    * Get cache statistics
    */
   getCacheStats() {
@@ -247,5 +290,109 @@ export class CoreSnapshotManager {
       return this.getSnapshotPath(snapshotRef.timestamp, id);
     }
     return null;
+  }
+
+  /**
+   * Save diff content to a separate file with readable formatting
+   */
+  private async saveDiffToFile(
+    snapshotId: string, 
+    diffContent: string, 
+    format: 'md' | 'diff' | 'txt', 
+    timestamp: string,
+    type: 'diff' | 'reverse' = 'diff'
+  ): Promise<string> {
+    const date = new Date(timestamp);
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    const time = date.toTimeString().substring(0, 8).replace(/:/g, '');
+    
+    // Create diff file name
+    const suffix = type === 'reverse' ? '_reverse' : '';
+    const fileName = `${time}_${snapshotId}${suffix}_diff.${format}`;
+    const diffDir = path.join(this.snapshotsDir, `${year}`, `${month}`, `${day}`, 'diffs');
+    const diffPath = path.join(diffDir, fileName);
+    
+    // Ensure diff directory exists
+    await fs.mkdir(diffDir, { recursive: true });
+    
+    // Format content based on file type
+    let formattedContent = '';
+    
+    if (format === 'md') {
+      // Markdown format with syntax highlighting
+      formattedContent = this.formatDiffAsMarkdown(diffContent, snapshotId, timestamp, type);
+    } else if (format === 'diff') {
+      // Plain diff format
+      formattedContent = diffContent;
+    } else {
+      // Plain text with some formatting
+      formattedContent = this.formatDiffAsText(diffContent, snapshotId, timestamp, type);
+    }
+    
+    await fs.writeFile(diffPath, formattedContent, 'utf-8');
+    
+    // Return relative path from snapshots directory
+    return path.relative(this.snapshotsDir, diffPath);
+  }
+
+  /**
+   * Format diff content as Markdown with syntax highlighting
+   */
+  private formatDiffAsMarkdown(diffContent: string, snapshotId: string, timestamp: string, type: 'diff' | 'reverse'): string {
+    const date = new Date(timestamp).toLocaleString();
+    const title = type === 'reverse' ? 'Reverse Diff' : 'Diff';
+    
+    return `# ${title} - ${snapshotId}
+
+**Timestamp:** ${date}  
+**Type:** ${type === 'reverse' ? 'Reverse Operation' : 'Forward Operation'}
+
+## Changes
+
+\`\`\`diff
+${diffContent}
+\`\`\`
+
+---
+*Generated by continue-reasoning snapshot system*
+`;
+  }
+
+  /**
+   * Format diff content as plain text with headers
+   */
+  private formatDiffAsText(diffContent: string, snapshotId: string, timestamp: string, type: 'diff' | 'reverse'): string {
+    const date = new Date(timestamp).toLocaleString();
+    const title = type === 'reverse' ? 'Reverse Diff' : 'Diff';
+    
+    return `${title} - ${snapshotId}
+${'='.repeat(50)}
+
+Timestamp: ${date}
+Type: ${type === 'reverse' ? 'Reverse Operation' : 'Forward Operation'}
+
+Changes:
+${'-'.repeat(20)}
+
+${diffContent}
+
+${'='.repeat(50)}
+Generated by continue-reasoning snapshot system
+`;
+  }
+
+  /**
+   * Read diff content from file
+   */
+  async readDiffFromFile(diffPath: string): Promise<string> {
+    try {
+      const fullPath = path.join(this.snapshotsDir, diffPath);
+      return await fs.readFile(fullPath, 'utf-8');
+    } catch (error) {
+      console.warn(`Failed to read diff file ${diffPath}:`, error);
+      return '';
+    }
   }
 } 

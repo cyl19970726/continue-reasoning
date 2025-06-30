@@ -8,7 +8,7 @@ import { logger } from '@continue-reasoning/core';
 const BashCommandParamsSchema = z.object({
   command: z.string().describe("The bash command to execute."),
   cwd: z.string().optional().describe("The current working directory for the command. Defaults to the agent's workspace root or process.cwd()."),
-  timeout_ms: z.number().int().optional().describe("Timeout in milliseconds for the command. Defaults to 60000ms (60s)."),
+  timeout_ms: z.number().optional().describe("Timeout in milliseconds for the command. Defaults to 60000ms (60s)."),
   writable_paths: z.array(z.string()).optional().describe("Additional directories that should be writable by the command."),
   allow_network: z.boolean().optional().describe("Whether to allow network access (default: false if not specified).")
 });
@@ -44,9 +44,9 @@ export const BashCommandTool = createTool({
 
     const workspacePath = codingContext.getData()?.current_workspace || process.cwd();
     
-    // Handle default values
+    // Handle default values (ensure integer for timeout)
     const allowNetwork = params.allow_network !== undefined ? params.allow_network : false;
-    const timeout = params.timeout_ms || 60000; // Default 60 seconds
+    const timeout = Math.floor(params.timeout_ms || 60000); // Default 60 seconds, ensure integer
     
     const executionOptions: ExecutionOptions = {
       cwd: params.cwd || workspacePath,

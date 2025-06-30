@@ -18,7 +18,6 @@ import { ICodingContext } from './contexts/coding/coding-context';
  * - 快照管理和版本控制
  */
 export class CodingAgent extends BaseAgent {
-    private workspacePath: string;
     private codingContext: ICodingContext;
 
     constructor(
@@ -45,7 +44,6 @@ export class CodingAgent extends BaseAgent {
             [...(contexts || []),codingContext],
         );
         
-        this.workspacePath = workspacePath;
         this.codingContext = codingContext;
         
         logger.info(`CodingAgent initialized with workspace: ${workspacePath}`);
@@ -55,14 +53,6 @@ export class CodingAgent extends BaseAgent {
      * 🆕 生命周期钩子 - 启动前准备
      */
     async beforeStart(): Promise<void> {
-        logger.info(`CodingAgent preparing workspace: ${this.workspacePath}`);
-        
-        // 确保工作空间存在
-        const fs = await import('fs');
-        if (!fs.existsSync(this.workspacePath)) {
-            fs.mkdirSync(this.workspacePath, { recursive: true });
-            logger.info(`Created workspace directory: ${this.workspacePath}`);
-        }
 
     }
 
@@ -95,7 +85,7 @@ export class CodingAgent extends BaseAgent {
      * 🔧 获取工作空间路径
      */
     getWorkspacePath(): string {
-        return this.workspacePath;
+        return this.codingContext.getCurrentWorkspace();
     }
 
     /**
@@ -110,19 +100,7 @@ export class CodingAgent extends BaseAgent {
      * 🔧 设置新的工作空间
      */
     async setWorkspacePath(newPath: string): Promise<void> {
-        this.workspacePath = newPath;
-        
-        // 重新初始化coding context
-        const newCodingContext = createCodingContext(newPath);
-        
-        // 替换现有的coding context
-        const contextIndex = this.contexts.findIndex(ctx => ctx.id === 'coding-context');
-        if (contextIndex !== -1) {
-            this.contexts[contextIndex] = newCodingContext as any;
-            
-            // 重新注册context
-            this.contextManager.registerContext(newCodingContext as any);
-        }
+        this.codingContext.switchToWorkspace(newPath);
         
         logger.info(`Workspace changed to: ${newPath}`);
         

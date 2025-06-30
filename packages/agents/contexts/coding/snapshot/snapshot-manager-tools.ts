@@ -4,7 +4,7 @@
  * Provides core snapshot management tools:
  * - ReadSnapshotTool: Read snapshot details
  * - ListSnapshotsTool: View snapshot history
- * - ConsolidateSnapshotsTool: Storage optimization (merge snapshots)
+ * - MergeSnapshotTool: Storage optimization (merge snapshots)
  * - RevertSnapshotTool: Rollback snapshots
  */
 
@@ -37,7 +37,8 @@ function getRuntime(agent?: IAgent): IRuntime | null {
 // Input schemas
 const ReadSnapshotInputSchema = z.object({
   snapshotId: z.string().describe('Snapshot ID'),
-  includeDiff: z.boolean().optional().describe('Whether to include diff content, default is true')
+  includeDiff: z.boolean().optional().describe('Whether to include diff content, default is true'),
+  returnDiffPath: z.boolean().optional().describe('Whether to return diff file path instead of content, default is false')
 });
 
 const ListSnapshotsInputSchema = z.object({
@@ -49,7 +50,7 @@ const ListSnapshotsInputSchema = z.object({
   includeDiffs: z.boolean().optional().describe('Whether to include diff content, default is false')
 });
 
-const ConsolidateSnapshotsInputSchema = z.object({
+const MergeSnapshotInputSchema = z.object({
   // Either specify exact snapshot IDs or use sequence number range (mutually exclusive)
   snapshotIds: z.array(z.string()).optional().describe('List of specific snapshot IDs to merge (mutually exclusive with sequenceNumberRange)'),
   sequenceNumberRange: z.object({
@@ -58,8 +59,7 @@ const ConsolidateSnapshotsInputSchema = z.object({
   }).optional().describe('Range of sequence numbers to merge (mutually exclusive with snapshotIds)'),
   
   title: z.string().describe('Title of the merged snapshot'),
-  description: z.string().describe('Description of the merged snapshot'),
-  deleteOriginals: z.boolean().optional().describe('Whether to delete original snapshots, default is true')
+  goal: z.string().describe('Goal/purpose of merging these snapshots')
 });
 
 const RevertSnapshotInputSchema = z.object({
@@ -78,6 +78,8 @@ const SnapshotDetailSchema = z.object({
   sequenceNumber: z.number(),
   previousSnapshotId: z.string().optional(),
   diff: z.string().optional(),
+  diffPath: z.string().optional(),
+  reverseDiffPath: z.string().optional(),
   metadata: z.object({
     filesSizeBytes: z.number(),
     linesChanged: z.number(),
@@ -102,9 +104,10 @@ const ListSnapshotsOutputSchema = z.object({
   error: z.string().optional()
 });
 
-const ConsolidateSnapshotsOutputSchema = z.object({
+const MergeSnapshotOutputSchema = z.object({
   success: z.boolean(),
-  consolidatedSnapshotId: z.string().optional(),
+  mergedSnapshotId: z.string().optional(),
+  diffPath: z.string().optional(),
   originalSnapshotIds: z.array(z.string()),
   spaceFreed: z.number(),
   message: z.string()
@@ -116,7 +119,8 @@ const RevertSnapshotOutputSchema = z.object({
   reversedDiff: z.string().optional(),
   affectedFiles: z.array(z.string()).optional(),
   conflicts: z.array(z.string()).optional(),
-  newSnapshotId: z.string().optional()
+  newSnapshotId: z.string().optional(),
+  diffPath: z.string().optional()
 });
 
 /**
@@ -149,6 +153,9 @@ export const ReadSnapshotTool = createTool({
       if (params.includeDiff === undefined) {
         params.includeDiff = true;
       }
+      if (params.returnDiffPath === undefined) {
+        params.returnDiffPath = false;
+      }
       
       // Build return data
       const snapshotDetail = {
@@ -157,13 +164,15 @@ export const ReadSnapshotTool = createTool({
         description: result.snapshot.description,
         tool: result.snapshot.tool,
         affectedFiles: result.snapshot.affectedFiles,
-        sequenceNumber: 0, // TODO: Get from complete snapshot data
-        previousSnapshotId: undefined, // TODO: Get from complete snapshot data
-        diff: params.includeDiff ? result.diff : undefined,
+        sequenceNumber: result.snapshot.sequenceNumber,
+        previousSnapshotId: result.snapshot.previousSnapshotId,
+        diff: params.includeDiff && !params.returnDiffPath ? result.diff : undefined,
+        diffPath: params.returnDiffPath ? result.snapshot.diffPath : undefined,
+        reverseDiffPath: params.returnDiffPath ? result.snapshot.reverseDiffPath : undefined,
         metadata: {
-          filesSizeBytes: 0, // TODO: Get from complete snapshot data
-          linesChanged: 0, // TODO: Get from complete snapshot data
-          executionTimeMs: 0 // TODO: Get from complete snapshot data
+          filesSizeBytes: result.snapshot.metadata?.filesSizeBytes || 0,
+          linesChanged: result.snapshot.metadata?.linesChanged || 0,
+          executionTimeMs: result.snapshot.metadata?.executionTimeMs || 0
         }
       };
       
@@ -217,7 +226,7 @@ export const ListSnapshotsTool = createTool({
       // Convert to output format - get sequenceNumber and previousSnapshotId from readSnapshotDiff
       const snapshots = [];
       for (const item of historyResult.history) {
-        // Use readSnapshotDiff to get complete snapshot data
+        // Use readSnapshotDiff to get complete snapshot data including diffPath
         const completeSnapshot = await snapshotManager.readSnapshotDiff(item.id);
         if (completeSnapshot.success && completeSnapshot.snapshot) {
           snapshots.push({
@@ -229,6 +238,8 @@ export const ListSnapshotsTool = createTool({
             sequenceNumber: completeSnapshot.snapshot.sequenceNumber,
             previousSnapshotId: completeSnapshot.snapshot.previousSnapshotId,
             diff: item.diff,
+            diffPath: completeSnapshot.snapshot.diffPath,
+            reverseDiffPath: completeSnapshot.snapshot.reverseDiffPath,
             metadata: {
               filesSizeBytes: completeSnapshot.snapshot.metadata?.filesSizeBytes || 0,
               linesChanged: item.metadata.linesChanged,
@@ -255,20 +266,16 @@ export const ListSnapshotsTool = createTool({
 });
 
 /**
- * ConsolidateSnapshotsTool - Storage optimization (merge snapshots)
+ * MergeSnapshotTool - Storage optimization (merge snapshots)
  */
-export const ConsolidateSnapshotsTool = createTool({
-  id: 'ConsolidateSnapshots',
-  name: 'ConsolidateSnapshots',
-  description: 'Merge multiple consecutive snapshots into a single snapshot for storage optimization and snapshot chain simplification',
-  inputSchema: ConsolidateSnapshotsInputSchema,
-  outputSchema: ConsolidateSnapshotsOutputSchema,
+export const MergeSnapshotTool = createTool({
+  id: 'MergeSnapshot',
+  name: 'MergeSnapshot',
+  description: 'Merge multiple consecutive snapshots into a single consolidated snapshot for advanced workflow organization and storage optimization. CRITICAL FEATURES: 1) Combines multiple snapshots into one optimized snapshot with combined diff; 2) Automatically renumbers subsequent snapshots to maintain sequence continuity (e.g., merge snapshots 1,2 → remaining snapshots 3,4,5 become 2,3,4); 3) Always deletes original snapshots after successful merge; 4) Reduces prompt token usage and improves execution efficiency; 5) Essential for organizing development phases into logical units. Use after completing development phases to keep snapshot history clean and organized.',
+  inputSchema: MergeSnapshotInputSchema,
+  outputSchema: MergeSnapshotOutputSchema,
   async: true,
   execute: async (params, agent?: IAgent) => {
-    if (params.deleteOriginals === undefined) {
-      params.deleteOriginals = true;
-    }
-
     try {
       const workspacePath = getWorkspacePath(agent);
       const snapshotManager = new SnapshotManager(workspacePath);
@@ -318,17 +325,32 @@ export const ConsolidateSnapshotsTool = createTool({
          snapshotIds = params.snapshotIds!;
         }
       
-      // Execute snapshot merge
+      // Execute snapshot merge (always delete originals)
       const result = await snapshotManager.consolidateSnapshots({
         snapshotIds,
         title: params.title,
-        description: params.description,
-        deleteOriginals: params.deleteOriginals
+        description: params.goal,
+        deleteOriginals: true
       });
+      
+      // Force cache reload after merge to ensure sequence numbers are up-to-date
+      if (result.success) {
+        await snapshotManager.initialize(); // This will reload the cache
+      }
+      
+      // If successful, get the diffPath from the consolidated snapshot
+      let diffPath: string | undefined;
+      if (result.success && result.consolidatedSnapshotId) {
+        const snapshotResult = await snapshotManager.readSnapshotDiff(result.consolidatedSnapshotId);
+        if (snapshotResult.success && snapshotResult.snapshot) {
+          diffPath = snapshotResult.snapshot.diffPath;
+        }
+      }
       
       return {
         success: result.success,
-        consolidatedSnapshotId: result.consolidatedSnapshotId,
+        mergedSnapshotId: result.consolidatedSnapshotId,
+        diffPath,
         originalSnapshotIds: result.originalSnapshotIds,
         spaceFreed: result.spaceFreed,
         message: result.message || (result.success ? 'Merge successful' : 'Merge failed')
@@ -383,13 +405,23 @@ export const RevertSnapshotTool = createTool({
         force: params.force
       }, runtime);
       
+      // If successful and a new snapshot was created, get its diffPath
+      let diffPath: string | undefined;
+      if (result.success && result.newSnapshotId) {
+        const snapshotResult = await snapshotManager.readSnapshotDiff(result.newSnapshotId);
+        if (snapshotResult.success && snapshotResult.snapshot) {
+          diffPath = snapshotResult.snapshot.diffPath;
+        }
+      }
+      
       // Ensure message is always a string
       return {
         success: result.success,
         message: result.message || (result.success ? 'Rollback successful' : 'Rollback failed'),
         reversedDiff: result.reversedDiff,
         affectedFiles: result.affectedFiles,
-        newSnapshotId: result.newSnapshotId
+        newSnapshotId: result.newSnapshotId,
+        diffPath
       };
     } catch (error) {
       return {
@@ -404,7 +436,7 @@ export const RevertSnapshotTool = createTool({
 export const snapshotManagerTools = [
   ReadSnapshotTool,
   ListSnapshotsTool,
-  ConsolidateSnapshotsTool,
+  MergeSnapshotTool,
   RevertSnapshotTool
 ];
 

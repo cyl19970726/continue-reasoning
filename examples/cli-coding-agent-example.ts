@@ -1,4 +1,4 @@
-import { LogLevel, globalEventBus, logger, OPENAI_MODELS, DEEPSEEK_MODELS } from '@continue-reasoning/core';
+import { LogLevel, logger, OPENAI_MODELS, DEEPSEEK_MODELS } from '@continue-reasoning/core';
 import { CodingAgent } from '@continue-reasoning/agents';
 import { createCLIClient, createCLIClientWithSession } from '../packages/cli-client/src/index';
 import { SessionManager } from '../packages/core/session/sessionManager';
@@ -14,7 +14,7 @@ async function cliCodingAgentExample() {
     console.log('🚀 CLI + CodingAgent Integration Example\n');
     
     // 设置工作空间
-    const workspacePath = path.join(process.cwd(), 'cli-coding-workspace');
+    const workspacePath = path.join(process.cwd(), 'cli-workspace');
     if (!fs.existsSync(workspacePath)) {
         fs.mkdirSync(workspacePath, { recursive: true });
         console.log(`📁 Created workspace: ${workspacePath}`);
@@ -34,6 +34,9 @@ async function cliCodingAgentExample() {
                 model: OPENAI_MODELS.O3,
                 enableParallelToolCalls: true,
                 temperature: 0.1,
+                promptProcessorOptions:{
+                    type: 'enhanced',
+                }
             },
             [],
         );

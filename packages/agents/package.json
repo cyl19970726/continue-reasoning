@@ -1,16 +1,21 @@
 {
-  "name": "@continue-reasoning/agents",
+  "name": "@continue-reasoning/cr-coding",
   "version": "0.1.0",
-  "description": "Agent implementations for continue-reasoning framework",
-  "main": "index.ts",
-  "types": "index.ts",
+  "description": "Interactive CLI coding assistant for continue-reasoning framework",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "cr": "./dist/start.js"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "vitest"
+    "test": "vitest",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@continue-reasoning/core": "workspace:*"
+    "@continue-reasoning/core": "workspace:*",
+    "@continue-reasoning/cli-client": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20",

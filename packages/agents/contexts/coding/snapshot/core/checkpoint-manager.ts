@@ -1,5 +1,6 @@
 /**
- * Checkpoint Manager - Handles file checkpoints and unknown change detection
+ * Checkpoint Manager - Handles file checkpoints with hash-based tracking
+ * Only stores file hashes instead of full content for efficiency
  */
 
 import * as fs from 'fs/promises';
@@ -28,7 +29,6 @@ export class CheckpointManager {
    */
   async initialize(): Promise<void> {
     await fs.mkdir(this.checkpointsDir, { recursive: true });
-    await fs.mkdir(path.join(this.checkpointsDir, 'latest'), { recursive: true });
     
     // Create checkpoint metadata if it doesn't exist
     try {
@@ -44,51 +44,88 @@ export class CheckpointManager {
   }
 
   /**
-   * Create file checkpoint after successful snapshot
+   * Create initial baseline checkpoint for workspace
+   */
+  async createInitialCheckpoint(generateId: () => string): Promise<string> {
+    const checkpointId = generateId();
+    const startTime = Date.now();
+    
+    try {
+      // Scan all files in workspace and calculate hashes
+      const allFiles = await this.scanWorkspaceFiles();
+      const fileHashes = await this.calculateFileHashes(allFiles);
+      
+             // Optionally store file contents if configured
+       let fileContents: Record<string, string> | undefined;
+       if (this.config.saveLatestFiles) {
+         fileContents = await this.readMultipleFileContents(allFiles);
+       }
+      
+      const checkpoint: CheckpointData = {
+        id: checkpointId,
+        timestamp: new Date().toISOString(),
+        snapshotId: 'initial', // Special marker for initial checkpoint
+        fileHashes,
+        fileContents,
+        metadata: {
+          totalFiles: Object.keys(fileHashes).length,
+          creationTimeMs: Date.now() - startTime
+        }
+      };
+      
+      // Save checkpoint file
+      const checkpointPath = path.join(this.checkpointsDir, `${checkpointId}.json`);
+      await fs.writeFile(checkpointPath, JSON.stringify(checkpoint, null, 2));
+      
+      // Update metadata
+      await this.updateCheckpointMetadata(checkpointId);
+      
+      // Update memory cache
+      this.latestCheckpoint = checkpoint;
+      
+      console.log(`📸 Created initial checkpoint with ${checkpoint.metadata.totalFiles} files`);
+      
+      return checkpointId;
+    } catch (error) {
+      console.error('Failed to create initial checkpoint:', error);
+      throw new Error(`Failed to create initial checkpoint: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Create file checkpoint after successful snapshot (hash-based)
    */
   async createFileCheckpoint(snapshotId: string, affectedFiles: string[], generateId: () => string): Promise<string> {
     const startTime = Date.now();
     const checkpointId = generateId();
     
     try {
-      const filesContent: Record<string, string> = {};
-      let totalSizeBytes = 0;
+      // Start with hashes from previous checkpoint (if any)
+      let fileHashes: Record<string, string> = {};
+      let fileContents: Record<string, string> | undefined;
       
-      // Start with files from previous checkpoint (if any) to maintain complete state
       if (this.latestCheckpoint) {
-        for (const [filePath, content] of Object.entries(this.latestCheckpoint.files)) {
-          filesContent[filePath] = content;
-          totalSizeBytes += content.length;
+        fileHashes = { ...this.latestCheckpoint.fileHashes };
+        // Copy existing file contents if we're storing them
+        if (this.config.saveLatestFiles && this.latestCheckpoint.fileContents) {
+          fileContents = { ...this.latestCheckpoint.fileContents };
         }
       }
       
-      // Read and update file contents for affected files
-      for (const filePath of affectedFiles) {
-        try {
-          const fullPath = path.isAbsolute(filePath) ? filePath : path.join(this.workspacePath, filePath);
-          const content = await fs.readFile(fullPath, 'utf-8');
-          
-          // Update or add the file content
-          if (filesContent[filePath] !== content) {
-            // Only update size if content changed
-            if (filesContent[filePath]) {
-              totalSizeBytes -= filesContent[filePath].length;
-            }
-            filesContent[filePath] = content;
-            totalSizeBytes += content.length;
-          }
-          
-          // Also store in latest directory for quick access
-          const latestFilePath = path.join(this.checkpointsDir, 'latest', path.basename(filePath));
-          await fs.mkdir(path.dirname(latestFilePath), { recursive: true });
-          await fs.writeFile(latestFilePath, content);
-        } catch (error) {
-          console.warn(`Failed to read file for checkpoint: ${filePath}`, error);
-          // If file doesn't exist, remove it from checkpoint
-          if (filesContent[filePath]) {
-            totalSizeBytes -= filesContent[filePath].length;
-            delete filesContent[filePath];
-          }
+      // Update hashes for affected files
+      const updatedHashes = await this.calculateFileHashes(affectedFiles);
+      for (const [filePath, hash] of Object.entries(updatedHashes)) {
+        fileHashes[filePath] = hash;
+      }
+      
+      // Update file contents for affected files if configured
+      if (this.config.saveLatestFiles) {
+        if (!fileContents) {
+          fileContents = {};
+        }
+        const updatedContents = await this.readMultipleFileContents(affectedFiles);
+        for (const [filePath, content] of Object.entries(updatedContents)) {
+          fileContents[filePath] = content;
         }
       }
       
@@ -96,10 +133,10 @@ export class CheckpointManager {
         id: checkpointId,
         timestamp: new Date().toISOString(),
         snapshotId,
-        files: filesContent,
+        fileHashes,
+        fileContents,
         metadata: {
-          totalFiles: Object.keys(filesContent).length,
-          totalSizeBytes,
+          totalFiles: Object.keys(fileHashes).length,
           creationTimeMs: Date.now() - startTime
         }
       };
@@ -173,7 +210,7 @@ export class CheckpointManager {
       
       // Compare with expected state (from last checkpoint or current file hashes)
       const expectedHashes = this.latestCheckpoint ? 
-        await this.getHashesFromCheckpoint(this.latestCheckpoint, filesToCheck) :
+        this.latestCheckpoint.fileHashes :
         currentFileHashes;
 
       for (const filePath of filesToCheck) {
@@ -189,7 +226,7 @@ export class CheckpointManager {
           // Generate diff for the unknown change
           let diff: string | undefined;
           try {
-            const expectedContent = this.latestCheckpoint?.files[filePath] || '';
+            const expectedContent = ''; // We don't store content anymore, use empty
             const actualContent = await this.readFileContent(filePath);
             diff = await generateUnifiedDiff(expectedContent, actualContent, {
               oldPath: `a/${filePath}`,
@@ -316,7 +353,7 @@ export class CheckpointManager {
     return {
       hasLatestCheckpoint: !!this.latestCheckpoint,
       latestCheckpointFiles: this.latestCheckpoint?.metadata.totalFiles || 0,
-      latestCheckpointSize: this.latestCheckpoint?.metadata.totalSizeBytes || 0
+      latestCheckpointId: this.latestCheckpoint?.id
     };
   }
 
@@ -367,21 +404,6 @@ export class CheckpointManager {
     }
   }
 
-  private async getHashesFromCheckpoint(checkpoint: CheckpointData, filePaths: string[]): Promise<Record<string, string>> {
-    const crypto = await import('crypto');
-    const hashes: Record<string, string> = {};
-    
-    for (const filePath of filePaths) {
-      const content = checkpoint.files[filePath];
-      if (content !== undefined) {
-        const hash = crypto.createHash('sha256').update(content).digest('hex').substring(0, 8);
-        hashes[filePath] = hash;
-      }
-    }
-    
-    return hashes;
-  }
-
   private async readFileContent(filePath: string): Promise<string> {
     try {
       const fullPath = path.isAbsolute(filePath) ? filePath : path.join(this.workspacePath, filePath);
@@ -397,5 +419,88 @@ export class CheckpointManager {
    */
   private async getFilesToCheckForUnknownChanges(affectedFiles: string[]): Promise<string[]> {
     return affectedFiles;
+  }
+
+  /**
+   * Scan workspace files recursively, returning relative paths
+   */
+  private async scanWorkspaceFiles(dir: string = ''): Promise<string[]> {
+    const files: string[] = [];
+    
+    try {
+      const fullDir = path.join(this.workspacePath, dir);
+      const entries = await fs.readdir(fullDir, { withFileTypes: true });
+      
+      for (const entry of entries) {
+        const relativePath = dir ? path.join(dir, entry.name) : entry.name;
+        
+        // Skip ignored directories
+        if (entry.isDirectory()) {
+          if (this.shouldSkipDirectory(entry.name)) {
+            continue;
+          }
+          // Recursively scan subdirectory
+          const subFiles = await this.scanWorkspaceFiles(relativePath);
+          files.push(...subFiles);
+        } else if (entry.isFile()) {
+          // Skip ignored file types
+          if (!this.shouldSkipFile(entry.name)) {
+            files.push(relativePath);
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(`Failed to scan directory ${dir}:`, error);
+    }
+    
+    return files;
+  }
+
+  private shouldSkipDirectory(name: string): boolean {
+    return [
+      '.continue-reasoning',
+      'node_modules',
+      '.git',
+      '.DS_Store'
+    ].includes(name);
+  }
+
+  private shouldSkipFile(name: string): boolean {
+    return name.endsWith('.log') || name === '.DS_Store';
+  }
+
+  /**
+   * Calculate file hashes for given file paths
+   */
+  private async calculateFileHashes(filePaths: string[]): Promise<Record<string, string>> {
+    const crypto = await import('crypto');
+    const hashes: Record<string, string> = {};
+    
+    for (const filePath of filePaths) {
+      try {
+        const fullPath = path.isAbsolute(filePath) ? filePath : path.join(this.workspacePath, filePath);
+        const content = await fs.readFile(fullPath, 'utf-8');
+        const hash = crypto.createHash('sha256').update(content).digest('hex').substring(0, 8);
+        hashes[filePath] = hash;
+      } catch (error) {
+        // File doesn't exist or can't be read, use empty hash
+        hashes[filePath] = '';
+      }
+    }
+    
+    return hashes;
+  }
+
+  /**
+   * Read multiple file contents for checkpoint storage
+   */
+  private async readMultipleFileContents(filePaths: string[]): Promise<Record<string, string>> {
+    const contents: Record<string, string> = {};
+    
+    for (const filePath of filePaths) {
+      contents[filePath] = await this.readFileContent(filePath);
+    }
+    
+    return contents;
   }
 } 

@@ -1,5 +1,5 @@
 import { createThinkTextAgent } from "./function-call";
-import { createCalculatorTool, ThinkTool } from "./tools";
+import { createCalculatorTool, ThinkTool } from "./tools/index";
 import { createWeatherTool } from "./tools/weather-tool";
 import { OpenAIWrapper, OPENAI_MODELS } from "@continue-reasoning/core";
 

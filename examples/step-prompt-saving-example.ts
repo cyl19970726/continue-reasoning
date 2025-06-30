@@ -1,4 +1,4 @@
-import { LogLevel, globalEventBus, logger, OPENAI_MODELS, DEEPSEEK_MODELS } from '../packages/core';
+import { LogLevel, logger, OPENAI_MODELS, DEEPSEEK_MODELS } from '../packages/core';
 import { CodingAgent } from '../packages/agents';
 import path from 'path';
 import fs from 'fs';
@@ -8,7 +8,6 @@ import { createEnhancedPromptProcessor } from '../packages/core/prompts/prompt-p
 async function stepPromptSavingExample() {
     console.log('📝 Step-by-Step Prompt Saving Example\n');
 
-    await globalEventBus.start();
     
     const workspacePath = path.join(process.cwd(), 'test-step-prompt-saving-think');
     if (!fs.existsSync(workspacePath)) {
@@ -28,7 +27,7 @@ async function stepPromptSavingExample() {
             enableParallelToolCalls: true,
             temperature: 0.1,
             promptProcessorOptions: {
-                type: 'standard'
+                type: 'enhanced'
             }
         },
         [],
@@ -192,7 +191,6 @@ async function stepPromptSavingExample() {
     } catch (error) {
         console.error('❌ Example failed:', error);
     } finally {
-        await globalEventBus.stop();
     }
 }
 
