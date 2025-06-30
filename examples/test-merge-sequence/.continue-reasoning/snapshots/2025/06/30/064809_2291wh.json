@@ -1,0 +1,59 @@
+{
+  "id": "2291wh",
+  "timestamp": "2025-06-29T22:48:09.581Z",
+  "description": "Middle Merge: Merge snapshots 2, 3, and 4 to test sequence renumbering",
+  "tool": "ConsolidateSnapshots",
+  "affectedFiles": [
+    "file1.txt",
+    "file2.txt"
+  ],
+  "diff": "[Stored in 2025/06/30/diffs/064809_2291wh_diff.md]",
+  "previousSnapshotId": "y892wz",
+  "sequenceNumber": 2,
+  "sequenceRange": [
+    2,
+    4
+  ],
+  "baseFileHashes": {},
+  "resultFileHashes": {
+    "file2.txt": "b6737bca"
+  },
+  "context": {
+    "sessionId": "consolidation",
+    "workspacePath": "/Users/hhh0x/agent/develop/continue-reasoning/examples/test-merge-sequence",
+    "toolParams": {
+      "originalSnapshotIds": [
+        "fghzvp",
+        "jkgmho",
+        "72e4ug"
+      ],
+      "consolidationOptions": {
+        "snapshotIds": [
+          "fghzvp",
+          "jkgmho",
+          "72e4ug"
+        ],
+        "title": "Middle Merge",
+        "description": "Merge snapshots 2, 3, and 4 to test sequence renumbering",
+        "deleteOriginals": true
+      }
+    }
+  },
+  "metadata": {
+    "filesSizeBytes": 402,
+    "linesChanged": 21,
+    "executionTimeMs": 0
+  },
+  "consolidatedFrom": [
+    "fghzvp",
+    "jkgmho",
+    "72e4ug"
+  ],
+  "consolidationMetadata": {
+    "originalCount": 3,
+    "totalLinesChanged": 21,
+    "consolidationTimestamp": "2025-06-29T22:48:09.581Z",
+    "spaceFreed": 264
+  },
+  "diffPath": "2025/06/30/diffs/064809_2291wh_diff.md"
+}

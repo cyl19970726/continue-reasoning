@@ -1,0 +1,9 @@
+
+# Test ignore patterns
+*.log
+*.tmp
+.DS_Store
+node_modules/**
+logs/**
+.continue-reasoning/**
+.snapshotignore

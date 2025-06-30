@@ -1,0 +1,35 @@
+{
+  "id": "y892wz",
+  "timestamp": "2025-06-29T22:48:09.381Z",
+  "description": "Unknown changes detected in 1 file(s): file1.txt",
+  "tool": "UnknownChangeIntegration",
+  "affectedFiles": [
+    "file1.txt"
+  ],
+  "diff": "[Stored in 2025/06/30/diffs/064809_y892wz_diff.md]",
+  "reverseDiff": "",
+  "sequenceNumber": 1,
+  "baseFileHashes": {},
+  "resultFileHashes": {
+    "file1.txt": "e492bf85"
+  },
+  "context": {
+    "sessionId": "default",
+    "workspacePath": "/Users/hhh0x/agent/develop/continue-reasoning/examples/test-merge-sequence",
+    "toolParams": {
+      "unknownChangeDetails": [
+        {
+          "filePath": "file1.txt",
+          "changeType": "added",
+          "diff": "--- /dev/null\n+++ b/file1.txt\n@@ -1,0 +1,5 @@\n+This is file 1\n+Content line 1\n+Content line 2\n+Unique content for file 1\n+"
+        }
+      ]
+    }
+  },
+  "metadata": {
+    "filesSizeBytes": 122,
+    "linesChanged": 7,
+    "executionTimeMs": 0
+  },
+  "diffPath": "2025/06/30/diffs/064809_y892wz_diff.md"
+}

@@ -1,0 +1,94 @@
+{
+  "snapshots": [
+    {
+      "id": "a03hvy",
+      "timestamp": "2025-06-29T15:28:32.930Z",
+      "tool": "UnknownChangeIntegration",
+      "affectedFiles": [
+        "simple1.txt"
+      ],
+      "sequenceNumber": 1
+    },
+    {
+      "id": "c7yu38",
+      "timestamp": "2025-06-29T15:28:32.970Z",
+      "tool": "ApplyWholeFileEdit",
+      "affectedFiles": [
+        "simple2.txt"
+      ],
+      "sequenceNumber": 3,
+      "previousSnapshotId": "j2e9ge"
+    },
+    {
+      "id": "kgzi2e",
+      "timestamp": "2025-06-29T15:28:32.998Z",
+      "tool": "UnknownChangeIntegration",
+      "affectedFiles": [
+        "simple3.txt"
+      ],
+      "sequenceNumber": 4,
+      "previousSnapshotId": "c7yu38"
+    },
+    {
+      "id": "bo8z0c",
+      "timestamp": "2025-06-29T15:28:32.999Z",
+      "tool": "ApplyWholeFileEdit",
+      "affectedFiles": [
+        "simple3.txt"
+      ],
+      "sequenceNumber": 5,
+      "previousSnapshotId": "kgzi2e"
+    },
+    {
+      "id": "0jwytp",
+      "timestamp": "2025-06-29T15:28:33.028Z",
+      "tool": "UnknownChangeIntegration",
+      "affectedFiles": [
+        "simple4.txt"
+      ],
+      "sequenceNumber": 6,
+      "previousSnapshotId": "bo8z0c"
+    },
+    {
+      "id": "p5s5bh",
+      "timestamp": "2025-06-29T15:28:33.029Z",
+      "tool": "ApplyWholeFileEdit",
+      "affectedFiles": [
+        "simple4.txt"
+      ],
+      "sequenceNumber": 7,
+      "previousSnapshotId": "0jwytp"
+    },
+    {
+      "id": "yywqcj",
+      "timestamp": "2025-06-29T15:28:33.056Z",
+      "tool": "UnknownChangeIntegration",
+      "affectedFiles": [
+        "simple5.txt"
+      ],
+      "sequenceNumber": 8,
+      "previousSnapshotId": "p5s5bh"
+    },
+    {
+      "id": "v332f2",
+      "timestamp": "2025-06-29T15:28:33.057Z",
+      "tool": "ApplyWholeFileEdit",
+      "affectedFiles": [
+        "simple5.txt"
+      ],
+      "sequenceNumber": 9,
+      "previousSnapshotId": "yywqcj"
+    },
+    {
+      "id": "j2e9ge",
+      "timestamp": "2025-06-29T15:28:33.062Z",
+      "tool": "ConsolidateSnapshots",
+      "affectedFiles": [
+        "simple1.txt",
+        "simple2.txt"
+      ],
+      "sequenceNumber": 2,
+      "previousSnapshotId": "a03hvy"
+    }
+  ]
+}

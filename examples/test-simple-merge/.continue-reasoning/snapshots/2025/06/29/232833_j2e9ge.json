@@ -1,0 +1,56 @@
+{
+  "id": "j2e9ge",
+  "timestamp": "2025-06-29T15:28:33.062Z",
+  "description": "Simple Merge: Merge snapshots 2 and 3",
+  "tool": "ConsolidateSnapshots",
+  "affectedFiles": [
+    "simple1.txt",
+    "simple2.txt"
+  ],
+  "diff": "[Stored in 2025/06/29/diffs/232833_j2e9ge_diff.md]",
+  "previousSnapshotId": "a03hvy",
+  "sequenceNumber": 2,
+  "sequenceRange": [
+    2,
+    3
+  ],
+  "baseFileHashes": {},
+  "resultFileHashes": {
+    "simple2.txt": "c5ad98ab"
+  },
+  "context": {
+    "sessionId": "consolidation",
+    "workspacePath": "/Users/hhh0x/agent/develop/continue-reasoning/examples/test-simple-merge",
+    "toolParams": {
+      "originalSnapshotIds": [
+        "2h4hi1",
+        "1yh6eh"
+      ],
+      "consolidationOptions": {
+        "snapshotIds": [
+          "2h4hi1",
+          "1yh6eh"
+        ],
+        "title": "Simple Merge",
+        "description": "Merge snapshots 2 and 3",
+        "deleteOriginals": true
+      }
+    }
+  },
+  "metadata": {
+    "filesSizeBytes": 235,
+    "linesChanged": 10,
+    "executionTimeMs": 0
+  },
+  "consolidatedFrom": [
+    "2h4hi1",
+    "1yh6eh"
+  ],
+  "consolidationMetadata": {
+    "originalCount": 2,
+    "totalLinesChanged": 10,
+    "consolidationTimestamp": "2025-06-29T15:28:33.062Z",
+    "spaceFreed": 117
+  },
+  "diffPath": "2025/06/29/diffs/232833_j2e9ge_diff.md"
+}

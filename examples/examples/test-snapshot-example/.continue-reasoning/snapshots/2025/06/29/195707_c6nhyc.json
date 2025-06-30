@@ -1,0 +1,54 @@
+{
+  "id": "c6nhyc",
+  "timestamp": "2025-06-29T11:57:07.514Z",
+  "description": "Consolidate snapshots: Consolidate snapshots",
+  "tool": "ConsolidateSnapshots",
+  "affectedFiles": [
+    "write.py"
+  ],
+  "diff": "[Stored in 2025/06/29/diffs/195707_c6nhyc_diff.md]",
+  "sequenceNumber": 1,
+  "sequenceRange": [
+    1,
+    2
+  ],
+  "baseFileHashes": {},
+  "resultFileHashes": {
+    "write.py": "190a2034"
+  },
+  "context": {
+    "sessionId": "consolidation",
+    "workspacePath": "/Users/hhh0x/agent/develop/continue-reasoning/examples/examples/test-snapshot-example",
+    "toolParams": {
+      "originalSnapshotIds": [
+        "mf38w6",
+        "n2h3lb"
+      ],
+      "consolidationOptions": {
+        "snapshotIds": [
+          "mf38w6",
+          "n2h3lb"
+        ],
+        "title": "Consolidate snapshots",
+        "description": "Consolidate snapshots",
+        "deleteOriginals": false
+      }
+    }
+  },
+  "metadata": {
+    "filesSizeBytes": 1353,
+    "linesChanged": 48,
+    "executionTimeMs": 0
+  },
+  "consolidatedFrom": [
+    "mf38w6",
+    "n2h3lb"
+  ],
+  "consolidationMetadata": {
+    "originalCount": 2,
+    "totalLinesChanged": 48,
+    "consolidationTimestamp": "2025-06-29T11:57:07.514Z",
+    "spaceFreed": 1312
+  },
+  "diffPath": "2025/06/29/diffs/195707_c6nhyc_diff.md"
+}

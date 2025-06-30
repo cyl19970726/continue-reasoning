@@ -1,0 +1,25 @@
+{
+  "checkpoints": [
+    {
+      "id": "r7ss5o",
+      "timestamp": "2025-06-29T15:28:33.001Z"
+    },
+    {
+      "id": "8sc0l9",
+      "timestamp": "2025-06-29T15:28:33.029Z"
+    },
+    {
+      "id": "lnal4s",
+      "timestamp": "2025-06-29T15:28:33.030Z"
+    },
+    {
+      "id": "8hku59",
+      "timestamp": "2025-06-29T15:28:33.057Z"
+    },
+    {
+      "id": "zm6tfn",
+      "timestamp": "2025-06-29T15:28:33.058Z"
+    }
+  ],
+  "latestCheckpointId": "zm6tfn"
+}

@@ -1,0 +1,4 @@
+This is file 6
+Content line 1
+Content line 2
+Unique content for file 6

@@ -1,0 +1,93 @@
+{
+  "snapshots": [
+    {
+      "id": "mf38w6",
+      "timestamp": "2025-06-29T11:57:07.112Z",
+      "tool": "UnknownChangeIntegration",
+      "affectedFiles": [
+        "write.py"
+      ],
+      "sequenceNumber": 1
+    },
+    {
+      "id": "n2h3lb",
+      "timestamp": "2025-06-29T11:57:07.121Z",
+      "tool": "ApplyWholeFileEdit",
+      "affectedFiles": [
+        "write.py"
+      ],
+      "sequenceNumber": 2,
+      "previousSnapshotId": "mf38w6"
+    },
+    {
+      "id": "5yk1ac",
+      "timestamp": "2025-06-29T11:57:07.314Z",
+      "tool": "UnknownChangeIntegration",
+      "affectedFiles": [
+        "text.txt",
+        "write.py"
+      ],
+      "sequenceNumber": 3,
+      "previousSnapshotId": "c6nhyc"
+    },
+    {
+      "id": "q91i2c",
+      "timestamp": "2025-06-29T11:57:07.316Z",
+      "tool": "ApplyWholeFileEdit",
+      "affectedFiles": [
+        "write.py"
+      ],
+      "sequenceNumber": 4,
+      "previousSnapshotId": "5yk1ac"
+    },
+    {
+      "id": "rf95ln",
+      "timestamp": "2025-06-29T11:57:07.500Z",
+      "tool": "UnknownChangeIntegration",
+      "affectedFiles": [
+        "txt2.txt"
+      ],
+      "sequenceNumber": 5,
+      "previousSnapshotId": "q91i2c"
+    },
+    {
+      "id": "si2plp",
+      "timestamp": "2025-06-29T11:57:07.502Z",
+      "tool": "Delete",
+      "affectedFiles": [
+        "write.py"
+      ],
+      "sequenceNumber": 6,
+      "previousSnapshotId": "rf95ln"
+    },
+    {
+      "id": "7hnugv",
+      "timestamp": "2025-06-29T11:57:07.505Z",
+      "tool": "Delete",
+      "affectedFiles": [
+        "text.txt"
+      ],
+      "sequenceNumber": 7,
+      "previousSnapshotId": "si2plp"
+    },
+    {
+      "id": "ash8vs",
+      "timestamp": "2025-06-29T11:57:07.506Z",
+      "tool": "Delete",
+      "affectedFiles": [
+        "txt2.txt"
+      ],
+      "sequenceNumber": 8,
+      "previousSnapshotId": "7hnugv"
+    },
+    {
+      "id": "c6nhyc",
+      "timestamp": "2025-06-29T11:57:07.514Z",
+      "tool": "ConsolidateSnapshots",
+      "affectedFiles": [
+        "write.py"
+      ],
+      "sequenceNumber": 1
+    }
+  ]
+}

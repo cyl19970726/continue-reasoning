@@ -1,0 +1,17 @@
+{
+  "id": "ysstsi",
+  "timestamp": "2025-06-29T15:28:32.942Z",
+  "snapshotId": "2h4hi1",
+  "fileHashes": {
+    ".snapshotignore": "0d131273",
+    "simple1.txt": "969274e4"
+  },
+  "fileContents": {
+    ".snapshotignore": "\n# Test ignore patterns\n*.log\n*.tmp\n.DS_Store\nnode_modules/**\nlogs/**\n.continue-reasoning/**\n.snapshotignore\n",
+    "simple1.txt": "Simple file 1\nContent for file 1\n"
+  },
+  "metadata": {
+    "totalFiles": 2,
+    "creationTimeMs": 1
+  }
+}

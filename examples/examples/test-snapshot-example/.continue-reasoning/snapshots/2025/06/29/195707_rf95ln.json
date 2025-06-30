@@ -1,0 +1,40 @@
+{
+  "id": "rf95ln",
+  "timestamp": "2025-06-29T11:57:07.500Z",
+  "description": "Unknown changes detected in 1 file(s): txt2.txt",
+  "tool": "UnknownChangeIntegration",
+  "affectedFiles": [
+    "txt2.txt"
+  ],
+  "diff": "[Stored in 2025/06/29/diffs/195707_rf95ln_diff.md]",
+  "reverseDiff": "",
+  "previousSnapshotId": "q91i2c",
+  "sequenceNumber": 5,
+  "baseFileHashes": {
+    ".snapshotignore": "5c0d3220",
+    "write.py": "c254911c",
+    "text.txt": "0135cff9"
+  },
+  "resultFileHashes": {
+    "txt2.txt": "63597ac6"
+  },
+  "context": {
+    "sessionId": "default",
+    "workspacePath": "/Users/hhh0x/agent/develop/continue-reasoning/examples/examples/test-snapshot-example",
+    "toolParams": {
+      "unknownChangeDetails": [
+        {
+          "filePath": "txt2.txt",
+          "changeType": "added",
+          "diff": "--- /dev/null\n+++ b/txt2.txt\n@@ -1,0 +1,1 @@\n+I want to create the best coding agent"
+        }
+      ]
+    }
+  },
+  "metadata": {
+    "filesSizeBytes": 84,
+    "linesChanged": 3,
+    "executionTimeMs": 0
+  },
+  "diffPath": "2025/06/29/diffs/195707_rf95ln_diff.md"
+}

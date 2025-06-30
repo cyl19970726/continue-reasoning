@@ -1,0 +1,21 @@
+{
+  "id": "r7ss5o",
+  "timestamp": "2025-06-29T15:28:33.000Z",
+  "snapshotId": "bo8z0c",
+  "fileHashes": {
+    ".snapshotignore": "0d131273",
+    "simple1.txt": "969274e4",
+    "simple2.txt": "c5ad98ab",
+    "simple3.txt": "6500f321"
+  },
+  "fileContents": {
+    ".snapshotignore": "\n# Test ignore patterns\n*.log\n*.tmp\n.DS_Store\nnode_modules/**\nlogs/**\n.continue-reasoning/**\n.snapshotignore\n",
+    "simple1.txt": "Simple file 1\nContent for file 1\n",
+    "simple2.txt": "Simple file 2\nContent for file 2\n",
+    "simple3.txt": "Simple file 3\nContent for file 3\n"
+  },
+  "metadata": {
+    "totalFiles": 4,
+    "creationTimeMs": 0
+  }
+}

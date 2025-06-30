@@ -1,0 +1,51 @@
+{
+  "id": "btxks4",
+  "timestamp": "2025-06-29T22:48:09.587Z",
+  "description": "Final Merge: Merge the last two snapshots to test end-of-chain merging",
+  "tool": "ConsolidateSnapshots",
+  "affectedFiles": [
+    "file3.txt",
+    "file4.txt"
+  ],
+  "diff": "",
+  "previousSnapshotId": "o4cw1p",
+  "sequenceNumber": 4,
+  "sequenceRange": [
+    4,
+    5
+  ],
+  "context": {
+    "sessionId": "consolidation",
+    "workspacePath": "/Users/hhh0x/agent/develop/continue-reasoning/examples/test-merge-sequence",
+    "toolParams": {
+      "originalSnapshotIds": [
+        "yb2r8m",
+        "nz2pv9"
+      ],
+      "consolidationOptions": {
+        "snapshotIds": [
+          "yb2r8m",
+          "nz2pv9"
+        ],
+        "title": "Final Merge",
+        "description": "Merge the last two snapshots to test end-of-chain merging",
+        "deleteOriginals": true
+      }
+    }
+  },
+  "metadata": {
+    "filesSizeBytes": 0,
+    "linesChanged": 0,
+    "executionTimeMs": 0
+  },
+  "consolidatedFrom": [
+    "yb2r8m",
+    "nz2pv9"
+  ],
+  "consolidationMetadata": {
+    "originalCount": 2,
+    "totalLinesChanged": 0,
+    "consolidationTimestamp": "2025-06-29T22:48:09.587Z",
+    "spaceFreed": 0
+  }
+}
