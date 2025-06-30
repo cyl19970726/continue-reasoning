@@ -1,4 +1,0 @@
-This is file 2
-Content line 1
-Content line 2
-Unique content for file 2
