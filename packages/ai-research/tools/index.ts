@@ -105,6 +105,9 @@ export function createTimeTool(): TimeTool {
   return new TimeTool();
 }
 
+// 从其他文件导出
+export { ThinkTool as ThinkToolFromFile } from './think';
+
 export function createBasicTools(): [CalculatorTool, ThinkTool, TimeTool] {
   return [
     createCalculatorTool(),

@@ -1,3 +1,4 @@
+// File path: packages/cli-client/src/utils/file-importer.ts
 import * as fs from 'fs';
 import * as path from 'path';
 import { getWorkspaceDirectory } from './workspace';
@@ -73,10 +74,13 @@ export class FileImporter {
     for (let i = matches.length - 1; i >= 0; i--) {
       const match = matches[i];
       const fullMatch = match[0]; // 完整匹配 "@path"
-      const filePath = match[1].replace(/^["']|["']$/g, ''); // 移除引号
+      const originalFilePath = match[1].replace(/^["']|["']$/g, ''); // 移除引号
       
       try {
-        const importResult = await this.importFileOrDirectory(filePath);
+        // 标准化路径用于显示
+        const normalizedDisplayPath = this.normalizePathFromWorkspace(originalFilePath);
+        
+        const importResult = await this.importFileOrDirectory(originalFilePath);
         
         if (importResult.content) {
           // 替换 @file_path 为实际内容
@@ -85,12 +89,13 @@ export class FileImporter {
                           replacement + 
                           processedInput.substring(match.index! + fullMatch.length);
           
-          console.log(`✅ Imported: ${filePath} (${importResult.files.length} files)`);
+          console.log(`✅ Imported: ${normalizedDisplayPath} (${importResult.files.length} files)`);
         } else {
-          console.log(`⚠️  No content imported from: ${filePath}`);
+          console.log(`⚠️  No content imported from: ${normalizedDisplayPath}`);
         }
       } catch (error) {
-        console.error(`❌ Failed to import ${filePath}:`, (error as Error).message);
+        const normalizedDisplayPath = this.normalizePathFromWorkspace(originalFilePath);
+        console.error(`❌ Failed to import ${normalizedDisplayPath}:`, (error as Error).message);
         // 保留原始的 @file_path，不替换
       }
     }
@@ -102,21 +107,38 @@ export class FileImporter {
    * 导入文件或目录
    */
   private async importFileOrDirectory(filePath: string): Promise<FileImportResult> {
-    const absolutePath = path.resolve(this.config.workingDirectory, filePath);
+    // 标准化路径：确保相对于workspace根目录
+    const normalizedPath = this.normalizePathFromWorkspace(filePath);
+    const absolutePath = path.resolve(this.config.workingDirectory, normalizedPath);
     
     if (!fs.existsSync(absolutePath)) {
-      throw new Error(`Path does not exist: ${filePath}`);
+      throw new Error(`Path does not exist: ${normalizedPath} (resolved from workspace: ${this.config.workingDirectory})`);
     }
 
     const stats = fs.statSync(absolutePath);
     
     if (stats.isFile()) {
-      return await this.importFile(absolutePath, filePath);
+      return await this.importFile(absolutePath, normalizedPath);
     } else if (stats.isDirectory()) {
-      return await this.importDirectory(absolutePath, filePath);
+      return await this.importDirectory(absolutePath, normalizedPath);
     } else {
-      throw new Error(`Unsupported file type: ${filePath}`);
+      throw new Error(`Unsupported file type: ${normalizedPath}`);
     }
+  }
+
+  /**
+   * 标准化文件路径，确保相对于workspace根目录
+   */
+  private normalizePathFromWorkspace(filePath: string): string {
+    // 移除开头的 ./ 或 /
+    let normalized = filePath.replace(/^\.?\//, '');
+    
+    // 如果路径已经是绝对路径，计算相对于workspace的路径
+    if (path.isAbsolute(filePath)) {
+      normalized = path.relative(this.config.workingDirectory, filePath);
+    }
+    
+    return normalized;
   }
 
   /**
@@ -167,18 +189,22 @@ export class FileImporter {
     
     for (const filePath of files) {
       try {
-        const relativePath = path.relative(this.config.workingDirectory, filePath);
-        const fileResult = await this.importFile(filePath, relativePath);
+        // 计算相对于workspace根目录的路径
+        const workspaceRelativePath = path.relative(this.config.workingDirectory, filePath);
+        const normalizedPath = this.normalizePathFromWorkspace(workspaceRelativePath);
+        
+        const fileResult = await this.importFile(filePath, normalizedPath);
         
         if (fileResult.content) {
           // 添加文件分隔符
           if (result.content) result.content += '\n\n';
-          result.content += this.formatFileContent(relativePath, fileResult.content);
-          result.files.push(relativePath);
+          result.content += this.formatFileContent(normalizedPath, fileResult.content);
+          result.files.push(normalizedPath);
         }
       } catch (error) {
         result.hasSkippedFiles = true;
-        result.skippedReasons.push(`${path.relative(dirPath, filePath)}: ${(error as Error).message}`);
+        const errorPath = path.relative(this.config.workingDirectory, filePath);
+        result.skippedReasons.push(`${errorPath}: ${(error as Error).message}`);
       }
     }
 
@@ -246,8 +272,42 @@ export class FileImporter {
       return content;
     }
 
-    const separator = '='.repeat(50);
-    return `${separator}\nFile: ${filePath}\n${separator}\n${content}`;
+    // 确保路径是相对于workspace的标准格式
+    const workspaceRelativePath = this.normalizePathFromWorkspace(filePath);
+    
+    // 根据文件扩展名确定注释格式
+    const ext = path.extname(filePath).toLowerCase();
+    let pathComment = '';
+    
+    // 支持不同类型文件的注释格式
+    if (['.ts', '.js', '.tsx', '.jsx', '.mjs', '.cjs'].includes(ext)) {
+      pathComment = `// File path: ${workspaceRelativePath}`;
+    } else if (['.py'].includes(ext)) {
+      pathComment = `# File path: ${workspaceRelativePath}`;
+    } else if (['.css', '.scss', '.less'].includes(ext)) {
+      pathComment = `/* File path: ${workspaceRelativePath} */`;
+    } else if (['.html', '.xml', '.svg'].includes(ext)) {
+      pathComment = `<!-- File path: ${workspaceRelativePath} -->`;
+    } else if (['.md', '.markdown'].includes(ext)) {
+      pathComment = `<!-- File path: ${workspaceRelativePath} -->\n`;
+    } else {
+      // 默认使用 # 注释
+      pathComment = `# File path: ${workspaceRelativePath}`;
+    }
+    
+    // 检查文件内容是否已经包含路径注释
+    const firstLine = content.split('\n')[0];
+    const hasPathComment = firstLine.includes('File path:') || firstLine.includes('file path:');
+    
+    if (hasPathComment) {
+      // 如果已经有路径注释，替换第一行
+      const lines = content.split('\n');
+      lines[0] = pathComment;
+      return lines.join('\n');
+    } else {
+      // 添加路径注释到文件开头
+      return `${pathComment}\n${content}`;
+    }
   }
 
   /**
@@ -278,6 +338,45 @@ export class FileImporter {
    */
   public getConfig(): Required<FileImporterConfig> {
     return { ...this.config };
+  }
+
+  /**
+   * 显示当前workspace配置信息
+   */
+  public showWorkspaceInfo(): void {
+    console.log('\n📂 File Importer Workspace Configuration:');
+    console.log(`   Working Directory: ${this.config.workingDirectory}`);
+    console.log(`   Max File Size: ${this.formatFileSize(this.config.maxFileSize)}`);
+    console.log(`   Max Depth: ${this.config.maxDepth}`);
+    console.log(`   Show File Path: ${this.config.showFilePath}`);
+    if (this.config.allowedExtensions.length > 0) {
+      console.log(`   Allowed Extensions: ${this.config.allowedExtensions.join(', ')}`);
+    } else {
+      console.log(`   Allowed Extensions: All types`);
+    }
+    console.log('');
+  }
+
+  /**
+   * 验证workspace目录是否有效
+   */
+  public validateWorkspace(): boolean {
+    try {
+      const stats = fs.statSync(this.config.workingDirectory);
+      if (!stats.isDirectory()) {
+        console.error(`❌ Workspace path is not a directory: ${this.config.workingDirectory}`);
+        return false;
+      }
+      
+      // 检查是否可读
+      fs.accessSync(this.config.workingDirectory, fs.constants.R_OK);
+      console.log(`✅ Workspace directory is valid: ${this.config.workingDirectory}`);
+      return true;
+    } catch (error) {
+      console.error(`❌ Workspace directory is not accessible: ${this.config.workingDirectory}`);
+      console.error(`   Error: ${(error as Error).message}`);
+      return false;
+    }
   }
 }
 

@@ -17,7 +17,8 @@ export * from './function-call';
 export * from './react';
 
 // 便捷函数
-export { createBasicTools, createCalculatorTool, createThinkTool, createTimeTool } from './tools';
+export { createBasicTools, createCalculatorTool, createTimeTool } from './tools';
+export { createThinkTool } from './tools/index';
 export { createFunctionCallAgent } from './function-call';
 export { createReactAgent } from './react';
 export { xmlExtractor, quickExtract, quickExtractMultiple } from './xml-extractor';

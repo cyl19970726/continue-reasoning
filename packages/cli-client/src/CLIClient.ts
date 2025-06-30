@@ -85,6 +85,11 @@ export class CLIClient implements IClient {
     reject: (error: Error) => void;
   }> = [];
 
+  // Add agent completion tracking
+  private agentProcessing: boolean = false;
+  private agentCompletionPromise?: Promise<void>;
+  private agentCompletionResolve?: () => void;
+
   // File importer
   private fileImporter: FileImporter;
 
@@ -191,11 +196,33 @@ export class CLIClient implements IClient {
           // Handle as Standard mode result
           this.handleStandardResult(step.extractorResult as StandardExtractorResult);
         }
+
+        // Check for stop signal to mark agent as completed
+        if (step.extractorResult.stopSignal === true) {
+          console.log(formatSystemInfo('Agent task completed'));
+          this.agentProcessing = false;
+          if (this.agentCompletionResolve) {
+            this.agentCompletionResolve();
+            this.agentCompletionResolve = undefined;
+            this.agentCompletionPromise = undefined;
+          }
+          // Show prompt again after agent completes
+          setTimeout(() => this.showPrompt(), 100);
+        }
       }
 
       // Handle errors
       if (step.error) {
         console.log(formatError(step.error));
+        // Mark agent as completed on error as well
+        this.agentProcessing = false;
+        if (this.agentCompletionResolve) {
+          this.agentCompletionResolve();
+          this.agentCompletionResolve = undefined;
+          this.agentCompletionPromise = undefined;
+        }
+        // Show prompt again after error
+        setTimeout(() => this.showPrompt(), 100);
       }
 
       // Display step information
@@ -204,6 +231,15 @@ export class CLIClient implements IClient {
       }
     } catch (error) {
       console.error('Error handling agent step:', error);
+      // Mark agent as completed on error
+      this.agentProcessing = false;
+      if (this.agentCompletionResolve) {
+        this.agentCompletionResolve();
+        this.agentCompletionResolve = undefined;
+        this.agentCompletionPromise = undefined;
+      }
+      // Show prompt again after error
+      setTimeout(() => this.showPrompt(), 100);
     }
   }
 
@@ -334,6 +370,12 @@ export class CLIClient implements IClient {
     try {
       console.log(formatSystemInfo('Sending message to agent...'));
       
+      // Mark agent as processing and create completion promise
+      this.agentProcessing = true;
+      this.agentCompletionPromise = new Promise<void>((resolve) => {
+        this.agentCompletionResolve = resolve;
+      });
+      
       // Use session manager to send message
       await this.sessionManager.sendMessageToAgent(
         message, 
@@ -341,9 +383,18 @@ export class CLIClient implements IClient {
         this.currentSessionId
       );
       
-      console.log(formatSystemInfo('Message sent successfully'));
+      console.log(formatSystemInfo('Message sent successfully, waiting for completion...'));
+      
+      // Wait for agent to complete (stop_signal = true)
+      await this.agentCompletionPromise;
+      
+      console.log(formatSystemInfo('Agent processing completed'));
     } catch (error) {
       console.log(formatError(`Failed to send message: ${error}`));
+      // Reset processing state on error
+      this.agentProcessing = false;
+      this.agentCompletionResolve = undefined;
+      this.agentCompletionPromise = undefined;
     }
   }
 
@@ -473,6 +524,12 @@ export class CLIClient implements IClient {
    * Display input prompt
    */
   private showPrompt(): void {
+    // If agent is processing, don't show prompt and check again later
+    if (this.agentProcessing) {
+      setTimeout(() => this.showPrompt(), 100);
+      return;
+    }
+
     // In single-line mode, display multi-line mode prompt every 5 times
     if (this.currentState === 'single' && this.promptCounter % 5 === 0) {
       console.log('💡 Tip: Type ### to start multi-line input mode');
@@ -528,7 +585,10 @@ export class CLIClient implements IClient {
     } catch (error) {
       console.error('Error handling input:', error);
     } finally {
-      this.showPrompt();
+      // Only show prompt if agent is not processing
+      if (!this.agentProcessing) {
+        this.showPrompt();
+      }
     }
   }
 
