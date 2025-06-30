@@ -3,6 +3,8 @@
 # config
 config/mcp.json
 
+.cli_history
+
 #log
 logs/*
 **/logs

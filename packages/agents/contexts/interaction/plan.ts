@@ -1,5 +1,4 @@
 import { createTool, ContextHelper } from "@continue-reasoning/core";
-import { BaseInteractiveLayer } from "@continue-reasoning/core";
 import { IAgent, PromptCtx } from "@continue-reasoning/core";
 import { logger } from "@continue-reasoning/core";
 import { z } from "zod";
