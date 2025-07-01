@@ -1,9 +1,7 @@
-import { LogLevel, logger, OPENAI_MODELS, DEEPSEEK_MODELS } from '../packages/core';
-import { CodingAgent } from '../packages/agents';
-import path from 'path';
-import fs from 'fs';
-import { SessionManager } from '../packages/core/session/sessionManager';
-import { createEnhancedPromptProcessor } from '../packages/core/prompts/prompt-processor-factory';
+import { LogLevel, OPENAI_MODELS, SessionManager } from '@continue-reasoning/core';
+import { CodingAgent } from '@continue-reasoning/cr-coding';
+import * as path from 'path';
+import * as fs from 'fs';
 
 async function stepPromptSavingExample() {
     console.log('📝 Step-by-Step Prompt Saving Example\n');
@@ -35,10 +33,10 @@ async function stepPromptSavingExample() {
 
     
     // 🔧 修复：SessionManager只需要一个参数（agent）
-    const sessionManager = new SessionManager(agent);
+    const sessionManager = new SessionManager(agent as any);
 
-    await agent.setup();
-    agent.setEnableToolCallsForStep((stepIndex) => {
+    await (agent as any).setup();
+    (agent as any).setEnableToolCallsForStep((stepIndex: number) => {
         if(stepIndex === 0){
             return false;
         }

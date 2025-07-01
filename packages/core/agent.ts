@@ -48,12 +48,6 @@ const DEFAULT_AGENT_OPTIONS: AgentOptions = {
         customSystemPrompt: "",
         maxTokens: 100000,
     },
-    // 新增 PromptProcessor 选项
-    promptProcessorOptions: {
-        type: 'standard',
-        enableToolCallsForFirstStep: false,
-        maxHistoryLength: 50
-    },
 }
 
 export interface AgentOptions {
@@ -67,12 +61,6 @@ export interface AgentOptions {
         mode: 'minimal' | 'standard' | 'detailed' | 'custom';
         customSystemPrompt?: string;
         maxTokens?: number;
-    };
-    // PromptProcessor options
-    promptProcessorOptions?: {
-        type: 'standard' | 'enhanced';
-        enableToolCallsForFirstStep?: boolean;
-        maxHistoryLength?: number;
     };
 }
 
@@ -120,6 +108,7 @@ export class BaseAgent implements IAgent {
         name: string,
         description: string,
         maxSteps: number,
+        promptProcessor: BasePromptProcessor<any>,
         logLevel?: LogLevel,
         agentOptions?: AgentOptions,
         contexts?: IContext<any>[],
@@ -182,16 +171,9 @@ export class BaseAgent implements IAgent {
             this.llm.parallelToolCall = this.enableParallelToolCalls;
         }
 
-        // Initialize PromptProcessor - using factory pattern, default to Standard
-        this.promptProcessor = agentOptions?.promptProcessorOptions?.type === 'enhanced' 
-            ? createEnhancedPromptProcessor(
-                this.getBaseSystemPrompt([], 'enhanced'),
-                this.contextManager
-            )
-            : createStandardPromptProcessor(
-                this.getBaseSystemPrompt([], 'standard'),
-                this.contextManager
-            );
+        // Set the provided PromptProcessor
+        this.promptProcessor = promptProcessor;
+        this.promptProcessor.setContextManager(this.contextManager);
 
         // Set MCP config path
         this.mcpConfigPath = agentOptions?.mcpConfigPath || path.join(process.cwd(), 'config', 'mcp.json');
@@ -204,8 +186,8 @@ export class BaseAgent implements IAgent {
         this.shouldStop = false;
     }
 
-    protected getBaseSystemPrompt(tools: AnyTool[], promptProcessorType: 'standard' | 'enhanced' = 'standard'): string {
-        let systemPrompt = getSystemPromptForMode(promptProcessorType)
+    protected getBaseSystemPrompt(tools: AnyTool[]): string {
+        let systemPrompt = getSystemPromptForMode(this.promptProcessor.type)
         let toolsPrompt =  tools.length > 0 ? 
         `
 ## Tool Usage Guidelines
@@ -420,7 +402,7 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
         // 🆕 在 setup 完成后，更新 PromptProcessor 的 system prompt，包含所有工具信息
         const allTools = this.getActiveTools();
         logger.debug(`[PromptProcessor] Active tools: ${allTools.map(t => t.name).join(', ')}`);
-        const updatedSystemPrompt = this.getBaseSystemPrompt(allTools, this.promptProcessor.type);
+        const updatedSystemPrompt = this.getBaseSystemPrompt(allTools);
         this.promptProcessor.updateSystemPrompt(updatedSystemPrompt);
         logger.debug(`[PromptProcessor] Updated system prompt with ${allTools.length} tools`);
     }

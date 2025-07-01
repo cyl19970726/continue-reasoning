@@ -156,33 +156,18 @@ export abstract class BasePromptProcessor<TExtractorResult extends ExtractorResu
     }
 
       /**
-     * Format final prompt with context manager integration
+     * Format final prompt with simplified structure
+     * System prompt is now fully managed by Agent.getBaseSystemPrompt()
      */
       async formatPrompt(stepIndex: number): Promise<string> {
         let prompt = '';
         
-        // 1. Add system prompt
+        // 1. Add system prompt (now contains everything)
         if (this.systemPrompt) {
             prompt += `${this.systemPrompt}\n\n`;
         }
         
-        // 2. Add dynamic Context information (using ContextManager)
-        if (this.contextManager) {
-            try {
-                if (this.contextManager.renderStructuredPrompt) {
-                    const structuredPrompt = await this.contextManager.renderStructuredPrompt();
-                    prompt += this.formatStructuredPrompt(structuredPrompt);
-                } else {
-                    // Fallback to basic context rendering
-                    const contextPrompt = await this.contextManager.renderPrompt();
-                    prompt += contextPrompt + '\n\n';
-                }
-            } catch (error) {
-                logger.error('Failed to render context prompt:', error);
-            }
-        }
-        
-        // 3. ExecutionHistory (ChatHistory List) - Now with filtering
+        // 2. ExecutionHistory (ChatHistory List) - Now with filtering
         if (this.chatHistory.length > 0) {
             // Filter chat history based on current step and configuration
             const filteredHistory = this.chatHistoryManager.filterChatHistory(this.chatHistory, stepIndex);
@@ -205,7 +190,6 @@ timestamp: ${message.timestamp}
 
         // Add current step indicator
         prompt += `\n## Current Step: ${stepIndex}\n\n`;
-        
         
         this.stepPrompts.push(prompt);
         this.currentPrompt = prompt;
