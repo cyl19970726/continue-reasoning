@@ -50,18 +50,10 @@ export type ToolCallDefinition = z.infer<typeof ToolCallDefinitionSchema>;
 export const ToolCallParamsSchema = z.object({
     type: z.literal("function"),
     name: z.string().describe("name uses to mark which function to be called"),
-    call_id: z.string().describe("call_id uses to correlated the ToolCallParams and the ToolCallResult"),
+    call_id: z.string().describe("call_id uses to correlated the ToolCallParams and the ToolExecutionResult"),
     parameters: z.any()
 }).describe("ToolCallParams define to call ");
 export type ToolCallParams = z.infer<typeof ToolCallParamsSchema>;
-
-export const ToolCallResultSchema = z.object({
-    type: z.literal("function"),
-    name: z.string().describe("name uses to mark which function to be called"),
-    call_id: z.string().describe("call_id uses to correlated the ToolCallParams and the ToolCallResult"),
-    result: z.object({})
-});
-export type ToolCallResult = z.infer<typeof ToolCallResultSchema>;
 
 /**
  * Tool call execution result interface, used for PromptProcessor
@@ -69,10 +61,11 @@ export type ToolCallResult = z.infer<typeof ToolCallResultSchema>;
 export interface ToolExecutionResult {
     name: string;
     call_id: string;
-    params: any;
+    params?: any;
     status: 'pending' | 'succeed' | 'failed';
     result?: any;
     message?: string;
+    executionTime?: number;
 }
 
 /**

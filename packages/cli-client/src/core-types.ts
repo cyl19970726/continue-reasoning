@@ -93,4 +93,5 @@ export interface ToolExecutionResult {
   status: 'pending' | 'succeed' | 'failed';
   result?: any;
   message?: string;
+  executionTime?: number;
 } 

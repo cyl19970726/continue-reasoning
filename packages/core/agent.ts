@@ -1,4 +1,4 @@
-import { AnyTool, IContextManager, IAgent, ILLM, IContext, ToolCallDefinition, ToolCallParams, ToolCallResult, IRAGEnabledContext, asRAGEnabledContext, AgentStatus, AgentStep, StandardExtractorResult, ChatMessage, ToolSet, AgentStorage, AgentCallbacks, MessageType, BasePromptProcessor, ExtractorResult } from "./interfaces";
+import { AnyTool, IContextManager, IAgent, ILLM, IContext, ToolCallDefinition, ToolCallParams, ToolExecutionResult, IRAGEnabledContext, asRAGEnabledContext, AgentStatus, AgentStep, StandardExtractorResult, ChatMessage, ToolSet, AgentStorage, AgentCallbacks, MessageType, BasePromptProcessor, ExtractorResult } from "./interfaces";
 import { SystemToolNames, DeepWikiContext, FireCrawlContext } from "./contexts/index";
 import { ITaskQueue, TaskQueue } from "./taskQueue";
 import dotenv from "dotenv";
@@ -186,7 +186,7 @@ export class BaseAgent implements IAgent {
         this.shouldStop = false;
     }
 
-    protected getBaseSystemPrompt(tools: AnyTool[]): string {
+    public getBaseSystemPrompt(tools: AnyTool[]): string {
         let systemPrompt = getSystemPromptForMode(this.promptProcessor.type)
         let toolsPrompt =  tools.length > 0 ? 
         `
@@ -292,7 +292,7 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
                     this.callbacks?.onToolCallResult?.(toolCallResult);
 
                     // 调用 processToolCallResult 以便其他系统能响应
-                    this.processToolCallResult(result as ToolCallResult);
+                    this.processToolCallResult(toolCallResult);
 
                 } catch (error) {
                     const executionTime = Date.now();
@@ -606,7 +606,7 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
      * 
      * @param toolCallResult The result from a tool execution
      */
-    protected processToolCallResult(toolCallResult: ToolCallResult): void {
+    protected processToolCallResult(toolCallResult: ToolExecutionResult): void {
         if (!toolCallResult) return;
 
         // Iterate through all contexts and call onToolCall if it exists

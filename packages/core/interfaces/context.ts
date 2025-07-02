@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { IRAG, QueryOptions, RAGResult } from './memory';
 import { PromptCtx, PromptAssemblyStrategy } from './prompt';
-import { ToolSet, ToolCallResult } from './tool';
+import { ToolSet, ToolExecutionResult } from './tool';
 import { IAgent } from './agent';
 
 export interface IContext<T extends z.ZodObject<any>>{
@@ -57,7 +57,7 @@ export interface IContext<T extends z.ZodObject<any>>{
      * Optional method to handle tool call results.
      * Allows the context to react to tool execution results.
      */
-    onToolCall?: (toolCallResult: ToolCallResult) => void;
+    onToolCall?: (toolCallResult: ToolExecutionResult) => void;
     
     /**
      * Generates the prompt content for this context.

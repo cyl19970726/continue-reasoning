@@ -44,6 +44,10 @@ import {
   FileImporterConfig,
   createFileImporter
 } from './utils/file-importer';
+import {
+  ToolFormatterRegistry,
+  defaultFormatterRegistry
+} from './utils/tool-result-formatters';
 
 // Import interface types from local type definitions
 import {
@@ -96,6 +100,9 @@ export class CLIClient implements IClient {
   // Add a counter to control prompt display frequency
   private promptCounter: number = 0;
 
+  // Tool result formatter registry
+  private formatterRegistry: ToolFormatterRegistry;
+
   constructor(config: CLIClientConfig) {
     this.config = {
       enableMultilineInput: true,
@@ -134,6 +141,9 @@ export class CLIClient implements IClient {
       // Can get file import configuration from config
       ...this.config.fileImporter
     });
+
+    // Initialize formatter registry with configurable max lines
+    this.formatterRegistry = new ToolFormatterRegistry(config.maxOutputLines || 100);
 
     // Initialize state
     this.multilineState = {
@@ -313,8 +323,8 @@ export class CLIClient implements IClient {
         isActive: true
       });
 
-      // Display tool call start
-      console.log(formatToolCallStart(name, parameters));
+      // Display tool call using formatter registry
+      console.log(this.formatterRegistry.formatToolCall(toolCall));
     } catch (error) {
       console.error('Error handling tool call:', error);
     }
@@ -330,23 +340,22 @@ export class CLIClient implements IClient {
       // Get corresponding tool call status
       const toolCallState = this.activeToolCalls.get(call_id);
       if (toolCallState) {
-        // Display tool call result
-        const success = status === 'succeed';
-        const displayResult = toolResult || message || 'No result';
-        
-        console.log(formatToolCallResult(displayResult, success));
+        // Add execution time to result for formatter
+        if (result.executionTime === undefined) {
+          result.executionTime = Date.now() - toolCallState.startTime;
+        }
         
         // Clean up status
         this.activeToolCalls.delete(call_id);
-        
-        // Display execution time
-        if (this.config.enableTimestamps) {
-          const executionTime = Date.now() - toolCallState.startTime;
-          console.log(formatSystemInfo(`${name} completed in ${executionTime}ms`));
-        }
-      } else {
-        // If no corresponding start status, display result directly
-        console.log(formatCompleteToolCall(name, {}, result.result || result.message, result.status === 'succeed'));
+      }
+      
+      // Display tool result using formatter registry
+      console.log(this.formatterRegistry.formatToolResult(result));
+      
+      // Display execution time if enabled and not already shown by formatter
+      if (this.config.enableTimestamps && toolCallState && !result.executionTime) {
+        const executionTime = Date.now() - toolCallState.startTime;
+        console.log(formatSystemInfo(`${name} completed in ${executionTime}ms`));
       }
     } catch (error) {
       console.error('Error handling tool call result:', error);

@@ -30,12 +30,11 @@ async function startCLICodingAgent() {
                 model: OPENAI_MODELS.O3,
                 enableParallelToolCalls: true,
                 temperature: 0.1,
-                promptProcessorOptions: {
-                    type: 'enhanced',
-                }
             },
             [],
         );
+
+        console.log(agent.getBaseSystemPrompt([]));
 
         // Create SessionManager
         console.log('🔗 Setting up session...');
