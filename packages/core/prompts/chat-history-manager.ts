@@ -20,7 +20,7 @@ export class ChatHistoryManager implements IChatHistoryManager {
             [MessageType.REASONING]: 5,       // Keep last 8 steps for reasoning messages
             [MessageType.INTERACTIVE]: 5,     // Keep last 5 steps for interactive messages
             [MessageType.RESPONSE]: 5,       // Keep last 10 steps for response messages
-            [MessageType.STOP_SIGNAL]: 2,     // Keep last 3 steps for stop signal messages
+            [MessageType.STOP_SIGNAL]: 0,     // Keep last 3 steps for stop signal messages
             ...config
         };
     }
@@ -49,6 +49,15 @@ export class ChatHistoryManager implements IChatHistoryManager {
             // Keep if message is within the allowed step range
             const stepDifference = currentStep - message.step;
             return stepDifference <= keepSteps;
+        });
+    }
+
+    mergeStep(chatHistory: ChatMessage[], currentStep: number): ChatMessage[] {
+        return chatHistory.map(message => {
+            if (message.step === currentStep) {
+                return { ...message, step: currentStep };
+            }
+            return message;
         });
     }
 }

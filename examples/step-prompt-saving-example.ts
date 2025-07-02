@@ -1,9 +1,7 @@
-import { LogLevel, logger, OPENAI_MODELS, DEEPSEEK_MODELS } from '../packages/core';
-import { CodingAgent } from '../packages/agents';
-import path from 'path';
-import fs from 'fs';
-import { SessionManager } from '../packages/core/session/sessionManager';
-import { createEnhancedPromptProcessor } from '../packages/core/prompts/prompt-processor-factory';
+import { createEnhancedPromptProcessor, LogLevel, OPENAI_MODELS, SessionManager } from '@continue-reasoning/core';
+import { CodingAgent } from '@continue-reasoning/cr-coding';
+import * as path from 'path';
+import * as fs from 'fs';
 
 async function stepPromptSavingExample() {
     console.log('📝 Step-by-Step Prompt Saving Example\n');
@@ -26,24 +24,21 @@ async function stepPromptSavingExample() {
             model: OPENAI_MODELS.O3,
             enableParallelToolCalls: true,
             temperature: 0.1,
-            promptProcessorOptions: {
-                type: 'enhanced'
-            }
         },
         [],
     );
 
     
     // 🔧 修复：SessionManager只需要一个参数（agent）
-    const sessionManager = new SessionManager(agent);
+    const sessionManager = new SessionManager(agent as any);
 
-    await agent.setup();
-    agent.setEnableToolCallsForStep((stepIndex) => {
-        if(stepIndex === 0){
-            return false;
-        }
-        return true;
-    });
+    await (agent as any).setup();
+    // (agent as any).setEnableToolCallsForStep((stepIndex: number) => {
+    //     if(stepIndex === 0){
+    //         return false;
+    //     }
+    //     return true;
+    // });
 
     try {
         console.log('🎯 Demo: Creating a Python web scraper with step-by-step prompt saving\n');
@@ -87,7 +82,7 @@ async function stepPromptSavingExample() {
         
         // 🔧 修复：使用正确的参数顺序和类型
         const sessionId = `step-prompt-demo-${Date.now()}`;
-        await agent.startWithUserInput(task, 20, sessionId, promptSaveOptions);
+        await (agent as any).startWithUserInput(task, 20, sessionId, promptSaveOptions);
 
         console.log('\n✅ Task completed! Analyzing saved prompts...\n');
 

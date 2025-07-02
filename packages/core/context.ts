@@ -3,7 +3,6 @@ import { z } from "zod";
 import { getLogger, LogLevel } from "./utils/logger";
 import { logger } from "./utils/logger";
 import { IAgent } from "./interfaces";
-import { minimalHeader, standardHeader, detailHeader } from "./prompts";
 
 
 export class ContextManager implements IContextManager {
@@ -41,40 +40,7 @@ export class ContextManager implements IContextManager {
     }
 
     async renderPrompt(): Promise<string> {
-        logger.debug(`Rendering prompt for ${this.contexts.length} contexts`);
-        
-        // 选择header
-        let header: string;
-        
-        if (this.promptOptimization?.customSystemPrompt && this.promptOptimization.mode === 'custom') {
-            header = this.promptOptimization.customSystemPrompt;
-        } else if (this.promptOptimization?.mode === 'minimal') {
-            header = minimalHeader;
-        } else if (this.promptOptimization?.mode === 'standard') {
-            header = standardHeader;
-        } else if (this.promptOptimization?.mode === 'detailed') {
-            header = detailHeader;
-        } else {
-            throw new Error(`Invalid prompt mode: ${this.promptOptimization?.mode}`);
-        }
-
-        // 渲染所有contexts
-        const contextPromises = this.contexts.map(async (context) => {
-            try {
-                const content = await context.renderPrompt();
-                return `<context name="${context.id}">\n${content}\n</context>`;
-            } catch (error) {
-                logger.error(`Error rendering context ${context.id}:`, error);
-                return `<context name="${context.id}">\nError: ${error instanceof Error ? error.message : String(error)}\n</context>`;
-            }
-        });
-        
-        const contexts = await Promise.all(contextPromises);
-        const fullPrompt = header + '\n\n' + contexts.join('\n\n');
-
-        logger.debug(`Prompt rendered: ${fullPrompt.length} characters`);
-        
-        return fullPrompt;
+        throw new Error('Not implemented');
     }
 
     contextList(): IRAGEnabledContext<any>[] {

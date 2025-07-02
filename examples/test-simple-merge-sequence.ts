@@ -1,8 +1,7 @@
-import { ApplyWholeFileEditTool } from '../packages/agents/contexts/coding/snapshot/snapshot-enhanced-tools';
-import { MergeSnapshotTool, ListSnapshotsTool } from '../packages/agents/contexts/coding/snapshot/snapshot-manager-tools';
-import { CodingAgent } from '../packages/agents';
-import { LogLevel } from '../packages/core/utils/logger';
-import { OPENAI_MODELS } from '../packages/core/models';
+import { ApplyWholeFileEditTool } from '@continue-reasoning/cr-coding';
+import { MergeSnapshotTool, ListSnapshotsTool } from '@continue-reasoning/cr-coding';
+import { CodingAgent } from '@continue-reasoning/cr-coding';
+import { LogLevel, OPENAI_MODELS } from '@continue-reasoning/core';
 import path from 'path';
 import fs from 'fs';
 

@@ -1,6 +1,6 @@
 import { ContextHelper } from "../utils";
 import { z } from 'zod';
-import { ToolSet, ToolCallResult } from "../interfaces";
+import { ToolSet, ToolExecutionResult } from "../interfaces";
 import { logger } from "../utils/logger";
 
 // Schema for storing DeepWiki context data
@@ -86,7 +86,7 @@ function processDeepWikiData(context: any, data: any, url?: string): void {
 /**
  * Process a tool call result and update the context accordingly
  */
-function handleToolCall(toolCallResult: ToolCallResult, context: any): void {
+function handleToolCall(toolCallResult: ToolExecutionResult, context: any): void {
     if (!toolCallResult || !toolCallResult.name || !context) {
         return;
     }
@@ -171,7 +171,7 @@ DeepWiki is most useful when you need to:
         active: true,
         source: "deepwiki-context"
     }),
-    handleToolCall: function(toolCallResult: ToolCallResult) {
+    handleToolCall: function(toolCallResult: ToolExecutionResult) {
         handleToolCall(toolCallResult, this);
     }
 });

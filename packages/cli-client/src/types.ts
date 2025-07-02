@@ -25,6 +25,7 @@ export interface CLIClientConfig {
   enableColors?: boolean;
   enableTimestamps?: boolean;
   promptPrefix?: string;
+  maxOutputLines?: number;
   
   // File import configuration
   fileImporter?: FileImporterConfig;

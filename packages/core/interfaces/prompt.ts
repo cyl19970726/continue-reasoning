@@ -1,6 +1,7 @@
 import { logger } from '../utils/logger';
 import { ChatMessage, AgentStatus, MessageType } from './base';
 import { IContextManager } from './context';
+import { ToolExecutionResult } from './tool';
 
 /**
  * Base extractor result interface
@@ -88,15 +89,7 @@ export interface AgentStep<T extends StandardExtractorResult = StandardExtractor
         call_id: string;
         params: any;
     }>;
-    toolCallResults?: Array<{
-        name: string;
-        call_id: string;
-        params: any;
-        status: 'pending' | 'succeed' | 'failed';
-        result?: any;
-        message?: string;
-        executionTime?: number; // milliseconds
-    }>;
+    toolCallResults?: ToolExecutionResult[];
 }
 
 /**

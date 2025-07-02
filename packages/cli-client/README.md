@@ -7,6 +7,7 @@
 - ✅ **IClient 接口实现** - 完整实现 Agent 回调处理
 - 🎨 **美观的显示格式** - 专门的格式化工具用于思考、回复和工具调用
 - 🔧 **工具调用跟踪** - 实时显示工具执行状态和结果
+- 🛠️ **丰富的工具格式化** - 为不同工具类型提供专门的显示格式（详见 [format.md](./format.md)）
 - 💬 **会话管理** - 支持创建、切换和管理多个会话
 - 📝 **多行输入** - 支持 `###` 分隔符的多行模式
 - 📚 **命令系统** - 内置帮助、会话管理等命令
@@ -97,6 +98,21 @@ interface IClient {
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
+## 工具结果格式化
+
+CLI Client 为不同类型的工具提供了专门的格式化显示：
+
+- **🔍 GrepTool** - 搜索结果展示，包含匹配文件、行号、上下文
+- **📖 ReadTool** - 文件内容显示，带行号和语法高亮  
+- **🖥️ BashTool** - 命令执行结果，分离标准输出和错误输出
+- **📋 TodosManager** - 任务列表管理，Markdown 格式展示
+- **📝 SnapshotEditing** - 文件编辑操作，显示差异和变更
+- **🔧 DefaultTool** - 通用工具格式化
+
+所有工具输出都限制在配置的最大行数内（默认 100 行）。
+
+**详细的格式化说明请参考: [format.md](./format.md)**
+
 ## 内置命令
 
 | 命令 | 别名 | 描述 |
@@ -128,6 +144,7 @@ interface CLIClientConfig {
   enableColors?: boolean;
   enableTimestamps?: boolean;
   promptPrefix?: string;
+  maxOutputLines?: number;  // 工具输出最大行数限制，默认 100
   
   // Session 管理器（用于实现 IClient 接口）
   sessionManager?: ISessionManager;

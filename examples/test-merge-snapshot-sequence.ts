@@ -1,8 +1,6 @@
-import { ApplyWholeFileEditTool } from '../packages/agents/contexts/coding/snapshot/snapshot-enhanced-tools';
-import { MergeSnapshotTool, ListSnapshotsTool } from '../packages/agents/contexts/coding/snapshot/snapshot-manager-tools';
-import { CodingAgent } from '../packages/agents';
-import { LogLevel } from '../packages/core/utils/logger';
-import { OPENAI_MODELS } from '../packages/core/models';
+import { CodingAgent } from '@continue-reasoning/cr-coding';
+import { ApplyWholeFileEditTool, MergeSnapshotTool, ListSnapshotsTool } from '../packages/agents/contexts/coding/snapshot';
+import { LogLevel, OPENAI_MODELS } from '@continue-reasoning/core';
 import path from 'path';
 import fs from 'fs';
 
@@ -38,7 +36,7 @@ async function testMergeSnapshotSequenceManagement() {
     );
 
     // Setup agent
-    await agent.setup();
+    await (agent as any).setup();
 
     console.log('Step 1: Creating 7 sequential snapshots...\n');
 

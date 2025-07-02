@@ -8,7 +8,9 @@ import {
 } from '../interfaces/multi-agent';
 import { IContext } from '../interfaces';
 import { LogLevel } from '../utils/logger';
+import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
+import { createStandardPromptProcessor } from '../prompts/prompt-processor-factory';
 import { getCapabilityKeywords } from './utils';
 
 /**
@@ -45,12 +47,19 @@ export class MultiAgentBase extends BaseAgent implements IMultiAgent {
             throw new Error('Agent ID cannot be empty');
         }
         
+        // Create a default prompt processor for multi-agent
+        const promptProcessor = createStandardPromptProcessor(
+            `You are ${name}, a multi-agent with capabilities: ${capabilities.join(', ')}. ${description}`,
+            undefined // ContextManager will be set by BaseAgent
+        );
+        
         // 调用父类构造函数，传递完整的参数
         super(
             id, 
             name, 
             description, 
             maxSteps,
+            promptProcessor,
             options?.logLevel,
             options?.agentOptions,
             options?.contexts

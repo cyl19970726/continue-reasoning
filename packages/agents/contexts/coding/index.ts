@@ -7,7 +7,7 @@
 
 // Export the main context class and factory function
 export type { ICodingContext } from "./coding-context";
-export { createCodingContext, CodingContext } from "./coding-context";
+export * from "./coding-context";
 
 // Export all toolsets
 export * from "./toolsets";
@@ -17,3 +17,4 @@ export * from "./runtime";
 
 // Export the sandbox components
 export * from "./sandbox";
+
