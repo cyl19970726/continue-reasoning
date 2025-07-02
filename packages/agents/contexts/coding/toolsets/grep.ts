@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import { createTool } from '@continue-reasoning/core';
-import { IAgent } from '@continue-reasoning/core';
+import { createTool } from '../../../../core';
+import { IAgent } from '../../../../core';
 import { ExecutionOptions } from '../sandbox';
 import { IRuntime } from '../runtime/interface';
-import { logger } from '@continue-reasoning/core';
+import { logger } from '../../../../core';
 
 // 匹配结果的结构
 const GrepMatchSchema = z.object({

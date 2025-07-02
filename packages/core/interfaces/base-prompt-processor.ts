@@ -173,7 +173,7 @@ export abstract class BasePromptProcessor<TExtractorResult extends ExtractorResu
             const filteredHistory = this.chatHistoryManager.filterChatHistory(this.chatHistory, stepIndex);
             
             if (filteredHistory.length > 0) {
-                prompt += '\n## Chat History\n';
+                prompt += '\n# Execution History\n';
                 filteredHistory.forEach(message => {
                     prompt += `
 <chat_history>

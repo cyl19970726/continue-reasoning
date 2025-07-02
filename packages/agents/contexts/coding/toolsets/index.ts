@@ -32,3 +32,6 @@ export {
   DEFAULT_SNAPSHOT_CONFIG,
   createOperationSnapshot
 } from '../snapshot/index';
+
+// Re-export glob tools for file pattern matching
+export { GlobTool, GlobToolSet } from './glob';

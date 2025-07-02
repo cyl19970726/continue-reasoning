@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { LogLevel, logger, OPENAI_MODELS, DEEPSEEK_MODELS } from '@continue-reasoning/core';
+import { LogLevel, logger, OPENAI_MODELS, DEEPSEEK_MODELS,ANTHROPIC_MODELS } from '@continue-reasoning/core';
 import { CodingAgent } from './coding-agent';
 import { createCLIClient, createCLIClientWithSession } from '../cli-client/src/index';
 import { SessionManager } from '../core/session/sessionManager';
@@ -27,14 +27,13 @@ async function startCLICodingAgent() {
             500, // Allow more steps for interactive sessions
             LogLevel.NONE,
             {
-                model: OPENAI_MODELS.O3,
+                model: ANTHROPIC_MODELS.CLAUDE_3_7_SONNET_LATEST,
                 enableParallelToolCalls: true,
                 temperature: 0.1,
             },
             [],
         );
 
-        console.log(agent.getBaseSystemPrompt([]));
 
         // Create SessionManager
         console.log('🔗 Setting up session...');

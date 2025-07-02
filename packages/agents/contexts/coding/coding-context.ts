@@ -2,7 +2,7 @@ import { IContext, ITool, IAgent, ToolExecutionResult, ToolSet as ToolSetInterfa
 import { z } from 'zod';
 import { logger } from '@continue-reasoning/core';
 import { createTool } from '@continue-reasoning/core';
-import { EditingStrategyToolSet, BashToolSet, EditingStrategyToolExamples, GrepToolSet } from './toolsets';
+import { EditingStrategyToolSet, BashToolSet, EditingStrategyToolExamples, GrepToolSet, GlobToolSet } from './toolsets';
 import { ContextHelper } from '@continue-reasoning/core';
 import { IRuntime } from './runtime/interface';
 import { NodeJsSandboxedRuntime } from './runtime/impl/node-runtime';
@@ -57,7 +57,7 @@ const AgentStopTool = createTool({
 
 // TodosManagerTool - 管理context data中的todos
 const TodosManagerTool = createTool({
-  name: 'TodosManagerTool',
+  name: 'TodosManager',
   description: 'Manage todos list stored in coding context. Use markdown format: "- [ ] task" for open tasks, "- [x] task" for completed tasks. For simple 1-step tasks, todos creation is not required.',
   inputSchema: z.object({
     action: z.enum(['create', 'update', 'read']).describe('Action to perform: create (replace all todos), update (modify existing todos), or read (get current todos)'),
@@ -94,7 +94,6 @@ const TodosManagerTool = createTool({
           return {
             success: false,
             message: 'Todos string is required for create action',
-            todos: currentTodos
           };
         }
         
@@ -108,7 +107,6 @@ const TodosManagerTool = createTool({
         return {
           success: true,
           message: `Created new todos list with ${createTaskCount} tasks`,
-          todos: todos.trim()
         };
         
       case 'update':
@@ -116,7 +114,6 @@ const TodosManagerTool = createTool({
           return {
             success: false,
             message: 'Todos string is required for update action',
-            todos: currentTodos
           };
         }
         
@@ -130,7 +127,6 @@ const TodosManagerTool = createTool({
         return {
           success: true,
           message: `Updated todos list with ${updateTaskCount} tasks`,
-          todos: todos.trim()
         };
         
       case 'read':
@@ -350,6 +346,7 @@ export function createCodingContext(workspacePath: string, initialData?: Partial
         ...ReadToolSet,
         ...BashToolSet,
         ...GrepToolSet,
+        ...GlobToolSet,
         WebSearchTool,
         TodosManagerTool,
         AgentStopTool,
