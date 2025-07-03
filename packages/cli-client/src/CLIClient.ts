@@ -393,6 +393,7 @@ export class CLIClient implements IClient {
       );
       
       console.log(formatSystemInfo('Message sent successfully, waiting for completion...'));
+      console.log(formatSystemInfo('💡 Press ESC to interrupt agent execution'));
       
       // Wait for agent to complete (stop_signal = true)
       await this.agentCompletionPromise;
@@ -520,6 +521,65 @@ export class CLIClient implements IClient {
     this.rl.on('error', (error) => {
       console.error('Readline error:', error);
     });
+
+    // Enable keypress events for ESC handling during agent processing
+    if (process.stdin.isTTY) {
+      // Enable keypress events
+      require('readline').emitKeypressEvents(process.stdin);
+      process.stdin.on('keypress', this.handleKeypress.bind(this));
+    }
+  }
+
+  /**
+   * Handle keypress events (particularly ESC key for interrupting agent)
+   */
+  private handleKeypress(str: string, key: any): void {
+    // Handle ESC key to interrupt agent execution
+    if (key && key.name === 'escape' && this.agentProcessing) {
+      this.interruptAgent();
+    }
+    
+    // Handle Ctrl+C
+    if (key && key.ctrl && key.name === 'c') {
+      this.handleExit();
+    }
+  }
+
+  /**
+   * Interrupt agent execution
+   */
+  private interruptAgent(): void {
+    if (!this.agentProcessing) {
+      return;
+    }
+
+    console.log('\n🛑 Interrupting agent execution...');
+    
+    try {
+      // Try to stop the agent if it has a stop method
+      if (this.sessionManager && this.sessionManager.agent) {
+        const agent = this.sessionManager.agent;
+        if (typeof agent.stop === 'function') {
+          agent.stop();
+          console.log('✅ Agent stopped successfully');
+        } else {
+          console.log('⚠️ Agent does not support stopping');
+        }
+      }
+    } catch (error) {
+      console.log(`❌ Error stopping agent: ${error}`);
+    }
+
+    // Reset processing state
+    this.agentProcessing = false;
+    if (this.agentCompletionResolve) {
+      this.agentCompletionResolve();
+      this.agentCompletionResolve = undefined;
+      this.agentCompletionPromise = undefined;
+    }
+
+    // Show prompt again
+    setTimeout(() => this.showPrompt(), 100);
   }
 
   /**

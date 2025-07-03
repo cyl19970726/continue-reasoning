@@ -27,7 +27,7 @@ async function startCLICodingAgent() {
             500, // Allow more steps for interactive sessions
             LogLevel.NONE,
             {
-                model: ANTHROPIC_MODELS.CLAUDE_3_7_SONNET_LATEST,
+                model: ANTHROPIC_MODELS.CLAUDE_SONNET_4_20250514,
                 enableParallelToolCalls: true,
                 temperature: 0.1,
             },

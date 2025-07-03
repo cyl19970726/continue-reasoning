@@ -42,7 +42,12 @@ export class BashToolFormatter extends BaseToolResultFormatter {
     
     // Handle string result (simple output)
     if (typeof data === 'string') {
-      lines.push(chalk.green('✅ Command executed'));
+      // Check the overall result status first
+      if (result.status === 'failed') {
+        lines.push(chalk.red('❌ Command failed'));
+      } else {
+        lines.push(chalk.green('✅ Command executed'));
+      }
       lines.push(chalk.cyan('\n📤 Output:'));
       lines.push(this.formatCommandOutput(data));
       return lines.join('\n');
@@ -50,27 +55,25 @@ export class BashToolFormatter extends BaseToolResultFormatter {
     
     // Handle object result
     if (typeof data === 'object') {
-      // Check for error status
-      if (data.success === false || data.exitCode !== 0) {
+      // Use the result.status as the primary indicator of success/failure
+      const isSuccess = result.status === 'succeed';
+      
+      if (!isSuccess) {
         lines.push(chalk.red('❌ Command failed'));
         if (data.exitCode !== undefined) {
-          lines.push(chalk.red(`├─ Exit code: ${data.exitCode}`));
-        }
-        if (data.command) {
-          lines.push(chalk.red(`└─ Command: ${data.command}`));
+          lines.push(chalk.gray(`├─ Exit code: ${data.exitCode}`));
         }
       } else {
         lines.push(chalk.green('✅ Command executed successfully'));
+        if (data.exitCode !== undefined) {
+          lines.push(chalk.gray(`├─ Exit code: ${data.exitCode}`));
+        }
       }
       
       // Execution time
       if (result.executionTime !== undefined) {
-        lines.push(chalk.gray(`├─ Duration: ${this.formatDuration(result.executionTime)}`));
-      }
-      
-      // Exit code (for successful commands)
-      if (data.exitCode !== undefined && data.exitCode === 0) {
-        lines.push(chalk.gray(`└─ Exit code: ${data.exitCode}`));
+        const timeColor = isSuccess ? chalk.gray : chalk.gray;
+        lines.push(timeColor(`├─ Duration: ${this.formatDuration(result.executionTime)}`));
       }
       
       // Standard output

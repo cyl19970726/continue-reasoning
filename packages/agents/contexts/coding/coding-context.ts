@@ -94,6 +94,7 @@ const TodosManagerTool = createTool({
           return {
             success: false,
             message: 'Todos string is required for create action',
+            todos: currentTodos
           };
         }
         
@@ -107,6 +108,7 @@ const TodosManagerTool = createTool({
         return {
           success: true,
           message: `Created new todos list with ${createTaskCount} tasks`,
+          todos: todos.trim()
         };
         
       case 'update':
@@ -114,6 +116,7 @@ const TodosManagerTool = createTool({
           return {
             success: false,
             message: 'Todos string is required for update action',
+            todos: currentTodos
           };
         }
         
@@ -127,6 +130,7 @@ const TodosManagerTool = createTool({
         return {
           success: true,
           message: `Updated todos list with ${updateTaskCount} tasks`,
+          todos: todos.trim()
         };
         
       case 'read':
