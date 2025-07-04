@@ -51,7 +51,7 @@ export class ToolFormatterRegistry {
     
     // Todos manager
     this.registerFormatter('TodosManager', new TodosManagerFormatter(maxLines));
-    this.registerFormatter('TodosManagerTool', new TodosManagerFormatter(maxLines));
+    this.registerFormatter('TodoUpdate', new TodosManagerFormatter(maxLines));
   }
   
   /**

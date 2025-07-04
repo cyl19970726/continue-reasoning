@@ -450,14 +450,6 @@ const DeleteParamsSchema = z.object({
   recursive: z.boolean().optional().describe("Whether to delete directories recursively. Required for non-empty directories. Defaults to false."),
 });
 
-const DeleteReturnsSchema = z.object({
-  success: z.boolean().describe("Whether the file or directory was successfully deleted."),
-  message: z.string().optional().describe("A descriptive message about the operation."),
-  diff: z.string().optional().describe("The diff showing the deletion. Generated for files and non-empty directories."),
-  changesApplied: z.number().optional().describe("Number of changes applied (1 if file/directory was deleted)."),
-  deletedFiles: z.array(z.string()).optional().describe("List of files that were deleted (for directory deletions)."),
-});
-
 export const DeleteTool = createTool({
   id: 'Delete',
   name: 'Delete',
@@ -706,11 +698,6 @@ const CreateDirectoryParamsSchema = z.object({
   recursive: z.boolean().optional().describe("Create parent directories if they don't exist. Defaults to true."),
 });
 
-const CreateDirectoryReturnsSchema = z.object({
-  success: z.boolean().describe("Whether the directory was successfully created."),
-  message: z.string().optional().describe("A descriptive message about the operation."),
-  changesApplied: z.number().optional().describe("Number of changes applied (1 if directory was created)."),
-});
 
 export const CreateDirectoryTool = createTool({
   id: 'CreateDirectory',
@@ -782,83 +769,6 @@ export const CreateDirectoryTool = createTool({
         success: false,
         message: `Failed to create directory ${params.path}: ${error.message || 'Unknown error'}`,
         changesApplied: 0
-      };
-    }
-  },
-});
-
-// ReadFile Tool - for completeness in the diff-driven system
-const ReadFileParamsSchema = z.object({
-  path: z.string().describe("The path to the file to read."),
-  startLine: z.number().int().optional().describe("The one-indexed line number to start reading from (inclusive)."),
-  endLine: z.number().int().optional().describe("The one-indexed line number to end reading at (inclusive)."),
-});
-
-const ReadFileReturnsSchema = z.object({
-  success: z.boolean().describe("Whether the read operation was successful."),
-  message: z.string().optional().describe("A message about the read operation."),
-  content: z.string().describe("The content of the file segment read."),
-  linesRead: z.number().int().describe("The number of lines read."),
-});
-
-export const ReadFileTool = createTool({
-  id: 'ReadFile',
-  name: 'ReadFile',
-  description: 'Reads content from a specified file or a segment of it. Part of the diff-driven development system.',
-  inputSchema: ReadFileParamsSchema,
-  async: true,
-  execute: async (params, agent?: IAgent) => {
-    // Get the coding context
-    const codingContext = agent?.contextManager.findContextById('coding-context');
-    if (!codingContext) {
-      throw new Error('Coding context not found');
-    }
-    
-    // Get the runtime instance from the context
-    const runtime = (codingContext as any).getRuntime() as IRuntime;
-    if (!runtime) {
-      throw new Error('Runtime not found in the coding context');
-    }
-
-    const workspacePath = codingContext.getData()?.current_workspace || process.cwd();
-    const filePath = path.isAbsolute(params.path) ? params.path : path.join(workspacePath, params.path);
-    
-    console.log(`ReadFileTool: Reading file ${filePath}`);
-    
-    try {
-      // Use the runtime's readFile method directly
-      const content = await runtime.readFile(filePath, {
-        startLine: params.startLine,
-        endLine: params.endLine
-      });
-      
-      const linesRead = content ? content.split('\n').length : 0;
-      
-      // Update the coding context with the read file
-      const contextData = codingContext.getData();
-      const openFiles = { ...contextData.open_files };
-      
-      openFiles[params.path] = {
-        content_hash: String(Date.now()), // Simple hash based on time
-        last_read_content: content
-      };
-      
-      codingContext.setData({
-        ...contextData,
-        open_files: openFiles
-      });
-      
-      return {
-        success: true,
-        content,
-        linesRead
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        message: error.message || 'Unknown error',
-        content: '',
-        linesRead: 0
       };
     }
   },
@@ -1266,19 +1176,12 @@ Result: Returns unified diff showing differences between configurations
 
 // Export the complete toolset
 export const EditingStrategyToolSet = [
-  ReadFileTool,
   ApplyWholeFileEditTool,
   ApplyEditBlockTool,
   ApplyRangedEditTool,
   ApplyUnifiedDiffTool,
   ReverseDiffTool,
   DeleteTool,
-  CreateDirectoryTool,
-  CompareFilesTool,
-];
-
-export const ReadToolSet = [
-  ReadFileTool,
   CreateDirectoryTool,
   CompareFilesTool,
 ];

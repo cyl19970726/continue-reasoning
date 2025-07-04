@@ -3,7 +3,7 @@ import { BaseToolResultFormatter } from './base';
 import { ToolCallParams, ToolExecutionResult } from '../../core-types';
 
 /**
- * Formatter for TodosManagerTool results
+ * Formatter for TodoUpdate results
  */
 export class TodosManagerFormatter extends BaseToolResultFormatter {
   formatToolCall(toolCall: ToolCallParams): string {

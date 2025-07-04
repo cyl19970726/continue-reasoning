@@ -2,7 +2,7 @@ import { IContext, ITool, IAgent, ToolExecutionResult, ToolSet as ToolSetInterfa
 import { z } from 'zod';
 import { logger } from '@continue-reasoning/core';
 import { createTool } from '@continue-reasoning/core';
-import { EditingStrategyToolSet, BashToolSet, EditingStrategyToolExamples, GrepToolSet, GlobToolSet } from './toolsets';
+import { EditingStrategyToolSet, EditingStrategyToolExamples, GrepToolSet, GlobToolSet } from './toolsets';
 import { ContextHelper } from '@continue-reasoning/core';
 import { IRuntime } from './runtime/interface';
 import { NodeJsSandboxedRuntime } from './runtime/impl/node-runtime';
@@ -14,14 +14,20 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { SnapshotManager } from './snapshot/snapshot-manager';
 import { SnapshotEditingToolSet } from './snapshot/snapshot-enhanced-tools';
-import { snapshotManagerTools } from './snapshot/snapshot-manager-tools';
-import { ReadToolSet } from './toolsets/editing-strategy-tools';
+import { ReadSnapshotTool, snapshotManagerTools } from './snapshot/snapshot-manager-tools';
 import { WebSearchTool } from '@continue-reasoning/core';
+import { NoEditToolSet } from './toolsets';
 
 // AgentStopTool - 停止Agent执行
 const AgentStopTool = createTool({
   name: 'AgentStopTool',
-  description: 'Stop the agent execution completely. Use this when the task is completed or when you need to terminate agent processing.',
+  description: `
+  This tool is used to send the stop signal to the agent.
+  Usage:
+  - **Complete stop**: Use with reason "Task completed successfully" 
+  - **Wait for confirmation**: Use with reason "Please confirm before proceeding with implementation"
+  - **Analysis done**: Use with reason "Codebase analysis complete, ready for next phase"
+`,
   inputSchema: z.object({
     reason: z.string().describe('Reason for stopping the agent. Example: "Task completed successfully" or "User request fulfilled"')
   }),
@@ -55,17 +61,24 @@ const AgentStopTool = createTool({
   }
 });
 
-// TodosManagerTool - 管理context data中的todos
-const TodosManagerTool = createTool({
-  name: 'TodosManager',
-  description: 'Manage todos list stored in coding context. Use markdown format: "- [ ] task" for open tasks, "- [x] task" for completed tasks. For simple 1-step tasks, todos creation is not required.',
+// TodoUpdateTool - 管理context data中的todos
+const TodoUpdateTool = createTool({
+  name: 'TodoUpdate',
+  description: `
+  **CRITICAL**: You MUST use this tool to update todos list when you are working on a complex task.
+  Format:
+  - **Open tasks**: \`- [ ] task description\`
+  - **Completed tasks**: \`- [x] task description\`
+  - **Multiple tasks**: Separate with newlines
+  Usage:
+  - For simple 1-step tasks, todos creation is not required.
+  - For complex tasks, use this tool to create/update a todos list to track your progress.`,
   inputSchema: z.object({
-    action: z.enum(['create', 'update', 'read']).describe('Action to perform: create (replace all todos), update (modify existing todos), or read (get current todos)'),
-    todos: z.string().optional().describe('Todos in markdown format. Example: "- [ ] task1\\n- [ ] task2\\n- [x] completed_task". Required for create and update actions.')
+    todos: z.string().describe('Todos in markdown format. Example: "- [ ] task1\\n- [ ] task2\\n- [x] completed_task". Use "EMPTY" to clear all todos.')
   }),
   async: false,
   execute: async (args, agent) => {
-    const { action, todos } = args;
+    const { todos } = args;
     
     if (!agent) {
       return {
@@ -86,68 +99,43 @@ const TodosManagerTool = createTool({
     }
 
     const contextData = codingContext.getData();
-    const currentTodos = contextData.todos || '';
+    const currentTodos = contextData.todos || 'EMPTY';
     
-    switch (action) {
-      case 'create':
-        if (!todos || todos.trim() === '') {
-          return {
-            success: false,
-            message: 'Todos string is required for create action',
-            todos: currentTodos
-          };
-        }
-        
-        // Update context data
-        codingContext.setData({
-          ...contextData,
-          todos: todos.trim()
-        });
-        
-        const createTaskCount = (todos.match(/^- \[/gm) || []).length;
-        return {
-          success: true,
-          message: `Created new todos list with ${createTaskCount} tasks`,
-          todos: todos.trim()
-        };
-        
-      case 'update':
-        if (!todos) {
-          return {
-            success: false,
-            message: 'Todos string is required for update action',
-            todos: currentTodos
-          };
-        }
-        
-        // Update context data
-        codingContext.setData({
-          ...contextData,
-          todos: todos.trim()
-        });
-        
-        const updateTaskCount = (todos.match(/^- \[/gm) || []).length;
-        return {
-          success: true,
-          message: `Updated todos list with ${updateTaskCount} tasks`,
-          todos: todos.trim()
-        };
-        
-      case 'read':
-        const taskCount = currentTodos ? (currentTodos.match(/^- \[/gm) || []).length : 0;
-        return {
-          success: true,
-          message: `Current todos list has ${taskCount} tasks`,
-          todos: currentTodos
-        };
-        
-      default:
-        return {
-          success: false,
-          message: `Unknown action: ${action}`,
-          todos: currentTodos
-        };
+    // Handle special case: EMPTY
+    if (todos.trim() === 'EMPTY') {
+      codingContext.setData({
+        ...contextData,
+        todos: 'EMPTY'
+      });
+      
+      return {
+        success: true,
+        message: 'Cleared todos list',
+        todos: 'EMPTY'
+      };
     }
+    
+    // Handle normal todos update
+    if (!todos || todos.trim() === '') {
+      return {
+        success: false,
+        message: 'Todos string is required. Use "EMPTY" to clear todos.',
+        todos: currentTodos
+      };
+    }
+    
+    // Update context data
+    codingContext.setData({
+      ...contextData,
+      todos: todos.trim()
+    });
+    
+    const taskCount = (todos.match(/^- \[/gm) || []).length;
+    return {
+      success: true,
+      message: `Updated todos list with ${taskCount} tasks`,
+      todos: todos.trim()
+    };
   }
 });
 
@@ -282,7 +270,7 @@ function createWorkspaceTools(context: ICodingContext): ITool<any, any, IAgent>[
 /**
  * Create a Coding Context with simple workspace switching
  */
-export function createCodingContext(workspacePath: string, initialData?: Partial<CodingContextData>): ICodingContext {
+export function createCodingContext(workspacePath: string): ICodingContext {
   if (!workspacePath) {
     throw new Error("Workspace path is required to create a CodingContext.");
   }
@@ -295,8 +283,7 @@ export function createCodingContext(workspacePath: string, initialData?: Partial
   
   const parsedInitialData = {
     current_workspace: workspacePath,
-    todos: 'None Todos',
-    ...initialData
+    todos: 'EMPTY',
   };
 
   // Initialize the runtime
@@ -346,13 +333,10 @@ export function createCodingContext(workspacePath: string, initialData?: Partial
       const allTools: ITool<any, any, IAgent>[] = [
         ...workspaceTools,
         ...SnapshotEditingToolSet,
-        ...snapshotManagerTools,
-        ...ReadToolSet,
-        ...BashToolSet,
-        ...GrepToolSet,
-        ...GlobToolSet,
+        ReadSnapshotTool,
+        ...NoEditToolSet,
         WebSearchTool,
-        TodosManagerTool,
+        TodoUpdateTool,
         AgentStopTool,
       ];
       

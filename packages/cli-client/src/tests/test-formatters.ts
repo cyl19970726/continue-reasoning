@@ -164,14 +164,13 @@ Ran all test suites.`,
 console.log(registry.formatToolCall(bashCall));
 console.log(registry.formatToolResult(bashResult));
 
-// Test 4: TodosManager
-console.log('\n=== Test 4: TodosManager ===');
+// Test 4: TodoUpdate
+console.log('\n=== Test 4: TodoUpdate ===');
 const todosCall: ToolCallParams = {
   type: "function",
-  name: 'TodosManagerTool',
+  name: 'TodoUpdate',
   call_id: 'todos_999',
   parameters: {
-    action: 'update',
     todos: `- [x] Analyze current implementation
 - [x] Design formatter architecture
 - [ ] Implement formatters
@@ -181,7 +180,7 @@ const todosCall: ToolCallParams = {
 };
 
 const todosResult: ToolExecutionResult = {
-  name: 'TodosManagerTool',
+  name: 'TodoUpdate',
   call_id: 'todos_999',
   params: todosCall.parameters,
   status: 'succeed',
