@@ -2,7 +2,7 @@
 
 # config
 config/mcp.json
-
+.claude/*
 .cli_history
 
 #log
