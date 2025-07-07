@@ -37,10 +37,10 @@ describe('OpenAIWrapper', () => {
     expect(wrapper.maxTokens).toBe(1000);
   });
 
-  (hasApiKey ? it : it.skip)('should call OpenAI API and parse response', async () => {
+  (hasApiKey ? it : it.skip)('should call OpenAI API with callAsync and parse response', async () => {
     const openaiModel = new OpenAIWrapper(OPENAI_MODELS.GPT_4O, false, 0.7, 1000);
     
-    const response = await openaiModel.call(
+    const response = await openaiModel.callAsync(
       "What's the weather like in Paris today?", 
       [weatherTool]
     );
@@ -52,7 +52,7 @@ describe('OpenAIWrapper', () => {
     expect(Array.isArray(response.toolCalls)).toBe(true);
     
     // When tool is used, expect toolCalls to potentially contain a call
-    if (response.toolCalls.length > 0) {
+    if (response.toolCalls && response.toolCalls.length > 0) {
       const toolCall = response.toolCalls[0];
       expect(toolCall).toHaveProperty('type', 'function');
       expect(toolCall).toHaveProperty('name');
@@ -72,39 +72,80 @@ describe('OpenAIWrapper', () => {
     expect(typeof response.text).toBe('string');
   }, 30000); // Increase timeout to 30 seconds for API call
 
-  // Testing the streaming API implementation
-  (hasApiKey ? it : it.skip)('should support streaming with OpenAI API', async () => {
+  // Testing the streaming API implementation with callStream
+  (hasApiKey ? it : it.skip)('should support streaming tool calls with callStream API', async () => {
     const openaiModel = new OpenAIWrapper(OPENAI_MODELS.GPT_4O, true, 0.7, 1000);
     
-    const response = await openaiModel.streamCall(
+    // Collect streaming chunks
+    const textChunks: string[] = [];
+    const toolCalls: any[] = [];
+    let finalText = '';
+    
+    for await (const chunk of openaiModel.callStream(
       "What's the weather like in Paris today?", 
       [weatherTool]
-    );
-    
-    // Basic response structure validation
-    expect(response).toBeDefined();
-    expect(response).toHaveProperty('text');
-    expect(response).toHaveProperty('toolCalls');
-    expect(Array.isArray(response.toolCalls)).toBe(true);
-    
-    // When tool is used, expect toolCalls to potentially contain a call
-    if (response.toolCalls.length > 0) {
-      const toolCall = response.toolCalls[0];
-      expect(toolCall).toHaveProperty('type', 'function');
-      expect(toolCall).toHaveProperty('name');
-      expect(toolCall).toHaveProperty('call_id');
-      expect(toolCall).toHaveProperty('parameters');
-      
-      // If the weather tool was called, validate its parameters
-      if (toolCall.name === 'get_weather') {
-        expect(toolCall.parameters).toHaveProperty('latitude');
-        expect(toolCall.parameters).toHaveProperty('longitude');
-        expect(typeof toolCall.parameters.latitude).toBe('number');
-        expect(typeof toolCall.parameters.longitude).toBe('number');
+    )) {
+      console.log(chunk);
+      if (chunk.type === 'text-delta') {
+        textChunks.push(chunk.content);
+      } else if (chunk.type === 'text-done') {
+        finalText = chunk.content;
+      } else if (chunk.type === 'tool-call-done') {
+        toolCalls.push(chunk.toolCall);
       }
     }
     
-    // Text should be a non-empty string from streaming
-    expect(typeof response.text).toBe('string');
+    // Validate streaming behavior
+    // expect(textChunks.length).toBeGreaterThan(0); // Should have received text chunks
+    expect(finalText).toBeDefined();
+    expect(typeof finalText).toBe('string');
+    
+    // When tool is used, validate tool calls
+    const toolCall = toolCalls[0];
+    expect(toolCall).toHaveProperty('type', 'function');
+    expect(toolCall).toHaveProperty('name');
+    expect(toolCall).toHaveProperty('call_id');
+    expect(toolCall).toHaveProperty('parameters');
+    
+    // If the weather tool was called, validate its parameters
+    if (toolCall.name === 'get_weather') {
+      expect(toolCall.parameters).toHaveProperty('latitude');
+      expect(toolCall.parameters).toHaveProperty('longitude');
+      expect(typeof toolCall.parameters.latitude).toBe('number');
+      expect(typeof toolCall.parameters.longitude).toBe('number');
+      
+    }
+    
+    // Verify that streaming text accumulates to final text
+    const accumulatedText = textChunks.join('');
+    if (accumulatedText.length > 0 && finalText.length > 0) {
+      expect(finalText).toContain(accumulatedText.substring(0, Math.min(50, accumulatedText.length)));
+    }
   }, 30000); // Increase timeout to 30 seconds for streaming API call
+
+    // Testing the streaming API implementation with callStream
+    (hasApiKey ? it : it.skip)('should support streaming text only with callStream API', async () => {
+      const openaiModel = new OpenAIWrapper(OPENAI_MODELS.GPT_4O, true, 0.7, 1000);
+      
+      // Collect streaming chunks
+      const toolCalls: any[] = [];
+      let textAccumulators = '';
+
+      for await (const chunk of openaiModel.callStream(
+        "hi, how are you?", 
+        [],
+        { stepIndex: 0 }
+      )) {
+        console.log(chunk);
+        if (chunk.type === 'text-delta') {
+          textAccumulators += chunk.content;
+        } else if (chunk.type === 'text-done') {
+          
+          // Verify accumulated text matches final text
+          expect(textAccumulators).toBe(chunk.content);
+          
+        } 
+      }
+      
+    }, 30000); // Increase timeout to 30 seconds for streaming API call
 }); 

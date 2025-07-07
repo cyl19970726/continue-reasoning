@@ -22,7 +22,7 @@ import { getCapabilityKeywords } from './utils';
  * - 提供任务执行能力
  * - 管理并发任务
  */
-export class MultiAgentBase extends BaseAgent implements IMultiAgent {
+export abstract class MultiAgentBase extends BaseAgent implements IMultiAgent {
     public capabilities: string[] = [];
     public maxConcurrentTasks: number = 3;
     

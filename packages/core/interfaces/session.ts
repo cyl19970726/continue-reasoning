@@ -35,8 +35,8 @@ export interface ISessionManagerCallbacks {
     onSessionStart?: (sessionId: string) => void;
     onSessionEnd?: (sessionId: string) => void;
     onAgentStep?: (step: AgentStep<any>) => void;
-    onToolCall?: (toolCall: ToolCallParams) => void;
-    onToolCallResult?: (result: ToolExecutionResult) => void;
+    onToolCallStart?: (toolCall: ToolCallParams) => void;
+    onToolExecutionEnd?: (result: ToolExecutionResult) => void;
 }
 
 /**

@@ -25,8 +25,8 @@ export class SimpleClient implements IClient {
         // 设置回调
         sessionManager.setCallbacks({
             onAgentStep: (step) => this.handleAgentStep(step),
-            onToolCall: (toolCall) => this.handleToolCall(toolCall),
-            onToolCallResult: (result) => this.handleToolCallResult(result),
+            onToolCallStart: (toolCall: ToolCallParams) => this.handleToolCall(toolCall),
+            onToolExecutionEnd: (result: ToolExecutionResult) => this.handleToolCallResult(result),
             onSessionStart: (sessionId) => {
                 logger.info(`SimpleClient: Session started: ${sessionId}`);
             },

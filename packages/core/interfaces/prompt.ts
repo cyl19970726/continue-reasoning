@@ -89,7 +89,7 @@ export interface AgentStep<T extends StandardExtractorResult = StandardExtractor
         call_id: string;
         params: any;
     }>;
-    toolCallResults?: ToolExecutionResult[];
+    toolExecutionResults?: ToolExecutionResult[];
 }
 
 /**
@@ -111,7 +111,7 @@ export interface IPromptProcessor<TExtractorResult extends ExtractorResult> {
     textExtractor(responseText: string): TExtractorResult;
     renderExtractorResultToPrompt(extractorResult: TExtractorResult, stepIndex: number): void;
     renderChatMessageToPrompt(messages: ChatMessage[]): void;
-    renderToolCallToPrompt(toolResults: AgentStep['toolCallResults'], stepIndex: number): void;
+    renderToolCallToPrompt(toolResults: AgentStep['toolExecutionResults'], stepIndex: number): void;
     formatPrompt(stepIndex: number): string | Promise<string>;
     
     // Context management

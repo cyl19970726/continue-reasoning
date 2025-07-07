@@ -38,8 +38,8 @@ export class SessionManager implements ISessionManager {
    */
   private setupAgentCallbacks(): void {
     this.agent.setCallBacks({
-      onToolCallResult: (result: ToolExecutionResult) => {
-        this.callbacks?.onToolCallResult?.(result);
+      onToolExecutionEnd: (result: ToolExecutionResult) => {
+        this.callbacks?.onToolExecutionEnd?.(result);
       },
       loadAgentStorage: async (sessionId: string): Promise<AgentStorage | null> => {
         return await this.loadSession(sessionId);
@@ -50,8 +50,8 @@ export class SessionManager implements ISessionManager {
       onStateStorage: (state: AgentStorage) => {
         this.saveSession(state.sessionId, state);
       },
-      onToolCall: (toolCall: ToolCallParams) => {
-        this.callbacks?.onToolCall?.(toolCall);   
+      onToolCallStart: (toolCall: ToolCallParams) => {
+        this.callbacks?.onToolCallStart?.(toolCall);   
       },
     });
   }

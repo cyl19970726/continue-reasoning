@@ -1,6 +1,6 @@
 import openai, { OpenAI } from "openai";
 import { z } from "zod";
-import { ILLM, ToolCallDefinition, ToolCallParams } from "../interfaces";
+import { ILLM, ToolCallDefinition, ToolCallParams, LLMCallbacks } from "../interfaces";
 import dotenv from "dotenv";
 import { zodToJsonNostrict, zodToJsonStrict } from "../utils/jsonHelper";
 import { DEEPSEEK_MODELS, SupportedModel } from "../models";
@@ -57,7 +57,7 @@ export class OpenAIChatWrapper implements ILLM {
 	) {
 		this.model = model;
 		this.streaming = streaming;
-		this.parallelToolCall = false;
+		this.parallelToolCall = parallelToolCall;
 		this.temperature = temperature;
 		this.maxTokens = maxTokens;
 	}
@@ -68,7 +68,8 @@ export class OpenAIChatWrapper implements ILLM {
 
 	async call(
 		messages: string,
-		tools: ToolCallDefinition[]
+		tools: ToolCallDefinition[],
+		callbacks?: LLMCallbacks
 	): Promise<{ text: string; toolCalls: ToolCallParams[] }> {
 		let client: OpenAI;
 		if (Object.values(DEEPSEEK_MODELS).includes(this.model as DEEPSEEK_MODELS)) {
@@ -83,6 +84,8 @@ export class OpenAIChatWrapper implements ILLM {
 		}
 
 		const functions = tools.map((tool) => convertToOpenaiChatFunction(tool, false));
+
+		callbacks?.onStart?.();
 
 		const response = await client.chat.completions.create({
 			model: this.model,
@@ -99,6 +102,11 @@ export class OpenAIChatWrapper implements ILLM {
 		if (choice?.message) {
 			if (choice.message.content) {
 				text = choice.message.content;
+				
+				// Call text callbacks
+				callbacks?.onChunkStart?.(0, { type: 'text' });
+				callbacks?.onTextDone?.(text);
+				callbacks?.onChunkComplete?.(0, { type: 'text' });
 			}
 			if (choice.message.function_call) {
 				const fnCall = choice.message.function_call;
@@ -111,21 +119,33 @@ export class OpenAIChatWrapper implements ILLM {
 						e
 					);
 				}
+				
+				const callId = Date.now().toString();
+				
+				// Call tool callbacks
+				callbacks?.onChunkStart?.(1, { type: 'tool_call', id: callId });
+				callbacks?.onToolCallStart?.({ id: callId, name: fnCall.name });
+				callbacks?.onToolCallDone?.({ id: callId, name: fnCall.name, arguments: params });
+				callbacks?.onChunkComplete?.(1, { type: 'tool_call', id: callId });
+				
 				toolCalls.push({
 					type: "function",
 					name: fnCall.name,
-					call_id: Date.now().toString(),
+					call_id: callId,
 					parameters: params,
 				});
 			}
 		}
+
+		callbacks?.onComplete?.();
 
 		return { text, toolCalls };
 	}
 
 	async streamCall(
 		messages: string,
-		tools: ToolCallDefinition[]
+		tools: ToolCallDefinition[],
+		callbacks?: LLMCallbacks
 	): Promise<{ text: string; toolCalls: ToolCallParams[] }> {
 		let client: OpenAI;
 		if (Object.values(DEEPSEEK_MODELS).includes(this.model as DEEPSEEK_MODELS)) {
@@ -141,6 +161,8 @@ export class OpenAIChatWrapper implements ILLM {
 
 		const functions = tools.map((tool) => convertToOpenaiChatFunction(tool, false));
 
+		callbacks?.onStart?.();
+
 		const stream = await client.chat.completions.create({
 			model: this.model,
 			messages: [{ role: "user", content: messages }],
@@ -152,38 +174,69 @@ export class OpenAIChatWrapper implements ILLM {
 
 		let text = "";
 		const toolCalls: ToolCallParams[] = [];
-		const callBuffer: { name?: string; arguments?: string } = {};
+		const callBuffer: { name?: string; arguments?: string; id?: string; started?: boolean } = {};
+
+		// Track if we've started text or tool call chunks
+		let textChunkStarted = false;
+		let toolChunkStarted = false;
 
 		for await (const chunk of stream) {
 			const choice = chunk.choices?.[0];
 			if (!choice) continue;
 
 			const delta = (choice.delta as any) || {};
+			
 			if (delta.content) {
+				if (!textChunkStarted) {
+					callbacks?.onChunkStart?.(0, { type: 'text' });
+					textChunkStarted = true;
+				}
 				text += delta.content;
+				callbacks?.onTextDelta?.(delta.content);
 			}
+			
 			if (delta.function_call?.name) {
+				if (!toolChunkStarted) {
+					callBuffer.id = Date.now().toString();
+					callbacks?.onChunkStart?.(1, { type: 'tool_call', id: callBuffer.id });
+					toolChunkStarted = true;
+				}
 				callBuffer.name = delta.function_call.name;
+				callbacks?.onToolCallStart?.({ id: callBuffer.id!, name: callBuffer.name });
 			}
+			
 			if (delta.function_call?.arguments) {
 				callBuffer.arguments = (callBuffer.arguments || "") + delta.function_call.arguments;
+				callbacks?.onToolCallDelta?.({ id: callBuffer.id!, delta: delta.function_call.arguments });
 			}
 		}
 
-		if (callBuffer.name) {
+		// Send completion callbacks
+		if (textChunkStarted) {
+			callbacks?.onTextDone?.(text);
+			callbacks?.onChunkComplete?.(0, { type: 'text' });
+		}
+
+		if (callBuffer.name && toolChunkStarted) {
 			let params: any = {};
 			try {
 				params = JSON.parse(callBuffer.arguments || "{}");
 			} catch (e) {
 				console.error(`Error parsing function arguments for ${callBuffer.name}:`, e);
 			}
+			
+			callbacks?.onToolCallDone?.({ id: callBuffer.id!, name: callBuffer.name, arguments: params });
+			callbacks?.onChunkComplete?.(1, { type: 'tool_call', id: callBuffer.id });
+			
 			toolCalls.push({
 				type: "function",
 				name: callBuffer.name,
-				call_id: Date.now().toString(),
+				call_id: callBuffer.id!,
 				parameters: params,
 			});
 		}
+
+		callbacks?.onComplete?.();
 
 		return { text, toolCalls };
 	}
