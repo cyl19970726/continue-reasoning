@@ -1,8 +1,7 @@
 import { z } from "zod";
 import OpenAI from "openai";
-import { IAgent, IContext, ITool } from "../interfaces";
-import { Tool, ToolExecutionOptions } from "ai";
-import { createTool, ContextHelper } from "../utils";
+import { IAgent, IContext, ITool } from "../interfaces/index.js";
+import { createTool, ContextHelper } from "../utils/index.js";
 
 async function openaiWebSearch(query: string) {
   const client = new OpenAI({apiKey: process.env.OPENAI_API_KEY});

@@ -1,8 +1,8 @@
-import { IContext, IContextManager, IRAGEnabledContext, PromptCtx, PromptAssemblyStrategy } from "./interfaces";
+import { IContext, IContextManager, IRAGEnabledContext, PromptCtx, PromptAssemblyStrategy } from "./interfaces/index.js";
 import { z } from "zod";
-import { getLogger, LogLevel } from "./utils/logger";
-import { logger } from "./utils/logger";
-import { IAgent } from "./interfaces";
+import { getLogger, LogLevel } from "./utils/logger.js";
+import { logger } from "./utils/logger.js";
+import { IAgent } from "./interfaces/index.js";
 
 
 export class ContextManager implements IContextManager {

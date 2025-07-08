@@ -5,13 +5,13 @@
 
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { IRuntime } from '../runtime/interface';
+import { IRuntime } from '../runtime/interface.js';
 
 // Import modular components
-import { CoreSnapshotManager } from './core/core-snapshot-manager';
-import { CheckpointManager } from './core/checkpoint-manager';
-import { IgnoreManager } from './core/ignore-manager';
-import { ConsolidationManager, ConsolidationOptions, ConsolidationResult, ConsolidationCriteria, StorageStats } from './core/consolidation-manager';
+import { CoreSnapshotManager } from './core/core-snapshot-manager.js';
+import { CheckpointManager } from './core/checkpoint-manager.js';
+import { IgnoreManager } from './core/ignore-manager.js';
+import { ConsolidationManager, ConsolidationOptions, ConsolidationResult, ConsolidationCriteria, StorageStats } from './core/consolidation-manager.js';
 
 // Import interfaces from the interfaces file
 import { 
@@ -22,7 +22,7 @@ import {
   EditHistory,
   ReverseOptions,
   ReverseResult,
-} from './interfaces';
+} from './interfaces.js';
 
 // Default configuration
 const DEFAULT_CONFIG: SnapshotConfig = {
@@ -726,7 +726,7 @@ export class SnapshotManager {
              const newContent = await fs.readFile(path.join(this.workspacePath, filePath), 'utf-8');
              
              // Import diff utility
-             const { generateUnifiedDiff } = await import('../runtime/diff');
+             const { generateUnifiedDiff } = await import('../runtime/diff.js');
              diff = await generateUnifiedDiff(oldContent, newContent, {
                oldPath: `a/${filePath}`,
                newPath: `b/${filePath}`

@@ -1,10 +1,10 @@
-import { SupportedModel } from "../models";
-import { logger } from "../utils/logger";
-import { IContextManager } from './context';
-import { ITaskQueue, ToolSet, AnyTool, ToolCallDefinition, ToolCallParams, ToolExecutionResult } from './tool';
-import { AgentStep } from './prompt';
-import { AgentStatus, ChatMessage } from './base';
-import { BasePromptProcessor } from './base-prompt-processor';
+import { SupportedModel } from "../models/index.js";
+import { logger } from "../utils/logger.js";
+import { IContextManager } from './context.js';
+import { ITaskQueue, ToolSet, AnyTool, ToolCallDefinition, ToolCallParams, ToolExecutionResult } from './tool.js';
+import { AgentStep } from './prompt.js';
+import { AgentStatus, ChatMessage } from './base.js';
+import { BasePromptProcessor } from './base-prompt-processor.js';
 
 /**
  * Agent storage type - Basic information for session persistence
@@ -31,13 +31,24 @@ export type AgentStorage = {
 };
 
 export interface AgentCallbacks {
+    // Session management
     onSessionStart?: (sessionId: string) => void;
     onSessionEnd?: (sessionId: string) => void;
     onAgentStep?: (step: AgentStep<any>) => void;
     onStateStorage?: (state: AgentStorage) => void;
     loadAgentStorage: (sessionId: string) => Promise<AgentStorage | null>;
-    onToolCall?: (toolCall: ToolCallParams) => void;
-    onToolCallResult?: (result: ToolExecutionResult) => void;
+    
+    // Tool execution callbacks (actual tool execution, not LLM tool calls)
+    onToolCallStart?: (toolCall: ToolCallParams) => void; // only use at streaming mode
+    onToolCallDone?: (toolCall: ToolCallParams) => void; 
+    onToolExecutionStart?:(toolCall: ToolCallParams) => void;
+    onToolExecutionEnd?: (result: ToolExecutionResult) => void;
+    
+    // LLM content callbacks
+    onLLMTextDelta?: (stepIndex: number,chunkIndex: number, delta: string) => void; // only use at streaming mode
+    onLLMTextDone?: (stepIndex: number,chunkIndex: number, text: string) => void;  
+    
+    onError?: (error:any) => void;
 }
 
 /**
@@ -104,19 +115,6 @@ export interface IAgent{
     deactivateToolSets(toolSetNames: string[]): void;
     getActiveTools(): AnyTool[];
     
-    // Execution mode management
-    getExecutionMode(): 'auto' | 'manual' | 'supervised';
-    setExecutionMode(mode: 'auto' | 'manual' | 'supervised'): Promise<void>;
-    
-    // User interaction methods
-    processUserInput(input: string, sessionId: string, conversationHistory?: Array<{
-        id: string;
-        role: 'user' | 'agent' | 'system';
-        content: string;
-        timestamp: number;
-        metadata?: Record<string, any>;
-    }>): Promise<void>;
-    
     // 🆕 PromptProcessor management methods
     getPromptProcessor(): BasePromptProcessor<any>;
     setPromptProcessor(processor: BasePromptProcessor<any>): void;
@@ -130,12 +128,47 @@ export interface IAgent{
     };
     
     // 🆕 Lifecycle hooks (for subclass extension)
+    changeState(newState: AgentStatus, reason?: string): Promise<void>;
     beforeStart?(): Promise<void>;
     afterStop?(): Promise<void>;
 }
 
 /**
+ * Basic LLM event types for non-streaming responses
+ */
+export interface LLMEvent {
+    type: 'start' | 'text' | 'tool_call' | 'complete' | 'error';
+    // For 'text' event
+    text?: string;
+    // For 'tool_call' event
+    toolCall?: {
+        id: string;
+        name: string;
+        arguments: any;
+    };
+    // For 'error' event
+    error?: Error;
+}
+
+/**
+ * LLM流式数据块类型
+ */
+export type LLMStreamChunk = 
+  | { type: 'text-delta'; content: string; outputIndex?: number; stepIndex?: number; chunkIndex?: number } 
+  | { type: 'text-done'; content: string; stepIndex?: number; chunkIndex?: number } 
+  | { type: 'tool-call-start'; toolCall: ToolCallParams; stepIndex?: number }
+  | { type: 'tool-call-done'; toolCall: ToolCallParams; result: any; stepIndex?: number }
+  | { type: 'tool-call-error'; toolCall: ToolCallParams; error: Error; stepIndex?: number }
+  | { type: 'thinking-start'; stepIndex?: number }
+  | { type: 'thinking-progress'; thought: string; confidence?: number; stepIndex?: number }
+  | { type: 'thinking-complete'; finalThought: string; stepIndex?: number }
+  | { type: 'step-start'; stepIndex: number }
+  | { type: 'step-complete'; stepIndex: number; result: any }
+  | { type: 'error'; errorCode: string; message: string,  stepIndex?: number }
+
+/**
  * LLM interface supporting mainstream LLM models like openai, anthropic, google, etc. and also support streaming output
+ * 仅支持新的stream模式
  */
 export interface ILLM{
     model: SupportedModel;
@@ -144,9 +177,14 @@ export interface ILLM{
     temperature: number;
     maxTokens: number;
     setParallelToolCall?: (enabled: boolean) => void;
-    streamCall: (messages: string, tools: ToolCallDefinition[]) => Promise<{text: string, toolCalls: ToolCallParams[]}>;
-    call: (messages: string, tools: ToolCallDefinition[]) => Promise<{text: string, toolCalls: ToolCallParams[]}>;
+    
+    // 新的stream方法（必须实现）
+    callStream: (messages: string, tools: ToolCallDefinition[], options?: { stepIndex?: number }) => AsyncIterable<LLMStreamChunk>;
+    callAsync: (messages: string, tools: ToolCallDefinition[], options?: { stepIndex?: number }) => Promise<{ text: string; toolCalls?: ToolCallParams[] }>;
+    
+    // 可选的传统调用方法（向后兼容）
+    call?: (messages: string, tools: ToolCallDefinition[], options?: { stepIndex?: number }) => Promise<{ text: string; toolCalls?: ToolCallParams[] }>;
 }
 
 // Import forward references
-import { IRAGEnabledContext } from './context'; 
+import { IRAGEnabledContext } from './context.js'; 

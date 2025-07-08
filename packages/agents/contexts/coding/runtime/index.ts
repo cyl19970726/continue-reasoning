@@ -6,7 +6,7 @@
  */
 
 // Export runtime interfaces
-export * from './interface';
+export * from './interface.js';
 
 // Export runtime implementations
-export * from './impl/node-runtime'; 
+export * from './impl/node-runtime.js'; 

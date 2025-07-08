@@ -10,11 +10,11 @@ import {
     AgentNotFoundError,
     AgentUnavailableError,
     MultiAgentEvents 
-} from '../interfaces/multi-agent';
-import { BasicTaskManager } from './task-manager';
-import { IEventBus } from './event-bus';
-import { logger } from '../utils/logger';
-import { RoutingStrategyFactory, IRoutingStrategy } from './routing-strategies';
+} from '../interfaces/multi-agent.js';
+import { BasicTaskManager } from './task-manager.js';
+import { IEventBus } from './event-bus.js';
+import { logger } from '../utils/logger.js';
+import { RoutingStrategyFactory, IRoutingStrategy } from './routing-strategies.js';
 
 /**
  * 🎯 简单智能体注册中心

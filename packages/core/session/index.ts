@@ -1,1 +1,1 @@
-export * from './sessionManager';
+export * from './sessionManager.js';

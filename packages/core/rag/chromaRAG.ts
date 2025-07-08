@@ -9,7 +9,7 @@ import {
   IndexConfig,
   ChunkingStrategy,
   RAGMetadata
-} from '../interfaces';
+} from '../interfaces/index.js';
 import { ChromaClient, Collection, OpenAIEmbeddingFunction, IncludeEnum } from 'chromadb';
 import { randomUUID } from 'crypto';
 

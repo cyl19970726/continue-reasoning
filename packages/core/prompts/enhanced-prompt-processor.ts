@@ -1,8 +1,8 @@
-import { IPromptProcessor, MessageType, ChatHistoryConfig, IEnhancedPromptProcessor } from '../interfaces';
-import { BasePromptProcessor } from './index';
-import { EnhancedThinkingExtractorResult } from '../interfaces';
-import { XmlExtractor } from '../utils/xml-extractor';
-import { logger } from '../utils/logger';
+import { IPromptProcessor, MessageType, ChatHistoryConfig, IEnhancedPromptProcessor } from '../interfaces/index.js';
+import { BasePromptProcessor } from './index.js';
+import { EnhancedThinkingExtractorResult } from '../interfaces/index.js';
+import { XmlExtractor } from '../utils/xml-extractor.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Enhanced Prompt Processor with structured thinking support

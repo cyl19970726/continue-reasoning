@@ -1,7 +1,7 @@
-import { ContextHelper } from "../utils";
+import { ContextHelper } from "../utils/index.js";
 import { z } from 'zod';
-import { ToolSet, ToolExecutionResult } from "../interfaces";
-import { logger } from "../utils/logger";
+import { ToolSet, ToolExecutionResult } from "../interfaces/index.js";
+import { logger } from "../utils/logger.js";
 
 // Schema for storing DeepWiki context data
 export const DeepWikiContextSchema = z.object({

@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { createTool } from '@continue-reasoning/core';
 import { IAgent } from '@continue-reasoning/core';
-import { IRuntime } from '../runtime/interface';
+import { IRuntime } from '../runtime/interface.js';
 import * as path from 'path';
 
 // ReadFile Tool - for completeness in the diff-driven system

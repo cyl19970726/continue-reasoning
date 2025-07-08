@@ -1,6 +1,8 @@
 // Coding agent
-export * from './coding-agent';
+export * from './coding-agent.js';
 
-// Agent contexts
-export * from './contexts/coding';
-export * from './contexts/interaction'; 
+// CLI client adapter
+export * from './cli-client-adapter.js';
+
+// Start script
+export { startCLICodingAgent } from './start.js';

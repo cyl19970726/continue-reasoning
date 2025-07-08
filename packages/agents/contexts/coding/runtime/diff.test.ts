@@ -15,7 +15,7 @@ import {
   getGitTimestamp,
   addFileHashesToDiff,
   mergeDiffs
-} from './diff';
+} from './diff.js';
 
 describe('Diff Utilities', () => {
   describe('generateUnifiedDiff', () => {

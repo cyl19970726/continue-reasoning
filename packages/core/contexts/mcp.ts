@@ -1,17 +1,17 @@
-import { createTool, ContextHelper } from "../utils";
+import { createTool, ContextHelper } from "../utils/index.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { any, z } from "zod";
-import { IAgent, ToolSet, IRAGEnabledContext } from "../interfaces";
-import { zodToJson, jsonToZodStrict, jsonToZodNostrict } from "../utils/jsonHelper";
-import { logger } from "../utils/logger";
+import { IAgent, ToolSet, IRAGEnabledContext } from "../interfaces/index.js";
+import { zodToJson, jsonToZodStrict, jsonToZodNostrict } from "../utils/jsonHelper.js";
+import { logger } from "../utils/logger.js";
 import { exec } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import os from "os";
-import { CreateRAGContext } from "./rag/createRagContext";
+import { CreateRAGContext } from "./rag/createRagContext.js";
 
 // 使用promisify包装exec
 const execAsync = promisify(exec);

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
-import { logger } from '../utils/logger';
-import { MultiAgentEvents } from '../interfaces/multi-agent';
+import { logger } from '../utils/logger.js';
+import { MultiAgentEvents } from '../interfaces/multi-agent.js';
 
 // 基础事件接口
 export interface BaseEvent {

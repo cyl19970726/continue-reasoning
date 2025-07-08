@@ -1,10 +1,11 @@
 import openai, { OpenAI } from "openai";
 import { z } from "zod";
-import { ILLM, LLMModel, ToolCallDefinition, ToolCallParams } from "../interfaces";
+import { ILLM, LLMModel, ToolCallDefinition, ToolCallParams } from "../interfaces/index.js";
 import dotenv from "dotenv";
-import { zodToJsonNostrict, zodToJsonStrict } from "../utils/jsonHelper";
-import { SupportedModel } from "../models";
-import { logger } from "../utils/logger";
+import { zodToJsonNostrict, zodToJsonStrict } from "../utils/jsonHelper.js";
+import { SupportedModel } from "../models/index.js";
+import { logger } from "../utils/logger.js";
+import { response } from "express";
 
 dotenv.config();
 
@@ -73,48 +74,48 @@ export class OpenAIWrapper implements ILLM {
         this.parallelToolCall = enabled;
     }
 
-    async call(messages: string, tools: ToolCallDefinition[]): Promise<{text: string, toolCalls: ToolCallParams[]}> {
-        console.log(process.env.OPENAI_API_KEY);
-        const openai = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY,
-        });
-
-        const openaiTools = tools.map(tool => convertToOpenaiTool(tool, false));
-
-        const response = await openai.responses.create({
-            model: this.model,
-            input: messages,
-            tools: openaiTools,
-            store: true,
-            parallel_tool_calls: this.parallelToolCall,
-        });
-
-        const toolCalls = response.output.filter((item) => item.type === "function_call").map((item) => ({
-            type: "function" as const,
-            name: item.name,
-            call_id: item.call_id,
-            parameters: JSON.parse(item.arguments),
-        }));
-
-        logger.debug(`[OpenAIWrapper] Extracted Tool Calls: ${toolCalls.length} \nDetails: ${JSON.stringify(toolCalls)}`);
-
+    /**
+     * 向后兼容的call方法 - 调用callAsync
+     */
+    async call(
+        messages: string,
+        tools: ToolCallDefinition[] = [],
+        options?: { stepIndex?: number }
+    ): Promise<{ text: string; toolCalls: ToolCallParams[] }> {
+        const result = await this.callAsync(messages, tools, options);
         return {
-            text: response.output_text || "",
-            toolCalls
+            text: result.text,
+            toolCalls: result.toolCalls || []
         };
     }
-    
-    async streamCall(messages: string, tools: ToolCallDefinition[]): Promise<{text: string, toolCalls: ToolCallParams[]}> {
-        const openai = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY,
-        });
-        
-        const openaiTools = tools.map(tool => convertToOpenaiTool(tool, false));
+
+    /**
+     * 新的stream流式调用（推荐使用）
+     */
+    async* callStream(
+        messages: string,
+        tools: ToolCallDefinition[] = [],
+        options?: { stepIndex?: number }
+    ): AsyncIterable<import('../interfaces/agent.js').LLMStreamChunk> {
+        const stepIndex = options?.stepIndex!;
+
+
         
         try {
-            console.log("Starting streaming response with OpenAI...");
+            // 发出步骤开始事件
+            if (stepIndex !== undefined) {
+                yield { type: 'step-start', stepIndex };
+            }
             
-            // Start streaming response
+            const openai = new OpenAI({
+                apiKey: process.env.OPENAI_API_KEY,
+            });
+            
+            const openaiTools = tools.map(tool => convertToOpenaiTool(tool, false));
+            
+            logger.debug("Starting stream-based streaming response with OpenAI...");
+            
+            // 创建流式响应
             const stream = await openai.responses.create({
                 model: this.model,
                 input: messages,
@@ -124,138 +125,181 @@ export class OpenAIWrapper implements ILLM {
                 parallel_tool_calls: this.parallelToolCall,
             });
 
-            let generatedText = "";
-            const toolCalls: ToolCallParams[] = [];
-            const functionCallsInProgress: Record<string, {
+            let currentText = '';
+            const toolCalls = new Map<string, {
                 id: string;
-                call_id: string;
                 name: string;
                 arguments: string;
-                isComplete: boolean;
-            }> = {};
+            }>();
 
-            // Debug flag to track events
-            let seenEvents = new Set<string>();
-            let fullResponseItems: any[] = [];
-            
-            // Process streaming chunks
-            for await (const chunk of stream) {
-                // Track event types for debugging
-                seenEvents.add(chunk.type);
-                
-                // Cast the chunk to any to bypass type checking
-                const event = chunk as any;
-                
-                // For text output - delta event
+            // 处理流式响应
+            for await (const event of stream) {
+                if (stepIndex !== undefined) {
+                    if (event.type === "response.created") {
+                        yield {
+                            type: 'step-start',
+                            stepIndex,
+                        };
+                    }
+                }
+
                 if (event.type === "response.output_text.delta") {
-                    generatedText += event.delta;
-                    console.log(`Received text delta: ${event.delta.length} chars`);
-                }
-                // For text output - added event
-                else if (event.type === "response.output_text.added") {
-                    generatedText += event.text || "";
-                    console.log(`Received text added: ${(event.text || "").length} chars`);
-                }
-                // Store full response item when added
-                else if (event.type === "response.output_item.added") {
-                    if (event.output_item) {
-                        fullResponseItems.push(event.output_item);
-                        console.log(`Added response item type: ${event.output_item.type}`);
-                    }
-                }
-                // For function call starts
-                else if (event.type === "response.function_call.start") {
-                    console.log(`Function call started: ${event.name}`);
-                    // Initialize a new function call
-                    functionCallsInProgress[event.id] = {
-                        id: event.id,
-                        call_id: event.call_id,
-                        name: event.name,
-                        arguments: "", // Will build this up from argument chunks
-                        isComplete: false
+                    yield {
+                        type: 'text-delta',
+                        content: event.delta,
+                        outputIndex: event.output_index, // The index of the output item that the text delta was added to.
+                        stepIndex,
+                        chunkIndex: event.sequence_number
                     };
-                } 
-                // For function call arguments (partial)
-                else if (event.type === "response.function_call_arguments.delta") {
-                    // Add to the arguments of an in-progress function call
-                    if (event.id && functionCallsInProgress[event.id]) {
-                        functionCallsInProgress[event.id].arguments += event.delta || "";
-                        console.log(`Received arguments delta for ${event.id}: ${(event.delta || "").length} chars`);
-                    }
-                } 
-                // For function call completions
-                else if (event.type === "response.function_call_arguments.done") {
-                    // Mark the function call as complete
-                    if (event.id && functionCallsInProgress[event.id]) {
-                        functionCallsInProgress[event.id].isComplete = true;
-                        console.log(`Function call completed: ${event.id}`);
-                        
-                        // Process the complete function call
-                        const call = functionCallsInProgress[event.id];
-                        try {
-                            toolCalls.push({
-                                type: "function" as const,
-                                name: call.name,
-                                call_id: call.call_id,
-                                parameters: JSON.parse(call.arguments),
-                            });
-                            console.log(`Added tool call for ${call.name}`);
-                        } catch (e) {
-                            console.error(`Error parsing arguments for tool call ${call.id}:`, e);
+                }else if(event.type == "response.output_text.done") {
+                    // 注意这里其实只是收集了一个chunk 的text 而不是完整的text
+                    yield {
+                            type: 'text-done',
+                            content: event.text,
+                            stepIndex,
+                            chunkIndex: event.sequence_number
+                    };
+                }
+
+                if (event.type === "response.output_item.added") {
+                    const item = event.item;
+                    if (item.type === "function_call") {
+                        // 处理工具调用
+                        const toolCallId = item.call_id || item.id;
+                        if (toolCallId && item.name) {
+                            // 工具调用开始
+                            yield {
+                                type: 'tool-call-start',
+                                toolCall: {
+                                    type: 'function',
+                                    call_id: toolCallId,
+                                    name: item.name,
+                                    parameters: item.arguments,
+                                },
+                                stepIndex
+                            };
                         }
                     }
                 }
-            }
-
-            logger.debug(`[OpenAIWrapper] Streaming complete. Generated text length: ${generatedText.length}`);
-            logger.debug(`[OpenAIWrapper] Extracted Tool Calls: ${toolCalls.length}`);
-            logger.debug(`[OpenAIWrapper] Seen event types: ${Array.from(seenEvents)}`);
-            
-            // Extract response text from fullResponseItems if we didn't get it from streaming
-            if (generatedText.length === 0 && fullResponseItems.length > 0) {
-                const textItems = fullResponseItems.filter(item => item.type === "text");
-                for (const item of textItems) {
-                    if (item.text) {
-                        generatedText += item.text;
+                if (event.type === "response.output_item.done") {
+                    const item = event.item;
+                    
+                 if (item.type === "function_call") {
+                        // 处理工具调用
+                        const toolCallId = item.call_id || item.id;
+                        if (toolCallId && item.name) {
+                            // 解析参数并发出完成事件
+                            try {
+                                const parameters = item.arguments ? JSON.parse(item.arguments) : {};
+                                yield {
+                                    type: 'tool-call-done',
+                                    toolCall: {
+                                        type: 'function',
+                                        call_id: toolCallId,
+                                        name: item.name,
+                                        parameters
+                                    },
+                                    result: { parameters },
+                                    stepIndex
+                                };
+                            } catch (error) {
+                                yield {
+                                    type: 'tool-call-error',
+                                    toolCall: {
+                                        type: 'function',
+                                        call_id: toolCallId,
+                                        name: item.name,
+                                        parameters: {}
+                                    },
+                                    error: new Error(`Failed to parse tool arguments: ${item.arguments}`),
+                                    stepIndex
+                                };
+                            }
+                        }
                     }
                 }
-                logger.debug("[OpenAIWrapper] Extracted text from response items:", generatedText.length);
-            }
-            
-            // Extract function calls from fullResponseItems if we didn't get them from streaming
-            if (toolCalls.length === 0 && fullResponseItems.length > 0) {
-                const functionCallItems = fullResponseItems.filter(item => item.type === "function_call");
-                for (const item of functionCallItems) {
-                    try {
-                        toolCalls.push({
-                            type: "function" as const,
-                            name: item.name,
-                            call_id: item.call_id,
-                            parameters: JSON.parse(item.arguments),
-                        });
-                    } catch (e) {
-                        console.error("Error parsing function call arguments:", e);
+
+                // finish the whole step 
+                if (event.type === "response.completed") {
+
+                    // 发出步骤完成事件
+                    if (stepIndex !== undefined) {
+                        yield {
+                            type: 'step-complete',
+                            stepIndex,
+                            result: {
+                                text: currentText,
+                                toolCalls: Array.from(toolCalls.values())
+                            }
+                        };
+                    }
+                    
+                    break;
+                }
+
+                if (event.type == "error") {
+                    let ec;
+                    if (event.code == null){
+                        ec = 'NONE'
+                    }else{
+                        ec = event.code;
+                    }
+                    yield {
+                        type: 'error',
+                        errorCode: ec,
+                        message: event.message,
                     }
                 }
-                logger.debug(`[OpenAIWrapper] Extracted tool calls from response items: ${toolCalls.length}`);
-            }
-            
-            // If we didn't get any output from streaming or tool calls, 
-            // fall back to non-streaming API as a backup
-            if (generatedText.length === 0 && toolCalls.length === 0) {
-                logger.debug("[OpenAIWrapper] No streaming output received, falling back to non-streaming API");
-                return this.call(messages, tools);
-            }
 
-            return {
-                text: generatedText,
-                toolCalls
-            };
+            }
+        
+            
         } catch (error) {
-            logger.error("[OpenAIWrapper] Error in streamCall:", error);
-            // Fall back to regular call on error
-            logger.debug("[OpenAIWrapper] Falling back to non-streaming API due to error");
-            return this.call(messages, tools);
+            logger.error("[OpenAIWrapper] Error in callStream:", error);
+            yield { 
+                type: 'error', 
+                errorCode: 'NONE', 
+                message: String(error), 
+                stepIndex 
+            };
+            throw error;
+        }
+    }
+
+    /**
+     * 新的async非流式调用（推荐使用）
+     */
+    async callAsync(
+        messages: string,
+        tools: ToolCallDefinition[] = [],
+        options?: { stepIndex?: number }
+    ): Promise<{ text: string; toolCalls?: ToolCallParams[] }> {
+        try {
+            // 收集流式响应
+            let text = '';
+            let toolCalls: ToolCallParams[] = [];
+            
+            for await (const chunk of this.callStream(messages, tools, options)) {
+                switch (chunk.type) {
+                    case 'text-done':
+                        text += chunk.content;
+                        break;
+                    case 'tool-call-done':
+                        toolCalls.push(chunk.toolCall);
+                        break;
+                    case 'error':
+                        throw chunk.message;
+                }
+            }
+            
+            return { 
+                text, 
+                toolCalls: toolCalls.length > 0 ? toolCalls : undefined 
+            };
+            
+        } catch (error) {
+            logger.error("[OpenAIWrapper] Error in callAsync:", error);
+            throw error;
         }
     }
 }

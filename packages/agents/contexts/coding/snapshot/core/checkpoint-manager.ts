@@ -5,8 +5,8 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { generateUnifiedDiff, mergeDiffs } from '../../runtime/diff';
-import { CheckpointData, UnknownChange, UnknownChangeResult, SnapshotConfig } from '../interfaces';
+import { generateUnifiedDiff, mergeDiffs } from '../../runtime/diff.js';
+import { CheckpointData, UnknownChange, UnknownChangeResult, SnapshotConfig } from '../interfaces.js';
 
 export class CheckpointManager {
   private workspacePath: string;

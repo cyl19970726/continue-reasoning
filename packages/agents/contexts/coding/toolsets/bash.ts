@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { createTool } from '@continue-reasoning/core';
 import { IAgent } from '@continue-reasoning/core';
-import { ShellExecutionResult, ExecutionOptions } from '../sandbox';
-import { IRuntime } from '../runtime/interface';
+import { ShellExecutionResult, ExecutionOptions } from '../sandbox/index.js';
+import { IRuntime } from '../runtime/interface.js';
 import { logger } from '@continue-reasoning/core';
 
 const BashCommandParamsSchema = z.object({

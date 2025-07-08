@@ -1,5 +1,5 @@
-import { logger } from "../utils/logger";
-import { AgentStep, IClient, ISessionManager, ISessionManagerCallbacks, ToolCallParams, ToolExecutionResult } from "../interfaces";
+import { logger } from "../utils/logger.js";
+import { AgentStep, IClient, ISessionManager, ToolCallParams, ToolExecutionResult, ClientStatus, ClientType, AgentCallbacks, AgentStorage, ClientConfig } from "../interfaces/index.js";
 
 /**
  * 简单的客户端实现
@@ -7,13 +7,109 @@ import { AgentStep, IClient, ISessionManager, ISessionManagerCallbacks, ToolCall
  */
 export class SimpleClient implements IClient {
     name: string = 'simple-client';
+    readonly type: ClientType = 'custom';
     currentSessionId?: string;
     sessionManager?: ISessionManager;
+    agentCallbacks?: AgentCallbacks;
+    private config: ClientConfig;
 
-    constructor(name?: string) {
+    constructor(name?: string, config?: ClientConfig) {
         if (name) {
             this.name = name;
         }
+        
+        // 默认配置
+        this.config = {
+            enableStreaming: false, // 默认非流式模式
+            maxSteps: 10,
+            ...config
+        };
+        
+        // 设置默认的 agentCallbacks
+        this.agentCallbacks = {
+            onAgentStep: (step: AgentStep<any>) => {
+                logger.info(`SimpleClient: Agent step ${step.stepIndex}`);
+                
+                // 处理思考内容
+                if (step.extractorResult?.thinking) {
+                    logger.info(`Thinking: ${step.extractorResult.thinking}`);
+                }
+
+                // 处理最终答案
+                if (step.extractorResult?.response) {
+                    logger.info(`Response: ${step.extractorResult.response}`);
+                }
+
+                // 处理错误
+                if (step.error) {
+                    logger.error(`Step Error: ${step.error}`);
+                }
+            },
+            
+            onToolCallStart: (toolCall: ToolCallParams) => {
+                // 只在流式模式下启用
+                if (this.isStreamingMode()) {
+                    logger.info(`SimpleClient: Tool call started: ${toolCall.name} (${toolCall.call_id})`);
+                    logger.debug(`Tool parameters:`, toolCall.parameters);
+                }
+            },
+            
+            onToolExecutionEnd: (result: ToolExecutionResult) => {
+                const status = result.status === 'succeed' ? '✅' : '❌';
+                logger.info(`SimpleClient: Tool execution ended: ${status} ${result.name} (${result.call_id})`);
+                
+                if (result.status === 'succeed' && result.result) {
+                    logger.debug(`Tool result:`, result.result);
+                } else if (result.status === 'failed' && result.message) {
+                    logger.error(`Tool error: ${result.message}`);
+                }
+            },
+            
+            onSessionStart: (sessionId: string) => {
+                logger.info(`SimpleClient: Session started: ${sessionId}`);
+            },
+            
+            onSessionEnd: (sessionId: string) => {
+                logger.info(`SimpleClient: Session ended: ${sessionId}`);
+            },
+            
+            onError: (error: any) => {
+                logger.error(`SimpleClient: Agent error: ${error.message || error}`);
+            },
+            
+            loadAgentStorage: async (sessionId: string): Promise<AgentStorage | null> => {
+                logger.info(`SimpleClient: Loading agent storage for session: ${sessionId}`);
+                // SimpleClient 没有自定义存储逻辑，返回 null 让 SessionManager 使用本地存储
+                return null;
+            },
+            
+            // 流式模式专用回调
+            onLLMTextDelta: (stepIndex: number, chunkIndex: number, delta: string) => {
+                // 只在流式模式下启用
+                if (this.isStreamingMode()) {
+                    process.stdout.write(delta); // 实时显示
+                }
+            },
+            
+            onLLMTextDone: (stepIndex: number, chunkIndex: number, text: string) => {
+                logger.info(`SimpleClient: LLM text completed for step ${stepIndex}, chunk ${chunkIndex}`);
+            }
+        };
+    }
+
+    /**
+     * 检查是否为流式模式
+     */
+    isStreamingMode(): boolean {
+        return this.config.enableStreaming === true;
+    }
+
+    /**
+     * 设置 Agent 回调
+     */
+    setAgentCallbacks(callbacks: AgentCallbacks): void {
+        this.agentCallbacks = callbacks;
+        logger.info('SimpleClient: Agent callbacks set');
     }
 
     /**
@@ -22,62 +118,10 @@ export class SimpleClient implements IClient {
     setSessionManager(sessionManager: ISessionManager): void {
         this.sessionManager = sessionManager;
         
-        // 设置回调
-        sessionManager.setCallbacks({
-            onAgentStep: (step) => this.handleAgentStep(step),
-            onToolCall: (toolCall) => this.handleToolCall(toolCall),
-            onToolCallResult: (result) => this.handleToolCallResult(result),
-            onSessionStart: (sessionId) => {
-                logger.info(`SimpleClient: Session started: ${sessionId}`);
-            },
-            onSessionEnd: (sessionId) => {
-                logger.info(`SimpleClient: Session ended: ${sessionId}`);
-            }
-        });
-    }
-
-    /**
-     * 处理 Agent 步骤事件
-     */
-    handleAgentStep(step: AgentStep<any>): void {
-        logger.info(`SimpleClient handleAgentStep: Step ${step.stepIndex}`);
+        // 将客户端注册到 sessionManager
+        sessionManager.setClient(this);
         
-        // 处理思考内容
-        if (step.extractorResult?.thinking) {
-            logger.info(`Thinking: ${step.extractorResult.thinking}`);
-        }
-
-        // 处理最终答案
-        if (step.extractorResult?.finalAnswer) {
-            logger.info(`Final Answer: ${step.extractorResult.finalAnswer}`);
-        }
-
-        // 处理错误
-        if (step.error) {
-            logger.error(`Step Error: ${step.error}`);
-        }
-    }
-
-    /**
-     * 处理工具调用开始事件
-     */
-    handleToolCall(toolCall: ToolCallParams): void {
-        logger.info(`SimpleClient handleToolCall: ${toolCall.name} (${toolCall.call_id})`);
-        logger.debug(`Tool parameters:`, toolCall.parameters);
-    }
-
-    /**
-     * 处理工具调用结果事件
-     */
-    handleToolCallResult(result: ToolExecutionResult): void {
-        const status = result.status === 'succeed' ? '✅' : '❌';
-        logger.info(`SimpleClient handleToolCallResult: ${status} ${result.name} (${result.call_id})`);
-        
-        if (result.status === 'succeed' && result.result) {
-            logger.debug(`Tool result:`, result.result);
-        } else if (result.status === 'failed' && result.message) {
-            logger.error(`Tool error: ${result.message}`);
-        }
+        logger.info('SimpleClient: Session manager set');
     }
 
     /**
@@ -135,15 +179,16 @@ export class SimpleClient implements IClient {
     /**
      * 获取当前状态信息
      */
-    getStatus(): {
-        name: string;
-        hasSessionManager: boolean;
-        currentSessionId?: string;
-    } {
+    getStatus(): ClientStatus {
         return {
             name: this.name,
+            type: 'custom',
+            isInitialized: !!this.sessionManager,
+            isRunning: !!this.currentSessionId,
             hasSessionManager: !!this.sessionManager,
-            currentSessionId: this.currentSessionId
+            currentSessionId: this.currentSessionId,
+            messageCount: 0, // SimpleClient doesn't track messages
+            lastActivity: undefined
         };
     }
 }

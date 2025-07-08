@@ -2,7 +2,7 @@
  * Runtime interfaces for the coding agent
  */
 
-import { ISandbox, ShellExecutionResult, ExecutionOptions } from '../sandbox';
+import { ISandbox, ShellExecutionResult, ExecutionOptions } from '../sandbox/index.js';
 
 /**
  * 代码块搜索匹配配置

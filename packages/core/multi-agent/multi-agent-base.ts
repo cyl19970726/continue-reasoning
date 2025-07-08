@@ -1,17 +1,17 @@
-import { BaseAgent, AgentOptions } from '../agent';
+import { BaseAgent, AgentOptions } from '../agent.js';
 import { 
     IMultiAgent, 
     Task, 
     TaskResult, 
     AgentStatus,
     TaskExecutionError 
-} from '../interfaces/multi-agent';
-import { IContext } from '../interfaces';
-import { LogLevel } from '../utils/logger';
+} from '../interfaces/multi-agent.js';
+import { IContext } from '../interfaces/index.js';
+import { LogLevel } from '../utils/logger.js';
 import { v4 as uuidv4 } from 'uuid';
-import { logger } from '../utils/logger';
-import { createStandardPromptProcessor } from '../prompts/prompt-processor-factory';
-import { getCapabilityKeywords } from './utils';
+import { logger } from '../utils/logger.js';
+import { createStandardPromptProcessor } from '../prompts/prompt-processor-factory.js';
+import { getCapabilityKeywords } from './utils.js';
 
 /**
  * 🎯 多智能体基础类
@@ -22,7 +22,7 @@ import { getCapabilityKeywords } from './utils';
  * - 提供任务执行能力
  * - 管理并发任务
  */
-export class MultiAgentBase extends BaseAgent implements IMultiAgent {
+export abstract class MultiAgentBase extends BaseAgent implements IMultiAgent {
     public capabilities: string[] = [];
     public maxConcurrentTasks: number = 3;
     

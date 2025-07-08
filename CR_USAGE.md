@@ -32,6 +32,11 @@ chmod +x ./cr
 # Start the coding assistant in current directory
 ./cr
 
+# Use React+Ink interface (beautiful terminal UI)
+./cr --react
+# or
+./cr -r
+
 # Show help
 ./cr --help
 
@@ -47,6 +52,7 @@ chmod +x ./cr
 - 🚀 Runs commands and manages files
 - 📝 Creates tests and documentation
 - 🔍 Helps debug and fix issues
+- 🎨 Beautiful React+Ink UI with real-time streaming (use --react flag)
 
 ## Tips
 

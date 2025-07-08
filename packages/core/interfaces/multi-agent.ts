@@ -1,4 +1,4 @@
-import { IAgent } from './agent';
+import { IAgent } from './agent.js';
 import { z } from 'zod';
 
 // ===== 路由策略类型 =====
@@ -8,6 +8,7 @@ export type RoutingStrategy = 'keyword' | 'llm' | 'vector' | 'hybrid';
 export interface RoutingConfig {
     strategy: RoutingStrategy;
     llmConfig?: {
+        provider?: string;
         model?: string;
         temperature?: number;
         maxTokens?: number;

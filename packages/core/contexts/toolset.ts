@@ -1,6 +1,6 @@
-import { ContextHelper, createTool } from "../utils";
+import { ContextHelper, createTool } from "../utils/index.js";
 import { z } from "zod";
-import { IAgent } from "../interfaces";
+import { IAgent } from "../interfaces/index.js";
 
 export const ToolSetContextId = "toolset-context";
 export const ToolSetContext = ContextHelper.createContext({

@@ -1,7 +1,7 @@
-import { logger } from '../utils/logger';
-import { ChatMessage, AgentStatus, MessageType } from './base';
-import { IContextManager } from './context';
-import { ToolExecutionResult } from './tool';
+import { logger } from '../utils/logger.js';
+import { ChatMessage, AgentStatus, MessageType } from './base.js';
+import { IContextManager } from './context.js';
+import { ToolExecutionResult } from './tool.js';
 
 /**
  * Base extractor result interface
@@ -89,7 +89,7 @@ export interface AgentStep<T extends StandardExtractorResult = StandardExtractor
         call_id: string;
         params: any;
     }>;
-    toolCallResults?: ToolExecutionResult[];
+    toolExecutionResults?: ToolExecutionResult[];
 }
 
 /**
@@ -111,7 +111,7 @@ export interface IPromptProcessor<TExtractorResult extends ExtractorResult> {
     textExtractor(responseText: string): TExtractorResult;
     renderExtractorResultToPrompt(extractorResult: TExtractorResult, stepIndex: number): void;
     renderChatMessageToPrompt(messages: ChatMessage[]): void;
-    renderToolCallToPrompt(toolResults: AgentStep['toolCallResults'], stepIndex: number): void;
+    renderToolCallToPrompt(toolResults: AgentStep['toolExecutionResults'], stepIndex: number): void;
     formatPrompt(stepIndex: number): string | Promise<string>;
     
     // Context management

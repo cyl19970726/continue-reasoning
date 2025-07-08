@@ -1,5 +1,5 @@
-import { createEnhancedPromptProcessor, LogLevel, OPENAI_MODELS, SessionManager } from '@continue-reasoning/core';
-import { CodingAgent } from '@continue-reasoning/cr-coding';
+import { createEnhancedPromptProcessor, LogLevel, OPENAI_MODELS } from '../packages/core/index.js';
+import { CodingAgent } from '../packages/agents/coding-agent.js';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -21,24 +21,14 @@ async function stepPromptSavingExample() {
         5, // 运行5步来生成足够的示例
         LogLevel.DEBUG,
         {
-            model: OPENAI_MODELS.O3,
+            model: OPENAI_MODELS.GPT_4O,
             enableParallelToolCalls: true,
             temperature: 0.1,
         },
         [],
     );
 
-    
-    // 🔧 修复：SessionManager只需要一个参数（agent）
-    const sessionManager = new SessionManager(agent as any);
-
-    await (agent as any).setup();
-    // (agent as any).setEnableToolCallsForStep((stepIndex: number) => {
-    //     if(stepIndex === 0){
-    //         return false;
-    //     }
-    //     return true;
-    // });
+    await agent.setup();
 
     try {
         console.log('🎯 Demo: Creating a Python web scraper with step-by-step prompt saving\n');
@@ -82,7 +72,7 @@ async function stepPromptSavingExample() {
         
         // 🔧 修复：使用正确的参数顺序和类型
         const sessionId = `step-prompt-demo-${Date.now()}`;
-        await (agent as any).startWithUserInput(task, 20, sessionId, promptSaveOptions);
+        await agent.startWithUserInput(task, 20, sessionId, promptSaveOptions);
 
         console.log('\n✅ Task completed! Analyzing saved prompts...\n');
 
@@ -189,4 +179,4 @@ async function stepPromptSavingExample() {
     }
 }
 
-stepPromptSavingExample().catch(console.error); 
+stepPromptSavingExample().catch(console.error);

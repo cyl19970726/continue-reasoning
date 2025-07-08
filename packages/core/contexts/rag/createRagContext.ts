@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { IAgent, IRAGEnabledContext } from "../../interfaces";
-import { createTool, ContextHelper } from "../../utils";
-import { logger } from "../../utils/logger";
+import { IAgent, IRAGEnabledContext } from "../../interfaces/index.js";
+import { createTool, ContextHelper } from "../../utils/index.js";
+import { logger } from "../../utils/logger.js";
 
 /**
  * Schema for creating a new RAG-enabled context with an MCP server

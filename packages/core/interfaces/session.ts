@@ -1,6 +1,6 @@
-import { AgentStorage } from './agent';
-import { AgentStep } from './prompt';
-import { ToolCallParams, ToolExecutionResult } from './tool';
+import { AgentStorage } from './agent.js';
+import { AgentStep } from './prompt.js';
+import { ToolCallParams, ToolExecutionResult } from './tool.js';
 
 /**
  * Session manager interface for managing agent sessions and state
@@ -9,7 +9,7 @@ export interface ISessionManager {
     agent: any;
     
     // Core session management
-    setCallbacks(callbacks: ISessionManagerCallbacks): void;
+    setClient(client: any): void; // 设置客户端以连接 client callbacks
     sendMessageToAgent(message: string, maxSteps: number, sessionId: string): Promise<string>;
     createSession(userId?: string, agentId?: string): string;
     getSessionCount(): number;
@@ -28,16 +28,8 @@ export interface ISessionManager {
     getAllSessionsSummary(): SessionSummary[];
 }
 
-/**
- * Callback interface for session manager events
- */
-export interface ISessionManagerCallbacks {
-    onSessionStart?: (sessionId: string) => void;
-    onSessionEnd?: (sessionId: string) => void;
-    onAgentStep?: (step: AgentStep<any>) => void;
-    onToolCall?: (toolCall: ToolCallParams) => void;
-    onToolCallResult?: (result: ToolExecutionResult) => void;
-}
+// ISessionManagerCallbacks 已移除
+// 在新架构中，所有回调都通过 Client 的 AgentCallbacks 统一处理
 
 /**
  * Session statistics interface

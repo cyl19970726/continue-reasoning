@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { randomUUID } from "crypto";
-import { createTool } from "../utils";
+import { createTool } from "../utils/index.js";
 import { 
   IAgent, 
   IRAG, 
@@ -9,7 +9,7 @@ import {
   ITool,
   QueryOptions,
   RAGResult
-} from "../interfaces";
+} from "../interfaces/index.js";
 
 /**
  * 通用状态类型，可以扩展

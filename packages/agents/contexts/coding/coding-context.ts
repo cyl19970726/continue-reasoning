@@ -2,21 +2,21 @@ import { IContext, ITool, IAgent, ToolExecutionResult, ToolSet as ToolSetInterfa
 import { z } from 'zod';
 import { logger } from '@continue-reasoning/core';
 import { createTool } from '@continue-reasoning/core';
-import { EditingStrategyToolSet, EditingStrategyToolExamples, GrepToolSet, GlobToolSet } from './toolsets';
+import { EditingStrategyToolSet, EditingStrategyToolExamples } from './toolsets/index.js';
 import { ContextHelper } from '@continue-reasoning/core';
-import { IRuntime } from './runtime/interface';
-import { NodeJsSandboxedRuntime } from './runtime/impl/node-runtime';
-import { ISandbox } from './sandbox';
-import { NoSandbox } from './sandbox/no-sandbox';
-import { SeatbeltSandbox } from './sandbox/seatbelt-sandbox';
+import { IRuntime } from './runtime/interface.js';
+import { NodeJsSandboxedRuntime } from './runtime/impl/node-runtime.js';
+import { ISandbox } from './sandbox/index.js';
+import { NoSandbox } from './sandbox/no-sandbox.js';
+import { SeatbeltSandbox } from './sandbox/seatbelt-sandbox.js';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { SnapshotManager } from './snapshot/snapshot-manager';
-import { SnapshotEditingToolSet } from './snapshot/snapshot-enhanced-tools';
-import { ReadSnapshotTool, snapshotManagerTools } from './snapshot/snapshot-manager-tools';
+import { SnapshotManager } from './snapshot/snapshot-manager.js';
+import { SnapshotEditingToolSet } from './snapshot/snapshot-enhanced-tools.js';
+import { ReadSnapshotTool, snapshotManagerTools } from './snapshot/snapshot-manager-tools.js';
 import { WebSearchTool } from '@continue-reasoning/core';
-import { NoEditToolSet } from './toolsets';
+import { NoEditToolSet } from './toolsets/index.js';
 
 // AgentStopTool - 停止Agent执行
 const AgentStopTool = createTool({

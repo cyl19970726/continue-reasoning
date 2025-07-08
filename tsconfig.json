@@ -1,32 +1,22 @@
 {
   "compilerOptions": {
-    "target": "ES2017",
-    "lib": ["dom", "dom.iterable", "esnext"],
-    "allowJs": true,
-    "skipLibCheck": true,
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
     "strict": true,
-    "noEmit": true,
     "esModuleInterop": true,
-    "module": "esnext",
-    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "isolatedModules": true,
-    "jsx": "preserve",
-    "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
-    "paths": {
-      "@/*": ["./src/*"],
-      "@continue-reasoning/core": ["./packages/core"],
-      "@continue-reasoning/agents": ["./packages/agents"],
-      "@continue-reasoning/cr-coding": ["./packages/agents"],
-      "@continue-reasoning/web": ["./packages/web"],
-      "@continue-reasoning/ai-research": ["./packages/ai-research"]
-    }
+    "allowSyntheticDefaultImports": true,
+    "isolatedModules": true
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/agents" },
+    { "path": "./packages/react-cli" }
+  ],
+  "include": [],
+  "files": []
 }

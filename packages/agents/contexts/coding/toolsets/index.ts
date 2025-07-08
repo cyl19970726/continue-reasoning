@@ -1,8 +1,7 @@
-
-import { BashCommandTool } from './bash';
-import { GrepTool } from './grep';
-import { GlobTool } from './glob';
-import { ReadFileTool } from './read';
+import { BashCommandTool } from './bash.js';
+// import { GrepTool } from './grep.js';
+// import { GlobTool } from './glob.js';
+import { ReadFileTool } from './read.js';
 
 // Main editing strategy tools (includes enhanced file operations with diff support)
 export { 
@@ -16,17 +15,17 @@ export {
   CompareFilesTool,
   EditingStrategyToolSet,
   EditingStrategyToolExamples,
-} from './editing-strategy-tools';
+} from './editing-strategy-tools.js';
 
 // Re-export bash tools for system operations and simple file reading
-export { BashCommandTool } from './bash';
+export { BashCommandTool } from './bash.js';
 // Re-export grep tools for code search and pattern matching
-export { GrepTool, GrepToolSet } from './grep';
-export { ReadFileTool } from './read';
-export const NoEditToolSet = [BashCommandTool, GrepTool, ReadFileTool,GlobTool];
+// export { GrepTool, GrepToolSet } from './grep.js';
+export { ReadFileTool } from './read.js';
+export const NoEditToolSet = [BashCommandTool, ReadFileTool];
 
 // Re-export error handling utilities
-export { formatDetailedError, extractErrorInfo, createErrorResponse, logEnhancedError } from './error-utils';
+export { formatDetailedError, extractErrorInfo, createErrorResponse, logEnhancedError } from './error-utils.js';
 
 // Export snapshot system utilities
 export {
@@ -34,7 +33,7 @@ export {
   getAllSnapshotTools,
   DEFAULT_SNAPSHOT_CONFIG,
   createOperationSnapshot
-} from '../snapshot/index';
+} from '../snapshot/index.js';
 
 // Re-export glob tools for file pattern matching
-export { GlobTool, GlobToolSet } from './glob';
+// export { GlobTool, GlobToolSet } from './glob.js';

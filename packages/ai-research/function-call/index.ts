@@ -96,7 +96,10 @@ export class FunctionCallAgent implements IAgent {
         
         // 调用 LLM，传递工具定义让 LLM 自己决定是否调用
         const toolDefs = this.tools.map(tool => tool.toCallDefinition());
-        const llmResponse = await this.llm.call(conversation, toolDefs);
+        if (!this.llm) {
+          throw new Error('LLM not initialized');
+        }
+        const llmResponse = await this.llm.callAsync(conversation, toolDefs);
         const responseText = llmResponse.text;
         const toolCalls = llmResponse.toolCalls || [];
         

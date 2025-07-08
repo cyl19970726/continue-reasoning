@@ -1,0 +1,68 @@
+{
+  "name": "@continue-reasoning/react-cli",
+  "version": "0.1.0",
+  "description": "React-based CLI client for Continue Reasoning agent interaction",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "cr-react": "dist/index.js"
+  },
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "dev": "tsc --build --watch",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "start": "node dist/index.js",
+    "test": "vitest --watch=false",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx"
+  },
+  "keywords": [
+    "cli",
+    "react",
+    "ink",
+    "agent",
+    "interactive",
+    "continue-reasoning"
+  ],
+  "author": "Continue Reasoning Team",
+  "license": "MIT",
+  "dependencies": {
+    "@continue-reasoning/core": "workspace:*",
+    "chalk": "^5.4.1",
+    "ink": "^6.0.1",
+    "react": "^19.1.0",
+    "ink-text-input": "^6.0.0",
+    "ink-select-input": "^6.2.0",
+    "ink-spinner": "^5.0.0",
+    "ink-box": "^2.0.0",
+    "ink-gradient": "^3.0.0",
+    "ink-big-text": "^2.0.0",
+    "highlight.js": "^11.11.1",
+    "mime-types": "^2.1.35",
+    "string-width": "^7.1.0",
+    "strip-ansi": "^7.1.0",
+    "yargs": "^17.7.2",
+    "commander": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.1.8",
+    "@types/mime-types": "^2.1.4",
+    "@types/yargs": "^17.0.32",
+    "typescript": "^5.0.0",
+    "vitest": "^3.1.1",
+    "@vitest/ui": "^3.1.1",
+    "tsx": "^4.7.0"
+  },
+  "peerDependencies": {
+    "@continue-reasoning/core": "workspace:*"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

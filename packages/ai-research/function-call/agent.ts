@@ -167,7 +167,10 @@ export class ModularFunctionCallAgent implements IAgent {
         
         try {
           logger.info('Calling LLM...');
-          const llmResponse = await this.llm.call(prompt, toolDefs);
+          if (!this.llm) {
+            throw new Error('LLM not initialized');
+          }
+          const llmResponse = await this.llm.callAsync(prompt, toolDefs);
           logger.info('LLM response received', {
             textLength: llmResponse.text?.length || 0,
             toolCallsCount: llmResponse.toolCalls?.length || 0

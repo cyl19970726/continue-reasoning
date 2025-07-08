@@ -9,17 +9,17 @@
  */
 
 // Core Snapshot Manager (new modular version)
-export { SnapshotManager } from './snapshot-manager';
+export { SnapshotManager } from './snapshot-manager.js';
 
 // Import types for internal use
-import { SnapshotManager } from './snapshot-manager';
-import type { SnapshotConfig } from './interfaces';
+import { SnapshotManager } from './snapshot-manager.js';
+import type { SnapshotConfig } from './interfaces.js';
 
 // Core modular components
-export { CoreSnapshotManager } from './core/core-snapshot-manager';
-export { CheckpointManager } from './core/checkpoint-manager';
-export { IgnoreManager } from './core/ignore-manager';
-export { ConsolidationManager } from './core/consolidation-manager';
+export { CoreSnapshotManager } from './core/core-snapshot-manager.js';
+export { CheckpointManager } from './core/checkpoint-manager.js';
+export { IgnoreManager } from './core/ignore-manager.js';
+export { ConsolidationManager } from './core/consolidation-manager.js';
 
 // Snapshot Management Tools
 export { 
@@ -28,7 +28,7 @@ export {
   MergeSnapshotTool,
   RevertSnapshotTool,
   snapshotManagerTools
-} from './snapshot-manager-tools';
+} from './snapshot-manager-tools.js';
 
 // Enhanced Editing Tools with snapshot integration
 export { 
@@ -38,7 +38,7 @@ export {
   ApplyRangedEditTool,
   DeleteTool,
   SnapshotEditingToolSet
-} from './snapshot-enhanced-tools';
+} from './snapshot-enhanced-tools.js';
 
 // Types and Interfaces
 export type {
@@ -50,14 +50,14 @@ export type {
   ReverseOptions,
   ReverseResult,
   HandleResult
-} from './interfaces';
+} from './interfaces.js';
 
 // Enhanced Diff utilities
 export {
   calculateFileHash,
   getGitTimestamp,
   addFileHashesToDiff
-} from '../runtime/diff';
+} from '../runtime/diff.js';
 
 /**
  * Initialize the modular snapshot system for a workspace
@@ -72,8 +72,8 @@ export async function initializeSnapshotSystem(workspacePath: string): Promise<S
  * Get all available tools including snapshot management and enhanced editing tools
  */
 export async function getAllSnapshotTools() {
-  const snapshotTools = await import('./snapshot-manager-tools');
-  const enhancedTools = await import('./snapshot-enhanced-tools');
+  const snapshotTools = await import('./snapshot-manager-tools.js');
+  const enhancedTools = await import('./snapshot-enhanced-tools.js');
   
   return [
     ...snapshotTools.snapshotManagerTools,

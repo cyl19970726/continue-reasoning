@@ -3,7 +3,7 @@
  * 提供优雅的错误处理、恢复策略和用户友好的错误信息
  */
 
-import { logger } from './logger';
+import { logger } from './logger.js';
 // Removed eventBus dependency as it's not effectively used
 
 // 错误类型枚举

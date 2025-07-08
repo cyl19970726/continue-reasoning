@@ -4,16 +4,16 @@ import {
   DirectoryEntry,
   CodeBlockMatchOptions,
   FileEditResult
-} from '../interface';
-import { ISandbox, ShellExecutionResult, ExecutionOptions } from '../../sandbox';
-import { NoSandbox } from '../../sandbox/no-sandbox';
+} from '../interface.js';
+import { ISandbox, ShellExecutionResult, ExecutionOptions } from '../../sandbox/index.js';
+import { NoSandbox } from '../../sandbox/no-sandbox.js';
 import {
   generateUnifiedDiff,
   parseMultiFileDiff,
   validateDiffFormat,
   analyzePatchResult,
   extractFilePathFromDiff
-} from '../diff';
+} from '../diff.js';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as os from 'os';
