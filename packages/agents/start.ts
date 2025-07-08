@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 import { LogLevel, logger, OPENAI_MODELS, DEEPSEEK_MODELS,ANTHROPIC_MODELS } from '@continue-reasoning/core';
 import { CodingAgent } from './coding-agent';
-import { createCLIClient, createCLIClientWithSession } from '../cli-client/src/index';
-import { SessionManager } from '../core/session/sessionManager';
+import { createCLIClient, createCLIClientWithSession, getCLIClientRegistry } from './cli-client-adapter';
+import { SessionManager } from '@continue-reasoning/core';
 import path from 'path';
 import fs from 'fs';
 
 /**
  * CLI Coding Agent - Interactive coding assistant that runs in the current directory
  */
-async function startCLICodingAgent() {
+async function startCLICodingAgent(useReactClient: boolean = false) {
     console.log('🚀 Continue Reasoning - Coding Agent\n');
     
     // Use current working directory as workspace
@@ -41,18 +41,51 @@ async function startCLICodingAgent() {
         
         // Create CLI Client with SessionManager
         console.log('🖥️  Starting interactive session...');
-        const client = createCLIClientWithSession(sessionManager, {
-            name: 'Continue Reasoning - Coding Assistant',
-            userId: 'developer',
-            agentId: 'cr-coding-agent',
-            enableColors: true,
-            enableTimestamps: true,
-            enableHistory: true,
-            historyFile: path.join(workspacePath, '.cr_history'),
-            promptPrefix: '💻',
-            multilineDelimiter: '```',
-            maxSteps: 50
-        });
+        
+        let client: any;
+        if (useReactClient) {
+            // Use the new React+Ink client
+            console.log('🎨 Using React+Ink interface...');
+            const registry = getCLIClientRegistry();
+            
+            // Create React client using the registry
+            client = registry.create('react-terminal', {
+                name: 'Continue Reasoning - Coding Assistant (React)',
+                userId: 'developer',
+                agentId: 'cr-coding-agent',
+                enableStreaming: true,
+                theme: 'dark',
+                displayOptions: {
+                    showTimestamps: true,
+                    showStepNumbers: true,
+                    compactMode: false
+                },
+                maxSteps: 50
+            });
+            
+            // Set session manager
+            client.setSessionManager(sessionManager);
+            
+            // Create session
+            const sessionId = client.createSession?.('developer', 'cr-coding-agent');
+            if (!sessionId) {
+                throw new Error('Failed to create session');
+            }
+        } else {
+            // Use legacy readline client
+            client = createCLIClientWithSession(sessionManager, {
+                name: 'Continue Reasoning - Coding Assistant',
+                userId: 'developer',
+                agentId: 'cr-coding-agent',
+                enableColors: true,
+                enableTimestamps: true,
+                enableHistory: true,
+                historyFile: path.join(workspacePath, '.cr_history'),
+                promptPrefix: '💻',
+                multilineDelimiter: '```',
+                maxSteps: 50
+            });
+        }
 
         // Setup Agent
         console.log('🛠️  Configuring agent...');
@@ -70,6 +103,9 @@ async function startCLICodingAgent() {
         console.log('   - Your command history is saved in .cr_history\n');
 
         // Start CLI Client (begins interactive session)
+        if (!client) {
+            throw new Error('Failed to create client');
+        }
         await client.start();
 
     } catch (error) {
@@ -84,6 +120,7 @@ function parseArgs() {
     const options = {
         help: false,
         version: false,
+        react: false,
     };
 
     for (const arg of args) {
@@ -95,6 +132,10 @@ function parseArgs() {
             case '-v':
             case '--version':
                 options.version = true;
+                break;
+            case '-r':
+            case '--react':
+                options.react = true;
                 break;
         }
     }
@@ -112,6 +153,7 @@ Usage: cr [options]
 Options:
   -h, --help     Show this help message
   -v, --version  Show version information
+  -r, --react    Use React+Ink interface (experimental)
 
 The coding agent will use the current directory as its workspace.
 It can help you with various coding tasks including:
@@ -146,7 +188,7 @@ async function main() {
     }
 
     // Start the coding agent
-    await startCLICodingAgent();
+    await startCLICodingAgent(options.react);
 }
 
 // Run if called directly

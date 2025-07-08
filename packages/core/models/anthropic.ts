@@ -1,12 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { ILLM, LLMModel, ToolCallDefinition, ToolCallParams, LLMCallbacks } from "../interfaces";
-import { config } from "dotenv";
+import * as dotenv from "dotenv";
 import { zodToJsonNostrict, zodToJsonStrict } from "../utils/jsonHelper";
 import { SupportedModel } from "../models";
 import { logger } from "../utils/logger";
 
-config();
+dotenv.config();
 
 // Default model to use for Claude
 const DEFAULT_CLAUDE_MODEL = "claude-3-7-sonnet-20240229";
@@ -135,6 +135,26 @@ export class AnthropicWrapper implements ILLM {
     }
 
     /**
+     * 向后兼容的call方法 - 调用callAsync
+     */
+    async call(
+        messages: string | AnthropicMessage[],
+        tools: ToolCallDefinition[] = [],
+        options?: { stepIndex?: number }
+    ): Promise<{ text: string; toolCalls: ToolCallParams[]; stopReason?: string }> {
+        const messageStr = typeof messages === 'string' 
+            ? messages 
+            : messages.map(m => typeof m.content === 'string' ? m.content : JSON.stringify(m.content)).join('\n');
+            
+        const result = await this.callAsync(messageStr, tools, options);
+        return {
+            text: result.text,
+            toolCalls: result.toolCalls || [],
+            stopReason: 'end_turn'
+        };
+    }
+
+    /**
      * 新的stream流式调用（必须实现）
      */
     async* callStream(
@@ -186,42 +206,15 @@ export class AnthropicWrapper implements ILLM {
             const streamResponse = await anthropic.messages.create(requestConfig, { headers });
 
             let currentText = "";
-            let textPosition = 0;
+            let currentTextBlockContent = "";
             const toolUsesInProgress: Record<string, any> = {};
+            const completedToolCalls: ToolCallParams[] = [];
             
             // Make sure streamResponse is treated as an AsyncIterable
             const streamIterator = streamResponse as unknown as AsyncIterable<any>;
             
             for await (const chunk of streamIterator) {
-                if (chunk.type === 'content_block_delta') {
-                    const delta = chunk.delta as any;
-                    
-                    if (delta.type === 'text_delta') {
-                        // 发出文本增量
-                        yield {
-                            type: 'text-delta',
-                            content: delta.text,
-                            position: textPosition,
-                            stepIndex,
-                            chunkIndex: chunk.index
-                        };
-                        currentText += delta.text;
-                        textPosition += delta.text.length;
-                    } else if (delta.type === 'input_json_delta') {
-                        // Handle tool input streaming
-                        const toolKey = chunk.index.toString();
-                        
-                        if (!toolUsesInProgress[toolKey]) {
-                            toolUsesInProgress[toolKey] = {
-                                id: '',
-                                name: '',
-                                input: ''
-                            };
-                        }
-                        
-                        toolUsesInProgress[toolKey].input += delta.partial_json;
-                    }
-                } else if (chunk.type === 'content_block_start') {
+                if (chunk.type === 'content_block_start') {
                     if (chunk.content_block?.type === 'tool_use') {
                         const toolKey = chunk.index.toString();
                         toolUsesInProgress[toolKey] = {
@@ -241,25 +234,61 @@ export class AnthropicWrapper implements ILLM {
                             },
                             stepIndex
                         };
+                    } else if (chunk.content_block?.type === 'text') {
+                        // 重置当前文本块内容
+                        currentTextBlockContent = "";
+                    }
+                } else if (chunk.type === 'content_block_delta') {
+                    const delta = chunk.delta as any;
+                    
+                    if (delta.type === 'text_delta') {
+                        // 发出文本增量
+                        yield {
+                            type: 'text-delta',
+                            content: delta.text,
+                            stepIndex,
+                            chunkIndex: chunk.index
+                        };
+                        currentText += delta.text;
+                        currentTextBlockContent += delta.text;
+                    } else if (delta.type === 'input_json_delta') {
+                        // Handle tool input streaming
+                        const toolKey = chunk.index.toString();
+                        
+                        if (!toolUsesInProgress[toolKey]) {
+                            toolUsesInProgress[toolKey] = {
+                                id: '',
+                                name: '',
+                                input: ''
+                            };
+                        }
+                        
+                        toolUsesInProgress[toolKey].input += delta.partial_json;
                     }
                 } else if (chunk.type === 'content_block_stop') {
-                    if (chunk.content_block?.type === 'tool_use') {
-                        const toolKey = chunk.index.toString();
+                    const toolKey = chunk.index.toString();
+                    
+                    if (toolUsesInProgress[toolKey]) {
+                        // 处理工具调用完成
                         const toolUse = toolUsesInProgress[toolKey];
                         
                         if (toolUse && toolUse.id && toolUse.name) {
                             try {
                                 const parsedInput = toolUse.input ? JSON.parse(toolUse.input) : {};
                                 
+                                const toolCall: ToolCallParams = {
+                                    type: 'function',
+                                    call_id: toolUse.id,
+                                    name: toolUse.name,
+                                    parameters: parsedInput
+                                };
+                                
+                                completedToolCalls.push(toolCall);
+                                
                                 // 发出工具调用完成事件
                                 yield {
-                                    type: 'tool-call-complete',
-                                    toolCall: {
-                                        type: 'function',
-                                        call_id: toolUse.id,
-                                        name: toolUse.name,
-                                        parameters: parsedInput
-                                    },
+                                    type: 'tool-call-done',
+                                    toolCall,
                                     result: { parameters: parsedInput },
                                     stepIndex
                                 };
@@ -278,11 +307,14 @@ export class AnthropicWrapper implements ILLM {
                                 };
                             }
                         }
-                    } else if (chunk.content_block?.type === 'text') {
+                        
+                        // 清理已完成的工具调用
+                        delete toolUsesInProgress[toolKey];
+                    } else if (currentTextBlockContent) {
                         // 当文本块完成时，发出完整文本事件
                         yield {
-                            type: 'text-complete',
-                            content: currentText,
+                            type: 'text-done',
+                            content: currentTextBlockContent,
                             stepIndex,
                             chunkIndex: chunk.index
                         };
@@ -295,21 +327,24 @@ export class AnthropicWrapper implements ILLM {
                             stepIndex,
                             result: {
                                 text: currentText,
-                                stopReason: chunk.stop_reason
+                                toolCalls: completedToolCalls
                             }
                         };
                     }
+                    break;
                 }
             }
             
-            // 发出完成事件
-            yield { type: 'done', stepIndex };
+            // 发出完成事件已在message_stop中处理
+            
+            logger.debug(`[AnthropicWrapper] Stream completed. Text: ${currentText.length} chars, Tools: ${completedToolCalls.length}`);
             
         } catch (error) {
             logger.error("[AnthropicWrapper] Error in callStream:", error);
             yield { 
                 type: 'error', 
-                error: error instanceof Error ? error : new Error(String(error)), 
+                errorCode: 'ANTHROPIC_ERROR',
+                message: error instanceof Error ? error.message : String(error), 
                 stepIndex 
             };
             throw error;
@@ -331,14 +366,23 @@ export class AnthropicWrapper implements ILLM {
             
             for await (const chunk of this.callStream(messages, tools, options)) {
                 switch (chunk.type) {
-                    case 'text-complete':
-                        text = chunk.content;
+                    case 'text-done':
+                        text += chunk.content;
                         break;
-                    case 'tool-call-complete':
+                    case 'tool-call-done':
                         toolCalls.push(chunk.toolCall);
                         break;
+                    case 'step-complete':
+                        // 使用步骤完成时的最终结果
+                        if (chunk.result) {
+                            text = chunk.result.text || text;
+                            if (chunk.result.toolCalls) {
+                                toolCalls = chunk.result.toolCalls;
+                            }
+                        }
+                        break;
                     case 'error':
-                        throw chunk.error;
+                        throw new Error(chunk.message);
                 }
             }
             
@@ -382,7 +426,12 @@ export class AnthropicWrapper implements ILLM {
             { role: "assistant" as const, content: pausedResponse.content }
         ];
 
-        return this.call(continuationMessages, tools);
+        const result = await this.callAsync(continuationMessages.map(m => typeof m.content === 'string' ? m.content : JSON.stringify(m.content)).join('\n'), tools);
+        return { 
+            text: result.text, 
+            toolCalls: result.toolCalls || [], 
+            stopReason: 'continue_turn' 
+        };
     }
 }
 

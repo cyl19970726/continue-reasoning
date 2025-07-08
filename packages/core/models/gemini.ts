@@ -130,7 +130,7 @@ export class GeminiWrapper implements ILLM {
         logger.info(`Parallel tool calls ${enabled ? 'enabled' : 'disabled'} for Gemini model`);
     }
     
-    async call(messages: string, tools: ToolCallDefinition[]): Promise<{text: string, toolCalls: ToolCallParams[]}> {
+    async call(messages: string, tools: ToolCallDefinition[] = [], options?: { stepIndex?: number }): Promise<{text: string, toolCalls: ToolCallParams[]}> {
         try {
             const genAI = new GoogleGenAI({
                 apiKey: process.env.GEMINI_API_KEY,
@@ -199,6 +199,179 @@ export class GeminiWrapper implements ILLM {
                 text: `Error calling Gemini API: ${error instanceof Error ? error.message : String(error)}`,
                 toolCalls: []
             };
+        }
+    }
+    
+    /**
+     * 新的stream流式调用（必须实现）
+     */
+    async* callStream(
+        messages: string,
+        tools: ToolCallDefinition[] = [],
+        options?: { stepIndex?: number }
+    ): AsyncIterable<import('../interfaces/agent').LLMStreamChunk> {
+        const stepIndex = options?.stepIndex;
+        
+        try {
+            // 发出步骤开始事件
+            if (stepIndex !== undefined) {
+                yield { type: 'step-start', stepIndex };
+            }
+            
+            const genAI = new GoogleGenAI({
+                apiKey: process.env.GEMINI_API_KEY,
+            });
+            
+            logger.debug("Starting stream-based streaming response with Gemini...");
+            
+            // Prepare function declarations from tools
+            const functionDeclarations = tools.map(tool => convertToGeminiTool(tool, false));
+            
+            // Configure function calling mode based on parallelToolCall setting
+            const mode = this.parallelToolCall ? 
+                FunctionCallingConfigMode.ANY : 
+                FunctionCallingConfigMode.AUTO;
+            
+            // Call the streaming model
+            const response = await genAI.models.generateContentStream({
+                model: this.model,
+                contents: messages || "",
+                config: {
+                    temperature: this.temperature,
+                    maxOutputTokens: this.maxTokens,
+                    toolConfig: {
+                        functionCallingConfig: {
+                            mode: mode
+                        }
+                    },
+                    tools: tools.length > 0 ? [{
+                        functionDeclarations: functionDeclarations
+                    }] : undefined
+                }
+            });
+            
+            let currentText = '';
+            const toolCalls: ToolCallParams[] = [];
+            
+            // Process streaming response
+            for await (const chunk of response) {
+                // Handle text content
+                if (chunk.text) {
+                    // 发出文本增量
+                    yield {
+                        type: 'text-delta',
+                        content: chunk.text,
+                        stepIndex,
+                        chunkIndex: 0
+                    };
+                    currentText += chunk.text;
+                }
+                
+                // Handle function calls
+                if (chunk.functionCalls && chunk.functionCalls.length > 0) {
+                    for (const functionCall of chunk.functionCalls) {
+                        const callId = functionCall.id || `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                        
+                        // 发出工具调用开始事件
+                        yield {
+                            type: 'tool-call-start',
+                            toolCall: {
+                                type: 'function',
+                                call_id: callId,
+                                name: functionCall.name || '',
+                                parameters: functionCall.args || {}
+                            },
+                            stepIndex
+                        };
+                        
+                        // 发出工具调用完成事件
+                        const toolCall: ToolCallParams = {
+                            type: 'function',
+                            call_id: callId,
+                            name: functionCall.name || '',
+                            parameters: functionCall.args || {}
+                        };
+                        
+                        toolCalls.push(toolCall);
+                        
+                        yield {
+                            type: 'tool-call-done',
+                            toolCall,
+                            result: { parameters: functionCall.args || {} },
+                            stepIndex
+                        };
+                    }
+                }
+            }
+            
+            // 发出完整文本事件
+            if (currentText) {
+                yield {
+                    type: 'text-done',
+                    content: currentText,
+                    stepIndex,
+                    chunkIndex: 0
+                };
+            }
+            
+            // 发出步骤完成事件
+            if (stepIndex !== undefined) {
+                yield {
+                    type: 'step-complete',
+                    stepIndex,
+                    result: {
+                        text: currentText,
+                        toolCalls
+                    }
+                };
+            }
+            
+        } catch (error) {
+            logger.error("[GeminiWrapper] Error in callStream:", error);
+            yield { 
+                type: 'error', 
+                errorCode: 'NONE', 
+                message: String(error), 
+                stepIndex 
+            };
+            throw error;
+        }
+    }
+    
+    /**
+     * 新的async非流式调用（必须实现）
+     */
+    async callAsync(
+        messages: string,
+        tools: ToolCallDefinition[] = [],
+        options?: { stepIndex?: number }
+    ): Promise<{ text: string; toolCalls?: ToolCallParams[] }> {
+        try {
+            // 收集流式响应
+            let text = '';
+            let toolCalls: ToolCallParams[] = [];
+            
+            for await (const chunk of this.callStream(messages, tools, options)) {
+                switch (chunk.type) {
+                    case 'text-done':
+                        text += chunk.content;
+                        break;
+                    case 'tool-call-done':
+                        toolCalls.push(chunk.toolCall);
+                        break;
+                    case 'error':
+                        throw chunk.message;
+                }
+            }
+            
+            return { 
+                text, 
+                toolCalls: toolCalls.length > 0 ? toolCalls : undefined 
+            };
+            
+        } catch (error) {
+            logger.error("[GeminiWrapper] Error in callAsync:", error);
+            throw error;
         }
     }
     

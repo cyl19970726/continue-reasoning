@@ -62,6 +62,9 @@ ${toolsDescription}
         console.log(`\n=== ReAct 迭代 ${iterations} ===`);
         
         // 调用 LLM（不传递工具定义，因为 ReAct 是文本驱动的）
+        if (!this.llm) {
+          throw new Error('LLM not initialized');
+        }
         const response = await this.llm.call(conversation, []);
         const responseText = response.text;
         

@@ -74,6 +74,20 @@ export class OpenAIWrapper implements ILLM {
         this.parallelToolCall = enabled;
     }
 
+    /**
+     * 向后兼容的call方法 - 调用callAsync
+     */
+    async call(
+        messages: string,
+        tools: ToolCallDefinition[] = [],
+        options?: { stepIndex?: number }
+    ): Promise<{ text: string; toolCalls: ToolCallParams[] }> {
+        const result = await this.callAsync(messages, tools, options);
+        return {
+            text: result.text,
+            toolCalls: result.toolCalls || []
+        };
+    }
 
     /**
      * 新的stream流式调用（推荐使用）

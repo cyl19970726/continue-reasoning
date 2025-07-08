@@ -1,11 +1,11 @@
 import { 
   ISessionManager, 
-  ISessionManagerCallbacks,
   AgentStorage, 
   IAgent, 
   ToolExecutionResult, 
   AgentStep, 
-  ToolCallParams 
+  ToolCallParams,
+  AgentCallbacks 
 } from '../interfaces';
 import { logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
@@ -13,47 +13,96 @@ import { v4 as uuidv4 } from 'uuid';
 const DEFAULT_AGENT_STEPS = 1000;
 
 /**
- * Minimal session manager - Only responsible for state storage, using callbacks for decoupling
+ * Session manager - Responsible for session state management and callback coordination
  */
 export class SessionManager implements ISessionManager {
   private sessions = new Map<string, AgentStorage>();
-  private callbacks?: ISessionManagerCallbacks;
+  private client?: any; // IClient 实例，可选
   
   agent: IAgent;
 
-  constructor(agent: IAgent) {
+  constructor(agent: IAgent, client?: any) {
     this.agent = agent;
+    this.client = client;
+    if (client) {
+      this.setupAgentCallbacks();
+    }
   }
 
   /**
-   * Set callbacks
+   * Set client (for connecting client handlers)
    */
-  setCallbacks(callbacks: ISessionManagerCallbacks): void {
-    this.callbacks = callbacks;
+  setClient(client: any): void {
+    this.client = client;
     this.setupAgentCallbacks();
   }
 
   /**
-   * Setup Agent callbacks
+   * Setup Agent callbacks - 职责分离：SessionManager 处理会话相关，Client 处理 UI 相关
    */
   private setupAgentCallbacks(): void {
-    this.agent.setCallBacks({
-      onToolExecutionEnd: (result: ToolExecutionResult) => {
-        this.callbacks?.onToolExecutionEnd?.(result);
-      },
-      loadAgentStorage: async (sessionId: string): Promise<AgentStorage | null> => {
-        return await this.loadSession(sessionId);
-      },
-      onAgentStep: (step: AgentStep<any>) => {
-        this.callbacks?.onAgentStep?.(step);
-      },
+    // 获取 client 的 agentCallbacks
+    const clientCallbacks = this.client?.agentCallbacks;
+    
+    // 检查 client 是否支持流式模式
+    const isStreamingMode = this.client?.isStreamingMode?.() ?? false;
+    
+    // SessionManager 专门处理会话相关的回调
+    const sessionSpecificCallbacks: AgentCallbacks = {
+      // 会话状态管理 - SessionManager 的核心职责
       onStateStorage: (state: AgentStorage) => {
         this.saveSession(state.sessionId, state);
+        // 也通知 client，让它知道状态已更新
+        clientCallbacks?.onStateStorage?.(state);
       },
-      onToolCallStart: (toolCall: ToolCallParams) => {
-        this.callbacks?.onToolCallStart?.(toolCall);   
+      
+      loadAgentStorage: async (sessionId: string): Promise<AgentStorage | null> => {
+        // 优先使用 client 的自定义存储逻辑
+        if (clientCallbacks?.loadAgentStorage) {
+          const clientResult = await clientCallbacks.loadAgentStorage(sessionId);
+          if (clientResult) {
+            return clientResult;
+          }
+        }
+        // 回退到 SessionManager 的本地存储
+        return await this.loadSession(sessionId);
       },
-    });
+      
+      // 会话生命周期管理
+      onSessionStart: (sessionId: string) => {
+        // SessionManager 的会话开始处理
+        logger.debug(`SessionManager: Session ${sessionId} started`);
+        // 通知 client
+        clientCallbacks?.onSessionStart?.(sessionId);
+      },
+      
+      onSessionEnd: (sessionId: string) => {
+        // SessionManager 的会话结束处理
+        logger.debug(`SessionManager: Session ${sessionId} ended`);
+        // 通知 client
+        clientCallbacks?.onSessionEnd?.(sessionId);
+      }
+    };
+    
+    // 合并 SessionManager 的会话回调和 Client 的 UI 回调
+    const mergedCallbacks: AgentCallbacks = {
+      ...clientCallbacks,  // Client 的 UI 回调优先
+      ...sessionSpecificCallbacks  // SessionManager 的会话回调覆盖
+    };
+    
+    // 🆕 流式模式检查：过滤掉非流式模式下不应启用的回调
+    if (!isStreamingMode) {
+      // 移除流式模式专用的回调
+      delete mergedCallbacks.onLLMTextDelta;
+      delete mergedCallbacks.onToolCallStart;
+      
+      logger.debug('SessionManager: Non-streaming mode - filtered out streaming-only callbacks');
+    } else {
+      logger.debug('SessionManager: Streaming mode - all callbacks enabled');
+    }
+    
+    // 将合并后的回调传递给 Agent
+    this.agent.setCallBacks(mergedCallbacks);
   }
 
   /**
@@ -90,9 +139,6 @@ export class SessionManager implements ISessionManager {
     this.sessions.set(sessionId, initialState);
     logger.info(`SessionManager: Created session ${sessionId} for user ${userId || 'anonymous'}`);
     
-    // Trigger callback
-    this.callbacks?.onSessionStart?.(sessionId);
-    
     return sessionId;
   }
 
@@ -128,9 +174,6 @@ export class SessionManager implements ISessionManager {
       // TODO: Persist to database or file
       this.sessions.delete(sessionId);
       logger.info(`SessionManager: Archived session ${sessionId} with ${state.agentSteps.length} steps`);
-      
-      // Trigger callback
-      this.callbacks?.onSessionEnd?.(sessionId);
     } else {
       logger.warn(`SessionManager: Cannot archive session ${sessionId} - not found`);
     }

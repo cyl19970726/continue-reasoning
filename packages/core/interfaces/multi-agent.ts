@@ -8,6 +8,7 @@ export type RoutingStrategy = 'keyword' | 'llm' | 'vector' | 'hybrid';
 export interface RoutingConfig {
     strategy: RoutingStrategy;
     llmConfig?: {
+        provider?: string;
         model?: string;
         temperature?: number;
         maxTokens?: number;

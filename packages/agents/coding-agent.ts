@@ -1,4 +1,4 @@
-import { BaseAgent, AgentOptions, LogLevel, AnyTool, IContext, ToolExecutionResult } from '@continue-reasoning/core';
+import { StreamAgent, AgentOptions, LogLevel, AnyTool, IContext, ToolExecutionResult } from '@continue-reasoning/core';
 import { createCodingContext } from './contexts/coding';
 import { logger } from '@continue-reasoning/core';
 import { SnapshotManager } from './contexts/coding/snapshot/snapshot-manager';
@@ -15,7 +15,7 @@ import { createEnhancedPromptProcessor } from '@continue-reasoning/core';
  * - Development environment management
  * - Snapshot management and version control
  */
-export class CodingAgent extends BaseAgent {
+export class CodingAgent extends StreamAgent {
     private codingContext: ICodingContext;
 
     constructor(

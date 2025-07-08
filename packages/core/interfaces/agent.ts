@@ -39,13 +39,13 @@ export interface AgentCallbacks {
     loadAgentStorage: (sessionId: string) => Promise<AgentStorage | null>;
     
     // Tool execution callbacks (actual tool execution, not LLM tool calls)
-    onToolCallStart?: (toolCall: ToolCallParams) => void;
-    onToolCallDone?: (toolCall: ToolCallParams) => void;
+    onToolCallStart?: (toolCall: ToolCallParams) => void; // only use at streaming mode
+    onToolCallDone?: (toolCall: ToolCallParams) => void; 
     onToolExecutionStart?:(toolCall: ToolCallParams) => void;
     onToolExecutionEnd?: (result: ToolExecutionResult) => void;
     
     // LLM content callbacks
-    onLLMTextDelta?: (stepIndex: number,chunkIndex: number, delta: string) => void;
+    onLLMTextDelta?: (stepIndex: number,chunkIndex: number, delta: string) => void; // only use at streaming mode
     onLLMTextDone?: (stepIndex: number,chunkIndex: number, text: string) => void;  
     
     onError?: (error:any) => void;

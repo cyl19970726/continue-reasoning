@@ -113,6 +113,73 @@ describe('GeminiWrapper', () => {
     expect(Array.isArray(result.toolCalls)).toBe(true);
   }, 10000); // Increase timeout for API call
 
+  itif('should support streaming tool calls with callStream API', async () => {
+    const textChunks: string[] = [];
+    const toolCalls: any[] = [];
+    let finalText = '';
+    
+    for await (const chunk of geminiWrapper.callStream(
+      "What's the weather like in Paris today?", 
+      dummyTools,
+      { stepIndex: 0 }
+    )) {
+      if (chunk.type === 'text-delta') {
+        textChunks.push(chunk.content);
+      } else if (chunk.type === 'text-done') {
+        finalText = chunk.content;
+      } else if (chunk.type === 'tool-call-done') {
+        toolCalls.push(chunk.toolCall);
+      }
+    }
+    
+    // Validate streaming behavior
+    expect(finalText).toBeDefined();
+    expect(typeof finalText).toBe('string');
+    
+    // When tool is used, validate tool calls
+    if (toolCalls.length > 0) {
+      const toolCall = toolCalls[0];
+      expect(toolCall).toHaveProperty('type', 'function');
+      expect(toolCall).toHaveProperty('name');
+      expect(toolCall).toHaveProperty('call_id');
+      expect(toolCall).toHaveProperty('parameters');
+    }
+  }, 10000);
+
+  itif('should call Gemini API with callAsync and parse response', async () => {
+    const result = await geminiWrapper.callAsync(
+      "What's the weather like in Paris today?", 
+      dummyTools,
+      { stepIndex: 0 }
+    );
+
+    // Basic response structure validation
+    expect(result).toBeDefined();
+    expect(result).toHaveProperty('text');
+    expect(result).toHaveProperty('toolCalls');
+    expect(Array.isArray(result.toolCalls)).toBe(true);
+    
+    // Text should be a non-empty string 
+    expect(typeof result.text).toBe('string');
+  }, 10000);
+
+  itif('should support streaming text only with callStream API', async () => {
+    let textAccumulator = '';
+
+    for await (const chunk of geminiWrapper.callStream(
+      "hi, how are you?", 
+      [],
+      { stepIndex: 0 }
+    )) {
+      if (chunk.type === 'text-delta') {
+        textAccumulator += chunk.content;
+      } else if (chunk.type === 'text-done') {
+        // Verify accumulated text matches final text
+        expect(textAccumulator).toBe(chunk.content);
+      } 
+    }
+  }, 10000);
+
   // Test error handling with an invalid API key
   it('should handle API errors gracefully', async () => {
     // Create wrapper with invalid API key

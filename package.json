@@ -6,7 +6,6 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "next dev --turbopack",
     "start-cli-coding-agent": "tsx examples/cli-with-agent.ts",
     "start-agent": "tsx packages/core/start.ts",
     "start-agent:debug": "tsx packages/core/start.ts --log-level debug",
@@ -20,8 +19,6 @@
     "dev-frontend": "cd packages/web/frontend && npm install && npm run dev",
     "install-mcp": "node scripts/install-mcp.js",
     "postinstall": "pnpm run install-mcp",
-    "build": "next build",
-    "start": "next start",
     "lint": "next lint",
     "test:events": "vitest packages/core/__tests__/events/eventBus.test.ts --watch=false",
     "test:web-ui": "vitest packages/web/ --watch=false",

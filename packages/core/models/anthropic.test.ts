@@ -241,6 +241,101 @@ describe('AnthropicWrapper', () => {
       expect(response.toolCalls.length).toBe(0);
       expect(response.text.length).toBeGreaterThan(0);
     }, 30000);
+
+    it('should support streaming tool calls with callStream API', async () => {
+      const textChunks: string[] = [];
+      const toolCalls: any[] = [];
+      const finalTexts: string[] = [];
+      
+      for await (const chunk of wrapper.callStream(
+        "What's the weather like in Paris today?", 
+        [weatherTool],
+        { stepIndex: 0 }
+      )) {
+        if (chunk.type === 'text-delta') {
+          textChunks.push(chunk.content);
+        } else if (chunk.type === 'text-done') {
+          finalTexts.push(chunk.content);
+        } else if (chunk.type === 'tool-call-done') {
+          toolCalls.push(chunk.toolCall);
+        }
+      }
+      
+      // Validate streaming behavior - at least one of text or tool calls should be present
+      expect(finalTexts.length + toolCalls.length).toBeGreaterThan(0);
+      
+      // When tool is used, validate tool calls
+      if (toolCalls.length > 0) {
+        const toolCall = toolCalls[0];
+        expect(toolCall).toHaveProperty('type', 'function');
+        expect(toolCall).toHaveProperty('name');
+        expect(toolCall).toHaveProperty('call_id');
+        expect(toolCall).toHaveProperty('parameters');
+        
+        // If the weather tool was called, validate its parameters
+        if (toolCall.name === 'get_weather') {
+          expect(toolCall.parameters).toHaveProperty('latitude');
+          expect(toolCall.parameters).toHaveProperty('longitude');
+          expect(typeof toolCall.parameters.latitude).toBe('number');
+          expect(typeof toolCall.parameters.longitude).toBe('number');
+        }
+      }
+    }, 30000);
+
+    it('should call Anthropic API with callAsync and parse response', async () => {
+      const response = await wrapper.callAsync(
+        "What's the weather like in Paris today?", 
+        [weatherTool],
+        { stepIndex: 0 }
+      );
+
+      // Basic response structure validation
+      expect(response).toBeDefined();
+      expect(response).toHaveProperty('text');
+      expect(response).toHaveProperty('toolCalls');
+      expect(Array.isArray(response.toolCalls)).toBe(true);
+      
+      // When tool is used, expect toolCalls to potentially contain a call
+      if (response.toolCalls && response.toolCalls.length > 0) {
+        const toolCall = response.toolCalls[0];
+        expect(toolCall).toHaveProperty('type', 'function');
+        expect(toolCall).toHaveProperty('name');
+        expect(toolCall).toHaveProperty('call_id');
+        expect(toolCall).toHaveProperty('parameters');
+        
+        // If the weather tool was called, validate its parameters
+        if (toolCall.name === 'get_weather') {
+          expect(toolCall.parameters).toHaveProperty('latitude');
+          expect(toolCall.parameters).toHaveProperty('longitude');
+          expect(typeof toolCall.parameters.latitude).toBe('number');
+          expect(typeof toolCall.parameters.longitude).toBe('number');
+        }
+      }
+      
+      // Text should be a non-empty string 
+      expect(typeof response.text).toBe('string');
+    }, 30000);
+
+    it('should support streaming text only with callStream API', async () => {
+      let textAccumulator = '';
+      let finalTexts: string[] = [];
+
+      for await (const chunk of wrapper.callStream(
+        "hi, how are you?", 
+        [],
+        { stepIndex: 0 }
+      )) {
+        if (chunk.type === 'text-delta') {
+          textAccumulator += chunk.content;
+        } else if (chunk.type === 'text-done') {
+          finalTexts.push(chunk.content);
+        } 
+      }
+      
+      // 验证至少收到了文本响应
+      expect(textAccumulator.length).toBeGreaterThan(0);
+      expect(finalTexts.length).toBeGreaterThan(0);
+    }, 30000);
   });
 
   // Multiple tools tests
@@ -380,6 +475,39 @@ describe('AnthropicWrapper', () => {
 
       expect(response).toBeDefined();
       expect(typeof response.text).toBe('string');
+    }, 30000);
+
+    it('should support streaming with multiple tools using callStream API', async () => {
+      const textChunks: string[] = [];
+      const toolCalls: any[] = [];
+      let finalText = '';
+      
+      for await (const chunk of wrapper.callStream(
+        "Calculate 25 * 4 and tell me the time in Sydney", 
+        [calculatorTool, timeTool],
+        { stepIndex: 0 }
+      )) {
+        if (chunk.type === 'text-delta') {
+          textChunks.push(chunk.content);
+        } else if (chunk.type === 'text-done') {
+          finalText = chunk.content;
+        } else if (chunk.type === 'tool-call-done') {
+          toolCalls.push(chunk.toolCall);
+        }
+      }
+      
+      expect(finalText).toBeDefined();
+      expect(typeof finalText).toBe('string');
+      
+      // Should potentially call multiple tools
+      if (toolCalls.length > 0) {
+        const toolNames = toolCalls.map(call => call.name);
+        const hasCalculatorTool = toolNames.includes('calculate');
+        const hasTimeTool = toolNames.includes('get_time');
+        
+        // At least one tool should be called
+        expect(hasCalculatorTool || hasTimeTool).toBe(true);
+      }
     }, 30000);
   });
 

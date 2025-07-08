@@ -5,7 +5,11 @@ import {
     RoutingConfig 
 } from '../interfaces/multi-agent';
 import { logger } from '../utils/logger';
+import { ILLM } from '../interfaces/agent';
 import { OpenAIWrapper } from '../models/openai';
+import { AnthropicWrapper } from '../models/anthropic';
+import { GeminiWrapper } from '../models/gemini';
+import { OpenAIChatWrapper } from '../models/openai-chat';
 
 /**
  * 🎯 智能体路由策略接口
@@ -68,16 +72,35 @@ export class KeywordRoutingStrategy implements IRoutingStrategy {
  * 🎯 LLM决策策略
  */
 export class LLMRoutingStrategy implements IRoutingStrategy {
-    private llm: OpenAIWrapper;
+    private llm: ILLM;
     
-    constructor(private config: RoutingConfig) {
+    constructor(private config: RoutingConfig, llm?: ILLM) {
+        if (llm) {
+            this.llm = llm;
+        } else {
+            // 默认使用配置创建LLM实例
+            this.llm = this.createDefaultLLM(config);
+        }
+    }
+    
+    private createDefaultLLM(config: RoutingConfig): ILLM {
         const llmConfig = config.llmConfig || {};
-        this.llm = new OpenAIWrapper(
-            (llmConfig.model || 'gpt-4o') as any, // Cast to bypass type check
-            false, // streaming
-            llmConfig.temperature || 0.1,
-            llmConfig.maxTokens || 200
-        );
+        const provider = llmConfig.provider || 'openai';
+        const model = llmConfig.model || 'gpt-4o';
+        const temperature = llmConfig.temperature || 0.1;
+        const maxTokens = llmConfig.maxTokens || 200;
+        
+        switch (provider.toLowerCase()) {
+            case 'anthropic':
+                return new AnthropicWrapper(model as any, false, temperature, maxTokens);
+            case 'gemini':
+                return new GeminiWrapper(model as any, false, temperature, maxTokens);
+            case 'openai-chat':
+                return new OpenAIChatWrapper(model as any, false, temperature, maxTokens);
+            case 'openai':
+            default:
+                return new OpenAIWrapper(model as any, false, temperature, maxTokens);
+        }
     }
 
     async selectAgent(
@@ -113,9 +136,17 @@ export class LLMRoutingStrategy implements IRoutingStrategy {
             
             const prompt = this.buildSelectionPrompt(task, agentDescriptions, requiredCapability);
             
-            // 使用 OpenAIWrapper 的 call 方法 (不使用工具)
-            const response = await this.llm.call(prompt, []);
-            const selectedAgentId = this.parseAgentSelection(response.text);
+            // 使用 LLM 的 call 方法 (不使用工具)
+            if (!this.llm) {
+                throw new Error('LLM not initialized');
+            }
+            const llm = this.llm; // TypeScript needs this to understand it's not undefined
+            
+            // Handle the case where call method might be undefined
+            const response = llm.call 
+                ? await llm.call(prompt, [])
+                : await llm.callAsync(prompt, []);
+            const selectedAgentId = this.parseAgentSelection(response?.text || '');
             
             const selectedAgent = candidates.find(agent => agent.id === selectedAgentId);
             
