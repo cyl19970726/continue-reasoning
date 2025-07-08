@@ -34,16 +34,26 @@ const SnapshotToolReturnSchema = z.object({
 
 // ApplyWholeFileEdit Snapshot Tool
 const ApplyWholeFileEditSnapshotParamsSchema = z.object({
+  goal: z.string().optional().describe("Description of what this operation aims to achieve"),
   path: z.string().describe("The path to the file to be edited"),
   content: z.string().describe("The new, entire content for the file"),
-  goal: z.string().describe("Description of what this operation aims to achieve"),
-  dryRun: z.boolean().optional().describe("If true, only preview without executing, defaults to false")
 });
 
 export const ApplyWholeFileEditTool = createTool({
   id: 'ApplyWholeFileEdit',
   name: 'ApplyWholeFileEdit',
-  description: 'Creates or completely replaces file content with automatic snapshot creation. Returns simplified results with snapshot ID.',
+  description: `
+  Create a new file or completely replace existing file content. Best for: new files, complete file rewrites. Use this when you want to replace the entire file content.
+  Usage:
+  - **Create File**: **IMPORTANT** you MUST use this tool to create a new file
+  - **Replace File**: **IMPORTANT** you MUST use this tool to replace the entire content of an existing file
+
+  Example:
+  - **Create File**:
+    - **Goal**: Create a new file called "new_file.txt" with the content "Hello, world!"
+    - **Path**: "new_file.txt"
+    - **Content**: "Hello, world!"
+  `,
   inputSchema: ApplyWholeFileEditSnapshotParamsSchema,
   outputSchema: SnapshotToolReturnSchema,
   async: true,
@@ -51,6 +61,11 @@ export const ApplyWholeFileEditTool = createTool({
     const startTime = Date.now();
     
     try {
+      // Validate required parameters
+      if (params.content === undefined || params.content === null) {
+        throw new Error('Content parameter is required but was not provided');
+      }
+      
       const codingContext = agent?.contextManager.findContextById('coding-context') as ICodingContext;
       if (!codingContext) {
         throw new Error('Coding context not found');
@@ -102,14 +117,6 @@ export const ApplyWholeFileEditTool = createTool({
         });
       }
 
-      // If dryRun, return preview
-      if (params.dryRun) {
-        return {
-          success: true,
-          message: `[DRY RUN] Would ${fileExists ? 'update' : 'create'} file: ${params.path}. Goal: ${params.goal}`
-        };
-      }
-
       // Execute the file write
       const writeResult = await runtime.writeFile(filePath, params.content, {
         mode: 'create_or_overwrite'
@@ -125,7 +132,7 @@ export const ApplyWholeFileEditTool = createTool({
       
       const snapshotId = await snapshotManager.createSnapshot({
         tool: 'ApplyWholeFileEdit',
-        description: params.goal,
+        description: params.goal || 'No goal provided',
         affectedFiles: [params.path],
         diff: diffString,
         context: {
@@ -162,16 +169,49 @@ export const ApplyWholeFileEditTool = createTool({
 
 // ApplyUnifiedDiff Snapshot Tool
 const ApplyUnifiedDiffSnapshotParamsSchema = z.object({
+  goal: z.string().optional().describe("Description of what this operation aims to achieve"),
   diffContent: z.string().describe("The unified diff content to apply"),
-  goal: z.string().describe("Description of what this operation aims to achieve"),
   baseDir: z.string().optional().describe("Base directory for resolving relative file paths"),
-  dryRun: z.boolean().optional().describe("If true, only preview without executing, defaults to false")
 });
 
 export const ApplyUnifiedDiffTool = createTool({
   id: 'ApplyUnifiedDiff',
   name: 'ApplyUnifiedDiff',
-  description: 'Applies unified diff content with automatic snapshot creation. Handles partial application gracefully.',
+  description: `
+  Apply unified diff patches to multiple files.
+  Usage:
+  - **Apply diff**: can be used to apply a diff to a single file or multiple files
+
+  Diff Format:
+  Multi-file diffs contain multiple file changes in a single diff:
+  \`\`\`diff
+  --- a/src/api.js
+  +++ b/src/api.js
+  @@ -1,5 +1,6 @@
+  import axios from 'axios';
+  +import { config } from './config';
+  
+  -const API_URL = 'https://api.example.com';
+  +const API_URL = config.apiUrl;
+  
+  export async function fetchData() {
+  --- /dev/null
+  +++ b/src/config.js
+  @@ -0,0 +1,5 @@
+  +export const config = {
+  +  apiUrl: process.env.API_URL || 'https://api.example.com',
+  +  timeout: 5000,
+  +  retries: 3
+  +};
+  --- a/src/index.js
+  +++ b/src/index.js
+  @@ -1,3 +1,4 @@
+  import { fetchData } from './api';
+  +import { config } from './config';
+  
+  async function main() {
+  \`\`\`
+  `,
   inputSchema: ApplyUnifiedDiffSnapshotParamsSchema,
   outputSchema: SnapshotToolReturnSchema,
   async: true,
@@ -191,15 +231,7 @@ export const ApplyUnifiedDiffTool = createTool({
 
       const workspacePath = codingContext.getData()?.current_workspace || process.cwd();
       const baseDir = params.baseDir || workspacePath;
-      
-      // If dryRun, return preview
-      if (params.dryRun) {
-        return {
-          success: true,
-          message: `[DRY RUN] Would apply unified diff. Goal: ${params.goal}`
-        };
-      }
-
+    
       // Apply the unified diff
       const result = await runtime.applyUnifiedDiff(params.diffContent, {
         baseDir: baseDir,
@@ -219,7 +251,7 @@ export const ApplyUnifiedDiffTool = createTool({
       
       const snapshotId = await snapshotManager.createSnapshot({
         tool: 'ApplyUnifiedDiff',
-        description: params.goal,
+        description: params.goal || 'No goal provided',
         affectedFiles: result.affectedFiles || [],
         diff: result.diff || params.diffContent, // Use the result diff if available, otherwise original
         context: {
@@ -270,18 +302,20 @@ export const ApplyUnifiedDiffTool = createTool({
 
 // ApplyEditBlock Snapshot Tool
 const ApplyEditBlockSnapshotParamsSchema = z.object({
+  goal: z.string().optional().describe("Description of what this operation aims to achieve"),
   path: z.string().describe("The path to the file to be edited"),
   searchBlock: z.string().describe("The exact code block to search for and replace"),
   replaceBlock: z.string().describe("The new code block to replace the search block with"),
-  goal: z.string().describe("Description of what this operation aims to achieve"),
-  ignoreWhitespace: z.boolean().optional().describe("Whether to ignore whitespace differences when matching"),
-  dryRun: z.boolean().optional().describe("If true, only preview without executing, defaults to false")
 });
 
 export const ApplyEditBlockTool = createTool({
   id: 'ApplyEditBlock',
   name: 'ApplyEditBlock',
-  description: 'Applies edit block by searching for exact code and replacing it with automatic snapshot creation.',
+  description: `
+  Find and replace exact code blocks within a file.
+  Usage:
+  - **Apply edit block**: can be used to apply a edit block to a single file
+  `,
   inputSchema: ApplyEditBlockSnapshotParamsSchema,
   outputSchema: SnapshotToolReturnSchema,
   async: true,
@@ -301,14 +335,6 @@ export const ApplyEditBlockTool = createTool({
 
       const workspacePath = codingContext.getData()?.current_workspace || process.cwd();
       const filePath = path.isAbsolute(params.path) ? params.path : path.join(workspacePath, params.path);
-      
-      // If dryRun, return preview
-      if (params.dryRun) {
-        return {
-          success: true,
-          message: `[DRY RUN] Would apply edit block to: ${params.path}. Goal: ${params.goal}`
-        };
-      }
 
       // Apply the edit block
       const result = await runtime.applyEditBlock(
@@ -316,7 +342,7 @@ export const ApplyEditBlockTool = createTool({
         params.searchBlock,
         params.replaceBlock,
         {
-          ignoreWhitespace: params.ignoreWhitespace
+          ignoreWhitespace: false
         }
       );
       
@@ -341,12 +367,12 @@ export const ApplyEditBlockTool = createTool({
       
       const snapshotId = await snapshotManager.createSnapshot({
         tool: 'ApplyEditBlock',
-        description: params.goal,
+        description: params.goal || 'No goal provided',
         affectedFiles: [params.path],
         diff: diffString,
         context: {
           sessionId: 'default',
-          toolParams: { path: params.path, ignoreWhitespace: params.ignoreWhitespace }
+          toolParams: { path: params.path }
         },
         metadata: {
           filesSizeBytes: diffString.length,
@@ -378,19 +404,23 @@ export const ApplyEditBlockTool = createTool({
 
 // ApplyRangedEdit Snapshot Tool
 const ApplyRangedEditSnapshotParamsSchema = z.object({
-  path: z.string().describe("The path to the file to be edited"),
+  goal: z.string().optional().describe("Description of what this operation aims to achieve"),
+  path: z.string().describe("The path to the file to be edited, relative to the current workspace or absolute path"),
   content: z.string().describe("The content to apply to the specified line range"),
   startLine: z.number().int().describe("The starting line number (1-indexed). Use -1 for append mode"),
   endLine: z.number().int().describe("The ending line number (1-indexed, inclusive). Use -1 for append mode"),
-  goal: z.string().describe("Description of what this operation aims to achieve"),
-  preserveUnchangedMarkers: z.boolean().optional().describe("Whether to preserve unchanged markers in the content"),
-  dryRun: z.boolean().optional().describe("If true, only preview without executing, defaults to false")
 });
 
 export const ApplyRangedEditTool = createTool({
   id: 'ApplyRangedEdit',
   name: 'ApplyRangedEdit',
-  description: 'Applies content to a specific line range with automatic snapshot creation.',
+  description: `
+  Replace content within specific line ranges. Best for: precise line-based edits, inserting/updating specific sections. Use when you know exact line numbers to modify.
+  Usage:
+  - **Replace content**: Use with content string to replace the specified line range
+  - **Append content**: Use with content string and startLine=-1 to append the content to the end of the file
+  - **Append content to specific line**: Use with content string and startLine=N to append the content to the specified line
+  `,
   inputSchema: ApplyRangedEditSnapshotParamsSchema,
   outputSchema: SnapshotToolReturnSchema,
   async: true,
@@ -410,14 +440,6 @@ export const ApplyRangedEditTool = createTool({
 
       const workspacePath = codingContext.getData()?.current_workspace || process.cwd();
       const filePath = path.isAbsolute(params.path) ? params.path : path.join(workspacePath, params.path);
-      
-      // If dryRun, return preview
-      if (params.dryRun) {
-        return {
-          success: true,
-          message: `[DRY RUN] Would apply ranged edit to: ${params.path} (lines ${params.startLine}-${params.endLine}). Goal: ${params.goal}`
-        };
-      }
 
       // Apply the ranged edit
       const result = await runtime.applyRangedEdit(
@@ -426,7 +448,7 @@ export const ApplyRangedEditTool = createTool({
         params.startLine,
         params.endLine,
         {
-          preserveUnchangedMarkers: params.preserveUnchangedMarkers
+          preserveUnchangedMarkers: false
         }
       );
       
@@ -451,7 +473,7 @@ export const ApplyRangedEditTool = createTool({
       
       const snapshotId = await snapshotManager.createSnapshot({
         tool: 'ApplyRangedEdit',
-        description: params.goal,
+        description: params.goal || 'No goal provided',
         affectedFiles: [params.path],
         diff: diffString,
         context: {
@@ -492,16 +514,21 @@ export const ApplyRangedEditTool = createTool({
 
 // Delete Snapshot Tool
 const DeleteSnapshotParamsSchema = z.object({
+  goal: z.string().optional().describe("Description of what this operation aims to achieve"),
   path: z.string().describe("The path to the file or directory to delete"),
-  goal: z.string().describe("Description of what this operation aims to achieve"),
   recursive: z.boolean().optional().describe("Whether to delete directories recursively"),
-  dryRun: z.boolean().optional().describe("If true, only preview without executing, defaults to false")
 });
 
 export const DeleteTool = createTool({
   id: 'Delete',
   name: 'Delete',
-  description: 'Deletes a file or directory with automatic snapshot creation for tracking.',
+  description: `
+  Delete files or directories safely with tracking.
+  Usage:
+  - **Delete File**: **IMPORTANT** you MUST use this tool to delete a single file
+  - **Delete Directory**: **IMPORTANT** you MUST use this tool to delete a directory
+  - **Delete Directory Recursively**: **IMPORTANT** you MUST use this tool to delete a directory and all its subdirectories
+  `,
   inputSchema: DeleteSnapshotParamsSchema,
   outputSchema: SnapshotToolReturnSchema,
   async: true,
@@ -536,14 +563,6 @@ export const DeleteTool = createTool({
         return {
           success: false,
           message: `Path ${params.path} does not exist or cannot be accessed. Goal: ${params.goal}`
-        };
-      }
-
-      // If dryRun, return preview
-      if (params.dryRun) {
-        return {
-          success: true,
-          message: `[DRY RUN] Would delete ${targetStatus.type}: ${params.path}. Goal: ${params.goal}`
         };
       }
 
@@ -626,7 +645,7 @@ export const DeleteTool = createTool({
       
       const snapshotId = await snapshotManager.createSnapshot({
         tool: 'Delete',
-        description: params.goal,
+        description: params.goal || 'No goal provided',
         affectedFiles: deletedFiles,
         diff: diffString,
         context: {
