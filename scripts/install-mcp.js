@@ -4,10 +4,14 @@
  * 预安装 MCP 模块的脚本
  */
 
-const { execSync } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+import { execSync } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // 定义要安装的MCP模块
 const MCP_MODULES = [
@@ -85,4 +89,4 @@ try {
   console.error('Installation failed:', err);
 }
 
-console.log('\nMCP modules installation completed.'); 
+console.log('\nMCP modules installation completed.');

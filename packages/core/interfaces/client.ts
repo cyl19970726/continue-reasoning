@@ -1,7 +1,7 @@
-import { ISessionManager } from './session';
-import { AgentStep } from './prompt';
-import { ToolCallParams, ToolExecutionResult } from './tool';
-import { AgentCallbacks } from './agent';
+import { ISessionManager } from './session.js';
+import { AgentStep } from './prompt.js';
+import { ToolCallParams, ToolExecutionResult } from './tool.js';
+import { AgentCallbacks } from './agent.js';
 
 /**
  * 客户端消息类型

@@ -4,7 +4,7 @@ import { ReactCLIClient } from '../ReactCLIClient.js';
 import { ReactCLIConfig, UIState } from '../interfaces/index.js';
 import { ClientMessage } from '@continue-reasoning/core';
 import MessageList from './MessageList.js';
-import InputArea from './InputArea.js';
+import CustomInputArea from './CustomInputArea.js';
 import StatusBar from './StatusBar.js';
 import HelpPanel from './HelpPanel.js';
 
@@ -146,7 +146,7 @@ const App: React.FC<AppProps> = ({
       {/* 输入区域 */}
       {!uiState.showHelp && (
         <Box marginTop={1}>
-          <InputArea
+          <CustomInputArea
             value={uiState.currentInput}
             placeholder={uiState.isProcessing ? 'Processing...' : 'Type your message...'}
             disabled={uiState.isProcessing}

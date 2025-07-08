@@ -1,6 +1,6 @@
-import { AgentStorage } from './agent';
-import { AgentStep } from './prompt';
-import { ToolCallParams, ToolExecutionResult } from './tool';
+import { AgentStorage } from './agent.js';
+import { AgentStep } from './prompt.js';
+import { ToolCallParams, ToolExecutionResult } from './tool.js';
 
 /**
  * Session manager interface for managing agent sessions and state

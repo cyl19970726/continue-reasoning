@@ -1,5 +1,5 @@
-import { logger } from "../utils/logger";
-import { AgentStep, IClient, ISessionManager, ToolCallParams, ToolExecutionResult, ClientStatus, ClientType, AgentCallbacks, AgentStorage, ClientConfig } from "../interfaces";
+import { logger } from "../utils/logger.js";
+import { AgentStep, IClient, ISessionManager, ToolCallParams, ToolExecutionResult, ClientStatus, ClientType, AgentCallbacks, AgentStorage, ClientConfig } from "../interfaces/index.js";
 
 /**
  * 简单的客户端实现

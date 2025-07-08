@@ -57,6 +57,53 @@ export class ReactCLIClient implements IClient {
     // 初始化工具系统
     this.toolFormatter = new ToolFormatterRegistry();
     this.fileImporter = new FileImporterRegistry();
+    
+    // 初始化 agentCallbacks - 这是关键的修复
+    this.agentCallbacks = {
+      onAgentStep: (step: AgentStep<any>) => {
+        this.handleAgentStep(step);
+      },
+      
+      // 工具执行回调
+      onToolExecutionStart: (toolCall: ToolCallParams) => {
+        this.handleToolExecutionStart(toolCall);
+      },
+      
+      onToolExecutionEnd: (result: ToolExecutionResult) => {
+        this.handleToolExecutionEnd(result);
+      },
+      
+      // 流式模式回调
+      onLLMTextDelta: this.config.enableStreaming ? (stepIndex: number, chunkIndex: number, delta: string) => {
+        this.handleStreamDelta(delta);
+      } : undefined,
+      
+      // 会话回调
+      onSessionStart: (sessionId: string) => {
+        this.currentSessionId = sessionId;
+        this.addMessage({
+          id: `session_start_${Date.now()}`,
+          content: `🚀 Session started: ${sessionId}`,
+          type: 'system',
+          timestamp: Date.now()
+        });
+      },
+      
+      onSessionEnd: (sessionId: string) => {
+        this.addMessage({
+          id: `session_end_${Date.now()}`,
+          content: `👋 Session ended: ${sessionId}`,
+          type: 'system',
+          timestamp: Date.now()
+        });
+      },
+      
+      // 必需的存储加载回调
+      loadAgentStorage: async (sessionId: string) => {
+        // 让 SessionManager 处理存储加载
+        return null;
+      }
+    };
   }
 
   /**
@@ -83,21 +130,95 @@ export class ReactCLIClient implements IClient {
     
     this.isRunning = true;
     
-    // 渲染 React 应用
-    this.inkInstance = render(
-      <App
-        client={this}
-        config={this.config}
-        messages={this.messages}
-        uiState={this.uiState}
-        onUIStateChange={(state) => this.handleUIStateChange(state)}
-        onSubmit={(message) => this.handleUserSubmit(message)}
-        onExit={() => this.stop()}
-      />
-    );
+    // 检查是否支持 raw mode (应该在外层已经检查过了)
+    if (!this.isRawModeSupported()) {
+      console.error('❌ Raw mode is not supported in this environment.');
+      console.error('The React CLI requires a proper terminal environment with raw mode support.');
+      console.error('Please try running this in a regular terminal instead of an IDE or restricted environment.');
+      console.error('');
+      console.error('Alternative: You can use the standard CLI by running without the --react flag.');
+      throw new Error('Raw mode not supported');
+    }
     
-    // 等待退出
-    await this.inkInstance.waitUntilExit();
+    try {
+      // 渲染 React 应用
+      this.inkInstance = render(
+        <App
+          client={this}
+          config={this.config}
+          messages={this.messages}
+          uiState={this.uiState}
+          onUIStateChange={(state) => this.handleUIStateChange(state)}
+          onSubmit={(message) => this.handleUserSubmit(message)}
+          onExit={() => this.stop()}
+        />
+      );
+      
+      // 等待退出
+      await this.inkInstance.waitUntilExit();
+    } catch (error) {
+      console.error('❌ Failed to start React CLI:', error);
+      console.error('This may be due to terminal compatibility issues.');
+      console.error('Please try running in a different terminal or without the --react flag.');
+      process.exit(1);
+    }
+  }
+
+  /**
+   * 检查是否支持 raw mode
+   */
+  private isRawModeSupported(): boolean {
+    try {
+      // 在 VS Code 中尝试强制使用 React CLI
+      const isVSCode = process.env.VSCODE_PID || process.env.TERM_PROGRAM === 'vscode';
+      
+      // 如果在 VS Code 中，尝试更宽松的检查
+      if (isVSCode) {
+        // 检查 stdin 是否有 setRawMode 方法
+        if (typeof process.stdin.setRawMode !== 'function') {
+          return false;
+        }
+        
+        // 尝试临时设置 raw mode
+        try {
+          const originalRawMode = process.stdin.isRaw;
+          process.stdin.setRawMode(true);
+          process.stdin.setRawMode(originalRawMode || false);
+          return true;
+        } catch (error) {
+          console.log('VS Code raw mode test failed, but continuing anyway...');
+          return true; // 在 VS Code 中即使失败也尝试运行
+        }
+      }
+      
+      // 非 VS Code 环境使用标准检查
+      // 检查 stdin 是否为 TTY
+      if (!process.stdin.isTTY) {
+        return false;
+      }
+      
+      // 检查 stdin 是否有 setRawMode 方法
+      if (typeof process.stdin.setRawMode !== 'function') {
+        return false;
+      }
+      
+      // 检查环境变量和常见的问题环境
+      const isJetBrains = process.env.TERMINAL_EMULATOR === 'JetBrains-JediTerm';
+      const isCI = process.env.CI || process.env.GITHUB_ACTIONS;
+      
+      if (isJetBrains || isCI) {
+        return false;
+      }
+      
+      // 尝试临时设置 raw mode
+      const originalRawMode = process.stdin.isRaw;
+      process.stdin.setRawMode(true);
+      process.stdin.setRawMode(originalRawMode || false);
+      
+      return true;
+    } catch (error) {
+      return false;
+    }
   }
 
   /**
@@ -117,7 +238,10 @@ export class ReactCLIClient implements IClient {
    */
   setSessionManager(sessionManager: ISessionManager): void {
     this.sessionManager = sessionManager;
-    // 注意：新架构中 SessionManager 通过构造函数接收 client，而不是 setClient 方法
+    // 重要：告诉 SessionManager 当前的 client，这样它就可以设置回调
+    if (sessionManager.setClient) {
+      sessionManager.setClient(this);
+    }
   }
 
   /**
@@ -298,20 +422,6 @@ export class ReactCLIClient implements IClient {
   }
 
   /**
-   * 处理工具调用 - IClient 接口要求的方法
-   */
-  handleToolCall(toolCall: ToolCallParams): void {
-    this.handleToolCallStart(toolCall);
-  }
-
-  /**
-   * 处理工具调用结果 - IClient 接口要求的方法
-   */
-  handleToolCallResult(result: ToolExecutionResult): void {
-    this.handleToolExecutionEnd(result);
-  }
-
-  /**
    * 获取客户端状态
    */
   getStatus(): ClientStatus {
@@ -346,12 +456,24 @@ export class ReactCLIClient implements IClient {
   }
 
   /**
-   * 处理工具调用开始
+   * 处理工具调用开始 - 目前无需处理
    */
   private handleToolCallStart(toolCall: ToolCallParams): void {
+    // 无需处理，工具调用在执行开始时才显示
+  }
+
+  /**
+   * 处理工具执行开始 - 显示工具名称和参数
+   */
+  private handleToolExecutionStart(toolCall: ToolCallParams): void {
+    // 格式化参数显示
+    const paramsStr = toolCall.parameters && Object.keys(toolCall.parameters).length > 0
+      ? JSON.stringify(toolCall.parameters, null, 2)
+      : 'No parameters';
+    
     const message: ClientMessage = {
       id: `tool_start_${toolCall.call_id}`,
-      content: `🔧 Calling tool: ${toolCall.name}`,
+      content: `🔧 **${toolCall.name}**\n\`\`\`json\n${paramsStr}\n\`\`\``,
       type: 'tool',
       timestamp: Date.now(),
       metadata: { toolCall, status: 'running' }
@@ -384,38 +506,60 @@ export class ReactCLIClient implements IClient {
    * 处理流式文本增量
    */
   private handleStreamDelta(delta: string): void {
-    // 在流式模式下，我们可以实时更新最后一条消息
-    if (this.messages.length > 0) {
-      const lastMessage = this.messages[this.messages.length - 1];
-      if (lastMessage.type === 'agent' && lastMessage.metadata?.streaming) {
-        lastMessage.content += delta;
-        this.triggerUIUpdate();
-        return;
-      }
-    }
+    // // 在流式模式下，我们可以实时更新最后一条消息
+    // if (this.messages.length > 0) {
+    //   const lastMessage = this.messages[this.messages.length - 1];
+    //   if (lastMessage.type === 'agent' && lastMessage.metadata?.streaming) {
+    //     lastMessage.content += delta;
+    //     this.triggerUIUpdate();
+    //     return;
+    //   }
+    // }
     
-    // 如果没有正在流式传输的消息，创建新的
-    this.addMessage({
-      id: `stream_${Date.now()}`,
-      content: delta,
-      type: 'agent',
-      timestamp: Date.now(),
-      metadata: { streaming: true }
-    });
+    // // 如果没有正在流式传输的消息，创建新的
+    // this.addMessage({
+    //   id: `stream_${Date.now()}`,
+    //   content: delta,
+    //   type: 'agent',
+    //   timestamp: Date.now(),
+    //   metadata: { streaming: true }
+    // });
   }
 
   /**
    * 格式化 Agent 步骤
    */
   private formatAgentStep(step: AgentStep<any>): string {
+    // 优先显示 Agent 的响应
     if (step.extractorResult?.response) {
       return step.extractorResult.response;
     }
     
+    // 如果有思考过程，显示思考内容
     if (step.extractorResult?.thinking) {
       return `💭 Thinking: ${step.extractorResult.thinking}`;
     }
     
+    // 如果有工具调用结果，显示工具调用信息
+    if (step.toolExecutionResults && step.toolExecutionResults.length > 0) {
+      const toolResults = step.toolExecutionResults.map((result: ToolExecutionResult) => {
+        if (result.status === 'succeed') {
+          return `✅ Tool ${result.name}: ${result.message || 'Success'}`;
+        } else if (result.status === 'failed') {
+          return `❌ Tool ${result.name}: ${result.message || 'Failed'}`;
+        } else {
+          return `⏳ Tool ${result.name}: ${result.message || 'Pending'}`;
+        }
+      }).join('\n');
+      return toolResults;
+    }
+    
+    // 如果有原始文本，显示原始文本
+    if (step.rawText) {
+      return step.rawText;
+    }
+    
+    // 兜底显示
     return `Step ${step.stepIndex} completed`;
   }
 

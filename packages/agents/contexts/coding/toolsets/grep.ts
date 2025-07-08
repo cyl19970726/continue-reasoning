@@ -1,9 +1,7 @@
 import { z } from 'zod';
-import { createTool } from '../../../../core';
-import { IAgent } from '../../../../core';
-import { ExecutionOptions } from '../sandbox';
-import { IRuntime } from '../runtime/interface';
-import { logger } from '../../../../core';
+import { createTool, IAgent, logger } from '@continue-reasoning/core';
+import { ExecutionOptions } from '../sandbox/index.js';
+import { IRuntime } from '../runtime/interface.js';
 
 // 匹配结果的结构
 const GrepMatchSchema = z.object({
@@ -91,7 +89,7 @@ export const GrepTool = createTool({
     let grepCmd = 'grep';
     
     // Add flags
-    const flags = [];
+    const flags: string[] = [];
     if (!caseSensitive) flags.push('-i'); // case insensitive
     if (recursive) flags.push('-r'); // recursive
     if (lineNumbers) flags.push('-n'); // line numbers

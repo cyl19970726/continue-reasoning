@@ -1,4 +1,4 @@
-import { IAgent } from './agent';
+import { IAgent } from './agent.js';
 import { z } from 'zod';
 
 // ===== 路由策略类型 =====

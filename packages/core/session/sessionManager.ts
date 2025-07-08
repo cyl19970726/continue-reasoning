@@ -6,8 +6,8 @@ import {
   AgentStep, 
   ToolCallParams,
   AgentCallbacks 
-} from '../interfaces';
-import { logger } from '../utils/logger';
+} from '../interfaces/index.js';
+import { logger } from '../utils/logger.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const DEFAULT_AGENT_STEPS = 1000;

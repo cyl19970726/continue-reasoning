@@ -1,7 +1,7 @@
-import { logger } from '../utils/logger';
-import { ChatMessage, AgentStatus, MessageType } from './base';
-import { IContextManager } from './context';
-import { ToolExecutionResult } from './tool';
+import { logger } from '../utils/logger.js';
+import { ChatMessage, AgentStatus, MessageType } from './base.js';
+import { IContextManager } from './context.js';
+import { ToolExecutionResult } from './tool.js';
 
 /**
  * Base extractor result interface

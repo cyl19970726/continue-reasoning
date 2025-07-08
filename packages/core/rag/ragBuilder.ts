@@ -7,8 +7,8 @@ import {
   EmbeddingConfig, 
   IndexConfig, 
   ChunkingStrategy 
-} from '../interfaces';
-import { ChromaRAG } from './chromaRAG';
+} from '../interfaces/index.js';
+import { ChromaRAG } from './chromaRAG.js';
 
 /**
  * RAG builder implementation

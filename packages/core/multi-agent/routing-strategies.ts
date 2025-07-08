@@ -3,13 +3,13 @@ import {
     Task, 
     RoutingStrategy, 
     RoutingConfig 
-} from '../interfaces/multi-agent';
-import { logger } from '../utils/logger';
-import { ILLM } from '../interfaces/agent';
-import { OpenAIWrapper } from '../models/openai';
-import { AnthropicWrapper } from '../models/anthropic';
-import { GeminiWrapper } from '../models/gemini';
-import { OpenAIChatWrapper } from '../models/openai-chat';
+} from '../interfaces/multi-agent.js';
+import { logger } from '../utils/logger.js';
+import { ILLM } from '../interfaces/agent.js';
+import { OpenAIWrapper } from '../models/openai.js';
+import { AnthropicWrapper } from '../models/anthropic.js';
+import { GeminiWrapper } from '../models/gemini.js';
+import { OpenAIChatWrapper } from '../models/openai-chat.js';
 
 /**
  * 🎯 智能体路由策略接口

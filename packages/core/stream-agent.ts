@@ -1,6 +1,6 @@
-import { BaseAgent } from "./base-agent";
-import { AgentStep } from "./interfaces";
-import { logger } from "./utils/logger";
+import { BaseAgent } from "./base-agent.js";
+import { AgentStep, LLMStreamChunk } from "./interfaces/index.js";
+import { logger } from "./utils/logger.js";
 
 /**
  * 流式 Agent - 使用流式调用和 stream 架构
@@ -124,7 +124,7 @@ export class StreamAgent extends BaseAgent {
     /**
      * 处理流式数据块
      */
-    private async handleStreamChunk(chunk: import('./interfaces/agent').LLMStreamChunk, stepIndex: number): Promise<void> {
+    private async handleStreamChunk(chunk: LLMStreamChunk, stepIndex: number): Promise<void> {
         try {
             switch (chunk.type) {
                 case 'step-start':
@@ -278,6 +278,7 @@ export class StreamAgent extends BaseAgent {
             logger.debug(`[Agent] 处理了 ${this.currentStepData.toolExecutionResults.length} 个工具调用结果`);
         }
         
+        console.log('>>>>>>currentStep<<<<<< /n', currentStep);
         // 发送步骤完成回调
         this.callbacks?.onAgentStep?.(currentStep);
         

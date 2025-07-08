@@ -1,23 +1,23 @@
 {
-  "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "target": "ES2020",
-    "module": "commonjs",
-    "lib": ["ES2020"],
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
     "outDir": "./dist",
     "rootDir": "./",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "composite": true,
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
     "noEmit": false,
-    "composite": true
+    "isolatedModules": true
   },
   "include": [
     "./**/*.ts"
@@ -28,9 +28,12 @@
     "**/*.test.ts",
     "**/*.spec.ts",
     "**/tests/**",
-    "contexts/coding/snapshot/tests/**"
+    "contexts/coding/snapshot/tests/**",
+    "contexts/coding/toolsets/glob.ts",
+    "contexts/coding/toolsets/grep.ts",
+    "contexts/interaction/**"
   ],
   "references": [
-    { "path": "../core" },
+    { "path": "../core" }
   ]
 }

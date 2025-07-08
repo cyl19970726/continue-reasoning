@@ -1,10 +1,10 @@
 // 导出RAG相关类和接口
-export * from './chromaRAG';
-export * from './ragBuilder';
+export * from './chromaRAG.js';
+export * from './ragBuilder.js';
 
 // 创建包装函数，用于快速创建常用RAG实例
-import { RAGBuilder } from './ragBuilder';
-import { IRAGBuilder, IRAG, VectorStoreType, EmbeddingModelType } from '../interfaces';
+import { RAGBuilder } from './ragBuilder.js';
+import { IRAGBuilder, IRAG, VectorStoreType, EmbeddingModelType } from '../interfaces/index.js';
 
 /**
  * 创建基于Chroma的RAG实例的快速方法

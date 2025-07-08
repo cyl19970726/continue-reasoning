@@ -1,5 +1,5 @@
-import { Task, TaskResult, IMultiAgent, AgentStatus } from '../interfaces/multi-agent';
-import { logger } from '../utils/logger';
+import { Task, TaskResult, IMultiAgent, AgentStatus } from '../interfaces/multi-agent.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * 🎯 多智能体系统工具函数

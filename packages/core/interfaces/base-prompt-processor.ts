@@ -1,14 +1,14 @@
-import { ExtractorResult } from "./prompt";
-import { ChatMessage } from "./base";
-import { ChatHistoryConfig } from "./prompt";
-import { ChatHistoryManager } from "../prompts/chat-history-manager";
-import { IContextManager } from "./context";
-import { IChatHistoryManager } from "./prompt";
-import { IPromptProcessor } from "./prompt";
-import { AgentStep } from "./prompt";
-import { logger } from "../utils/logger";
-import { PromptCtx } from "./prompt";
-import { MessageType } from "./base";
+import { ExtractorResult } from "./prompt.js";
+import { ChatMessage } from "./base.js";
+import { ChatHistoryConfig } from "./prompt.js";
+import { ChatHistoryManager } from "../prompts/chat-history-manager.js";
+import { IContextManager } from "./context.js";
+import { IChatHistoryManager } from "./prompt.js";
+import { IPromptProcessor } from "./prompt.js";
+import { AgentStep } from "./prompt.js";
+import { logger } from "../utils/logger.js";
+import { PromptCtx } from "./prompt.js";
+import { MessageType } from "./base.js";
 
 /**
  * PromptProcessor abstract base

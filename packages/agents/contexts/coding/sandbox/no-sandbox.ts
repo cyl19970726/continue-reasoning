@@ -1,4 +1,4 @@
-import { ISandbox, ShellExecutionResult, ExecutionOptions } from './interface';
+import { ISandbox, ShellExecutionResult, ExecutionOptions } from './interface.js';
 import { exec, ExecOptions } from 'child_process';
 import { promisify } from 'util';
 

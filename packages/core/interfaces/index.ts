@@ -1,27 +1,27 @@
 // Export all base types
-export * from './base';
+export * from './base.js';
 
 // Export extractor interfaces
-export * from './extractor';
+export * from './extractor.js';
 
 // Export tool interfaces
-export * from './tool';
+export * from './tool.js';
 
 // Export prompt processor interfaces
-export * from './prompt';
-export * from './base-prompt-processor';
+export * from './prompt.js';
+export * from './base-prompt-processor.js';
 
 // Export memory and RAG interfaces
-export * from './memory';
+export * from './memory.js';
 
 // Export context interfaces
-export * from './context';
+export * from './context.js';
 
 // Export agent interfaces
-export * from './agent';
+export * from './agent.js';
 
 // Export session interfaces
-export * from './session';
+export * from './session.js';
 
 // Export client interfaces
-export * from './client'; 
+export * from './client.js'; 

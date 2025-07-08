@@ -2,9 +2,9 @@
 import { z } from 'zod';
 import { createTool } from '@continue-reasoning/core';
 import { IAgent } from '@continue-reasoning/core';
-import { IRuntime } from '../runtime/interface';
-import { reverseDiff } from '../runtime/diff';
-import { formatDetailedError, logEnhancedError, createErrorResponse } from './error-utils';
+import { IRuntime } from '../runtime/interface.js';
+import { reverseDiff } from '../runtime/diff.js';
+import { formatDetailedError, logEnhancedError, createErrorResponse } from './error-utils.js';
 import * as path from 'path';
 // For diff generation, we might need a library or a utility function.
 // For now, we'll return a placeholder diff.

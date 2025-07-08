@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { IRAG, QueryOptions, RAGResult } from './memory';
-import { PromptCtx, PromptAssemblyStrategy } from './prompt';
-import { ToolSet, ToolExecutionResult } from './tool';
-import { IAgent } from './agent';
+import { IRAG, QueryOptions, RAGResult } from './memory.js';
+import { PromptCtx, PromptAssemblyStrategy } from './prompt.js';
+import { ToolSet, ToolExecutionResult } from './tool.js';
+import { IAgent } from './agent.js';
 
 export interface IContext<T extends z.ZodObject<any>>{
     id: string;

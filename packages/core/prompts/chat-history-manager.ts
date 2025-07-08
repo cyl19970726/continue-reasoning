@@ -1,5 +1,5 @@
-import { IChatHistoryManager, ChatHistoryConfig } from "../interfaces/prompt";
-import { ChatMessage, MessageType } from "../interfaces/base";
+import { IChatHistoryManager, ChatHistoryConfig } from "../interfaces/prompt.js";
+import { ChatMessage, MessageType } from "../interfaces/base.js";
 
 /**
  * Default chat history manager implementation

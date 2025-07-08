@@ -4,7 +4,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { SnapshotConfig } from '../interfaces';
+import { SnapshotConfig } from '../interfaces.js';
 
 interface IgnoreRules {
   patterns: string[];

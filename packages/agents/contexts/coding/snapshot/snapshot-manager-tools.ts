@@ -10,8 +10,8 @@
 
 import { createTool, IAgent } from '@continue-reasoning/core';
 import { z } from 'zod';
-import { SnapshotManager } from './snapshot-manager';
-import { IRuntime } from '../runtime/interface';
+import { SnapshotManager } from './snapshot-manager.js';
+import { IRuntime } from '../runtime/interface.js';
 
 // Helper function to get workspace path from agent
 function getWorkspacePath(agent?: IAgent): string {

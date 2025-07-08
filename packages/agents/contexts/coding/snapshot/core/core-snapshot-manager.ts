@@ -4,7 +4,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { SnapshotData, SnapshotConfig } from '../interfaces';
+import { SnapshotData, SnapshotConfig } from '../interfaces.js';
 
 export interface SnapshotIndexEntry {
   id: string;

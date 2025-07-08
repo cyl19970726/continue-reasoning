@@ -1,6 +1,6 @@
-export { OpenAIWrapper } from './openai';
-export { OpenAIChatWrapper } from './openai-chat';
-export { AnthropicWrapper } from './anthropic';
-export { GeminiWrapper } from './gemini';
+export { OpenAIWrapper } from './openai.js';
+export { OpenAIChatWrapper } from './openai-chat.js';
+export { AnthropicWrapper } from './anthropic.js';
+export { GeminiWrapper } from './gemini.js';
 
-export * from './models-list';
+export * from './models-list.js';

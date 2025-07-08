@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { IAgent, IContext, ITool } from "../interfaces";
-import { createTool } from "../utils";
+import { IAgent, IContext, ITool } from "../interfaces/index.js";
+import { createTool } from "../utils/index.js";
 
 // 计划步骤的数据结构
 const PlanStepSchema = z.object({

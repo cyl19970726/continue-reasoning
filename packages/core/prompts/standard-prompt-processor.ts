@@ -1,7 +1,7 @@
-import { IPromptProcessor, MessageType, ChatHistoryConfig } from '../interfaces';
-import { BasePromptProcessor } from './index';
-import { StandardExtractorResult } from '../interfaces';
-import { XmlExtractor } from '../utils/xml-extractor';
+import { IPromptProcessor, MessageType, ChatHistoryConfig } from '../interfaces/index.js';
+import { BasePromptProcessor } from './index.js';
+import { StandardExtractorResult } from '../interfaces/index.js';
+import { XmlExtractor } from '../utils/xml-extractor.js';
 
 /**
  * Standard Prompt Processor for basic thinking and final answer workflow

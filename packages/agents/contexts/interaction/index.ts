@@ -6,7 +6,4 @@
  */
 
 // Export interactive context
-export * from "./interactive";
-
-// Export plan context
-export * from "./plan";
+export * from "./interactive.js";

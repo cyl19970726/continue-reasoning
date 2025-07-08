@@ -1,8 +1,8 @@
 import { StreamAgent, AgentOptions, LogLevel, AnyTool, IContext, ToolExecutionResult } from '@continue-reasoning/core';
-import { createCodingContext } from './contexts/coding';
+import { createCodingContext } from './contexts/coding/index.js';
 import { logger } from '@continue-reasoning/core';
-import { SnapshotManager } from './contexts/coding/snapshot/snapshot-manager';
-import { ICodingContext } from './contexts/coding/coding-context';
+import { SnapshotManager } from './contexts/coding/snapshot/snapshot-manager.js';
+import { ICodingContext } from './contexts/coding/coding-context.js';
 import { createEnhancedPromptProcessor } from '@continue-reasoning/core';
 
 /**

@@ -1,22 +1,22 @@
-import { AnyTool, IContextManager, IAgent, ILLM, IContext, ToolCallDefinition, ToolCallParams, ToolExecutionResult, IRAGEnabledContext, asRAGEnabledContext, AgentStatus, AgentStep, ChatMessage, ToolSet, AgentStorage, AgentCallbacks, MessageType, BasePromptProcessor } from "./interfaces";
-import { ToolExecutor } from "./tool-executor";
-import { DeepWikiContext, FireCrawlContext } from "./contexts/index";
-import { ITaskQueue, TaskQueue } from "./taskQueue";
+import { AnyTool, IContextManager, IAgent, ILLM, IContext, ToolCallDefinition, ToolCallParams, ToolExecutionResult, IRAGEnabledContext, asRAGEnabledContext, AgentStatus, AgentStep, ChatMessage, ToolSet, AgentStorage, AgentCallbacks, MessageType, BasePromptProcessor } from "./interfaces/index.js";
+import { ToolExecutor } from "./tool-executor.js";
+import { DeepWikiContext, FireCrawlContext } from "./contexts/index.js";
+import { ITaskQueue, TaskQueue } from "./taskQueue.js";
 import dotenv from "dotenv";
-import { PlanContext } from "./contexts/plan";
-import { MCPContext } from "./contexts/mcp";
-import { WebSearchContext } from "./contexts/web-search";
-import { OpenAIWrapper } from "./models/openai";
-import { AnthropicWrapper } from "./models/anthropic";
-import { GeminiWrapper } from "./models/gemini";
-import { SupportedModel, getModelProvider, OPENAI_MODELS } from "./models";
+import { PlanContext } from "./contexts/plan.js";
+import { MCPContext } from "./contexts/mcp.js";
+import { WebSearchContext } from "./contexts/web-search.js";
+import { OpenAIWrapper } from "./models/openai.js";
+import { AnthropicWrapper } from "./models/anthropic.js";
+import { GeminiWrapper } from "./models/gemini.js";
+import { SupportedModel, getModelProvider, OPENAI_MODELS } from "./models/index.js";
 import path from "path";
-import { LogLevel, Logger } from "./utils/logger";
-import { ToolSetContext } from "./contexts/toolset";
-import { logger } from "./utils/logger";
-import { ContextManager } from "./context";
-import { getSystemPromptForMode } from "./prompts/system-prompt";
-import { OpenAIChatWrapper } from "./models/openai-chat";
+import { LogLevel, Logger } from "./utils/logger.js";
+import { ToolSetContext } from "./contexts/toolset.js";
+import { logger } from "./utils/logger.js";
+import { ContextManager } from "./context.js";
+import { getSystemPromptForMode } from "./prompts/system-prompt.js";
+import { OpenAIChatWrapper } from "./models/openai-chat.js";
 
 dotenv.config();
 
@@ -232,7 +232,7 @@ ${tools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}` : '';
      * 执行单个工具调用（不等待完成，立即返回Promise）
      * ToolExecutor已经在内部使用TaskQueue进行异步并行执行
      */
-    protected async executeToolCall(toolCall: import('./interfaces/tool').ToolCallParams, _stepIndex: number): Promise<void> {
+    protected async executeToolCall(toolCall: import('./interfaces/tool.js').ToolCallParams, _stepIndex: number): Promise<void> {
         // 找到对应的工具
         const tool = this.getActiveTools().find(t => t.name === toolCall.name);
         if (!tool) {

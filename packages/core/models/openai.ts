@@ -1,10 +1,10 @@
 import openai, { OpenAI } from "openai";
 import { z } from "zod";
-import { ILLM, LLMModel, ToolCallDefinition, ToolCallParams, LLMCallbacks } from "../interfaces";
+import { ILLM, LLMModel, ToolCallDefinition, ToolCallParams } from "../interfaces/index.js";
 import dotenv from "dotenv";
-import { zodToJsonNostrict, zodToJsonStrict } from "../utils/jsonHelper";
-import { SupportedModel } from "../models";
-import { logger } from "../utils/logger";
+import { zodToJsonNostrict, zodToJsonStrict } from "../utils/jsonHelper.js";
+import { SupportedModel } from "../models/index.js";
+import { logger } from "../utils/logger.js";
 import { response } from "express";
 
 dotenv.config();
@@ -96,7 +96,7 @@ export class OpenAIWrapper implements ILLM {
         messages: string,
         tools: ToolCallDefinition[] = [],
         options?: { stepIndex?: number }
-    ): AsyncIterable<import('../interfaces/agent').LLMStreamChunk> {
+    ): AsyncIterable<import('../interfaces/agent.js').LLMStreamChunk> {
         const stepIndex = options?.stepIndex!;
 
 

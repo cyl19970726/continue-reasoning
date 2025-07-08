@@ -2,34 +2,66 @@
   "name": "@continue-reasoning/core",
   "version": "0.1.0",
   "description": "Core functionality for continue-reasoning agent framework",
-  "main": "index.ts",
-  "types": "index.ts",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./index.ts",
-      "import": "./index.ts",
-      "require": "./index.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
-    "./context": "./context.ts",
-    "./events/*": "./events/*",
-    "./interactive/*": "./interactive/*",
-    "./models/*": "./models/*",
-    "./utils/*": "./utils/*",
-    "./hub/*": "./hub/*",
-    "./contexts/*": "./contexts/*",
-    "./memory/*": "./memory/*",
-    "./rag/*": "./rag/*",
-    "./thinking/*": "./thinking/*"
+    "./context": {
+      "types": "./dist/context.d.ts",
+      "import": "./dist/context.js"
+    },
+    "./events/*": {
+      "types": "./dist/events/*.d.ts",
+      "import": "./dist/events/*.js"
+    },
+    "./interactive/*": {
+      "types": "./dist/interactive/*.d.ts",
+      "import": "./dist/interactive/*.js"
+    },
+    "./models/*": {
+      "types": "./dist/models/*.d.ts",
+      "import": "./dist/models/*.js"
+    },
+    "./utils/*": {
+      "types": "./dist/utils/*.d.ts",
+      "import": "./dist/utils/*.js"
+    },
+    "./hub/*": {
+      "types": "./dist/hub/*.d.ts",
+      "import": "./dist/hub/*.js"
+    },
+    "./contexts/*": {
+      "types": "./dist/contexts/*.d.ts",
+      "import": "./dist/contexts/*.js"
+    },
+    "./memory/*": {
+      "types": "./dist/memory/*.d.ts",
+      "import": "./dist/memory/*.js"
+    },
+    "./rag/*": {
+      "types": "./dist/rag/*.d.ts",
+      "import": "./dist/rag/*.js"
+    },
+    "./thinking/*": {
+      "types": "./dist/thinking/*.d.ts",
+      "import": "./dist/thinking/*.js"
+    }
   },
   "engines": {
     "node": ">=18"
   },
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
+    "build": "tsc --build",
+    "dev": "tsc --build --watch",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "test": "vitest __tests__/ --watch=false",
     "test:watch": "vitest __tests__/",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx"
   },
   "dependencies": {
     "@ai-sdk/openai": "^1.3.6",

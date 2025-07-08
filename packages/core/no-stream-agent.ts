@@ -1,6 +1,6 @@
-import { BaseAgent } from "./base-agent";
-import { AgentStep } from "./interfaces";
-import { logger } from "./utils/logger";
+import { BaseAgent } from "./base-agent.js";
+import { AgentStep } from "./interfaces/index.js";
+import { logger } from "./utils/logger.js";
 
 /**
  * 非流式 Agent - 使用传统的非流式调用

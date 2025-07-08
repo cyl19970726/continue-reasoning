@@ -1,6 +1,6 @@
-import { ITaskQueue } from './taskQueue';
-import { AnyTool, ToolCallParams, ToolExecutionResult, AgentCallbacks } from './interfaces';
-import { logger } from './utils/logger';
+import { ITaskQueue } from './taskQueue.js';
+import { AnyTool, ToolCallParams, ToolExecutionResult, AgentCallbacks } from './interfaces/index.js';
+import { logger } from './utils/logger.js';
 
 export interface ToolExecutionTask {
     id: string;

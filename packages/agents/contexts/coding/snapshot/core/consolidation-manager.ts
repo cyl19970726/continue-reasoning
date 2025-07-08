@@ -4,8 +4,8 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { mergeDiffs } from '../../runtime/diff';
-import { SnapshotData } from '../interfaces';
+import { mergeDiffs } from '../../runtime/diff.js';
+import { SnapshotData } from '../interfaces.js';
 
 export interface ConsolidatedSnapshot extends SnapshotData {
   // 方案3: 虚拟序列号 - 使用序列号范围表示合并快照覆盖的序列

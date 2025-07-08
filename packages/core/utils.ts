@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { ITool, IAgent, IContext, IRAGEnabledContext, IRAG, RAGResult, QueryOptions } from "./interfaces";
+import { ITool, IAgent, IContext, IRAGEnabledContext, IRAG, RAGResult, QueryOptions } from "./interfaces/index.js";
 import { randomUUID } from "crypto";
-import { logger } from "./utils/logger";
+import { logger } from "./utils/logger.js";
+import { PromptCtx, ToolSet} from "./interfaces/index.js";
 
 /** Utility type to preserve type information */
 export type Pretty<type> = { [key in keyof type]: type[key] } & unknown;
@@ -335,11 +336,11 @@ export const ContextHelper = {
     description: string;
     dataSchema: T;
     initialData: Partial<z.infer<T>>;
-    promptCtx?: import("./interfaces").PromptCtx;
-    renderPromptFn?: (data: z.infer<T>) => string | import("./interfaces").PromptCtx;
-    toolSetFn: () => import("./interfaces").ToolSet | import("./interfaces").ToolSet[];
+    promptCtx?: PromptCtx;
+    renderPromptFn?: (data: z.infer<T>) => string | PromptCtx;
+    toolSetFn: () => ToolSet | ToolSet[];
     handleToolCall?: (toolCallResult: any) => void;
-    install?: (agent: import("./interfaces").IAgent) => Promise<void>;
+    install?: (agent: IAgent) => Promise<void>;
     mcpServers?: {
         name: string;
         type?: "stdio" | "sse" | "streamableHttp";
@@ -367,7 +368,7 @@ export const ContextHelper = {
       mcpServers,
       
       // Add install method - supports both custom install and MCP server connections
-      async install(agent: import("./interfaces").IAgent): Promise<void> {
+      async install(agent: IAgent): Promise<void> {
         // First run custom install function if provided
         if (install) {
           try {
@@ -530,7 +531,7 @@ export const ContextHelper = {
         return this.data;
       },
       
-      renderPrompt(): string | import("./interfaces").PromptCtx {
+      renderPrompt(): string | import("./interfaces/index.js").PromptCtx {
         if (renderPromptFn) {
           return renderPromptFn(this.data);
         }
@@ -539,7 +540,7 @@ export const ContextHelper = {
         `;
       },
 
-      toolSet(): import("./interfaces").ToolSet | import("./interfaces").ToolSet[] {
+      toolSet(): import("./interfaces/index.js").ToolSet | import("./interfaces/index.js").ToolSet[] {
         return toolSetFn();
       }
     };
@@ -560,11 +561,11 @@ export const ContextHelper = {
     description: string;
     dataSchema: T;
     initialData?: Partial<z.infer<T>>;
-    promptCtx?: import("./interfaces").PromptCtx;
-    renderPromptFn?: (data: z.infer<T>) => string | import("./interfaces").PromptCtx;
-    toolSetFn?: () => import("./interfaces").ToolSet | import("./interfaces").ToolSet[];
+    promptCtx?: import("./interfaces/index.js").PromptCtx;
+    renderPromptFn?: (data: z.infer<T>) => string | import("./interfaces/index.js").PromptCtx;
+    toolSetFn?: () => import("./interfaces/index.js").ToolSet | import("./interfaces/index.js").ToolSet[];
     handleToolCall?: (toolCallResult: any) => void;
-    install?: (agent: import("./interfaces").IAgent) => Promise<void>;
+    install?: (agent: import("./interfaces/index.js").IAgent) => Promise<void>;
     ragConfigs?: Record<string, {
       rag: IRAG,
       queryTemplate?: string,
@@ -609,12 +610,12 @@ export const ContextHelper = {
       rags: {}, // Initialize empty object
       
       // Override renderPrompt method with async version
-      renderPrompt: async function(): Promise<string | import("./interfaces").PromptCtx> {
+      renderPrompt: async function(): Promise<string | PromptCtx> {
         // First load RAG-related data
         const ragData = await this.loadRAGForPrompt!();
         
         // If there's a custom renderPromptFn, use it
-        let baseResult: string | import("./interfaces").PromptCtx;
+        let baseResult: string | PromptCtx;
 
         if (renderPromptFn) {
           baseResult = renderPromptFn(this.data);

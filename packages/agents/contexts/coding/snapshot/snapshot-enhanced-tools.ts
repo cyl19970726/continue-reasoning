@@ -6,10 +6,10 @@
 import { z } from 'zod';
 import { createTool } from '@continue-reasoning/core';
 import { IAgent } from '@continue-reasoning/core';
-import { IRuntime } from '../runtime/interface';
-import { ICodingContext } from '../coding-context';
-import { generateUnifiedDiff } from '../runtime/diff';
-import { formatDetailedError, logEnhancedError } from '../toolsets/error-utils';
+import { IRuntime } from '../runtime/interface.js';
+import { ICodingContext } from '../coding-context.js';
+import { generateUnifiedDiff } from '../runtime/diff.js';
+import { formatDetailedError, logEnhancedError } from '../toolsets/error-utils.js';
 import * as path from 'path';
 
 /**

@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { LogLevel, logger, OPENAI_MODELS, DEEPSEEK_MODELS,ANTHROPIC_MODELS } from '@continue-reasoning/core';
-import { CodingAgent } from './coding-agent';
-import { createCLIClient, createCLIClientWithSession, getCLIClientRegistry } from './cli-client-adapter';
+import { CodingAgent } from './coding-agent.js';
+import { createCLIClient, createCLIClientWithSession, getCLIClientRegistry } from './cli-client-adapter.js';
 import { SessionManager } from '@continue-reasoning/core';
 import path from 'path';
 import fs from 'fs';
+
+
 
 /**
  * CLI Coding Agent - Interactive coding assistant that runs in the current directory
@@ -25,7 +27,7 @@ async function startCLICodingAgent(useReactClient: boolean = false) {
             'A coding agent that works through CLI interface for interactive development',
             workspacePath,
             500, // Allow more steps for interactive sessions
-            LogLevel.NONE,
+            LogLevel.DEBUG,
             {
                 model: ANTHROPIC_MODELS.CLAUDE_3_7_SONNET_LATEST,
                 enableParallelToolCalls: true,
@@ -43,36 +45,67 @@ async function startCLICodingAgent(useReactClient: boolean = false) {
         console.log('🖥️  Starting interactive session...');
         
         let client: any;
-        if (useReactClient) {
-            // Use the new React+Ink client
+        
+        // Check if we should use React CLI based on Gemini CLI pattern
+        // React CLI requires real TTY support (not available in VS Code integrated terminal)
+        const shouldUseReactCLI = useReactClient && process.stdin.isTTY;
+        
+        if (shouldUseReactCLI) {
+            // Use the new React+Ink client (only in TTY environment)
             console.log('🎨 Using React+Ink interface...');
-            const registry = getCLIClientRegistry();
             
-            // Create React client using the registry
-            client = registry.create('react-terminal', {
-                name: 'Continue Reasoning - Coding Assistant (React)',
-                userId: 'developer',
-                agentId: 'cr-coding-agent',
-                enableStreaming: true,
-                theme: 'dark',
-                displayOptions: {
-                    showTimestamps: true,
-                    showStepNumbers: true,
-                    compactMode: false
-                },
-                maxSteps: 50
-            });
-            
-            // Set session manager
-            client.setSessionManager(sessionManager);
-            
-            // Create session
-            const sessionId = client.createSession?.('developer', 'cr-coding-agent');
-            if (!sessionId) {
-                throw new Error('Failed to create session');
+            try {
+                const registry = getCLIClientRegistry();
+                
+                // Create React client using the registry
+                client = registry.create('react-terminal', {
+                    name: 'Continue Reasoning - Coding Assistant (React)',
+                    userId: 'developer',
+                    agentId: 'cr-coding-agent',
+                    enableStreaming: true,
+                    theme: 'dark',
+                    displayOptions: {
+                        showTimestamps: true,
+                        showStepNumbers: true,
+                        compactMode: false
+                    },
+                    maxSteps: 50
+                });
+                
+                // Set session manager
+                client.setSessionManager(sessionManager);
+                
+                // Create session
+                const sessionId = client.createSession?.('developer', 'cr-coding-agent');
+                if (!sessionId) {
+                    throw new Error('Failed to create session');
+                }
+            } catch (error) {
+                console.log('⚠️  React CLI failed to start, falling back to standard CLI...');
+                console.log('💡 Tip: Try running in a regular terminal for React CLI support\\n');
+                
+                // Fall back to standard client
+                client = createCLIClientWithSession(sessionManager, {
+                    name: 'Continue Reasoning - Coding Assistant',
+                    userId: 'developer',
+                    agentId: 'cr-coding-agent',
+                    enableColors: true,
+                    enableTimestamps: true,
+                    enableHistory: true,
+                    historyFile: path.join(workspacePath, '.cr_history'),
+                    promptPrefix: '💻',
+                    multilineDelimiter: '```',
+                    maxSteps: 50
+                });
             }
         } else {
-            // Use legacy readline client
+            // Use standard readline client (for non-TTY or explicit choice)
+            if (useReactClient && !process.stdin.isTTY) {
+                console.log('⚠️  React CLI requires TTY environment, using standard CLI...');
+                console.log('💡 Tip: React CLI needs Terminal.app or iTerm2 - VS Code integrated terminal is not supported');
+                console.log('💡 You can open Terminal.app and run the same command there for React CLI\\n');
+            }
+            
             client = createCLIClientWithSession(sessionManager, {
                 name: 'Continue Reasoning - Coding Assistant',
                 userId: 'developer',
@@ -106,7 +139,34 @@ async function startCLICodingAgent(useReactClient: boolean = false) {
         if (!client) {
             throw new Error('Failed to create client');
         }
-        await client.start();
+        
+        try {
+            await client.start();
+        } catch (error) {
+            // If React CLI fails, try to fall back to standard CLI
+            if (shouldUseReactCLI && (error as Error).message.includes('Raw mode not supported')) {
+                console.log('⚠️  React CLI failed to start, falling back to standard CLI...');
+                console.log('💡 Tip: Try running in a regular terminal for React CLI support\\n');
+                
+                // Create standard CLI client as fallback
+                client = createCLIClientWithSession(sessionManager, {
+                    name: 'Continue Reasoning - Coding Assistant',
+                    userId: 'developer',
+                    agentId: 'cr-coding-agent',
+                    enableColors: true,
+                    enableTimestamps: true,
+                    enableHistory: true,
+                    historyFile: path.join(workspacePath, '.cr_history'),
+                    promptPrefix: '💻',
+                    multilineDelimiter: '```',
+                    maxSteps: 50
+                });
+                
+                await client.start();
+            } else {
+                throw error;
+            }
+        }
 
     } catch (error) {
         console.error('❌ Failed to start:', error);
@@ -169,7 +229,8 @@ For more information, visit: https://github.com/continue-reasoning/continue-reas
 
 // Show version
 function showVersion() {
-    const packageJson = require('./package.json');
+    // For ESM, we need to use fs to read package.json
+    const packageJson = JSON.parse(fs.readFileSync('./package.json', 'utf-8'));
     console.log(`cr-coding v${packageJson.version}`);
 }
 
@@ -191,8 +252,12 @@ async function main() {
     await startCLICodingAgent(options.react);
 }
 
-// Run if called directly
-if (require.main === module) {
+// Run if called directly (ESM way)
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+if (import.meta.url === `file://${process.argv[1]}`) {
     main().catch(error => {
         console.error('Fatal error:', error);
         process.exit(1);

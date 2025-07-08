@@ -1,4 +1,4 @@
-import { Container, MemoryData } from './base';
+import { Container, MemoryData } from './base.js';
 
 // RAG related type definitions
 export type VectorStoreType = 'chroma' | 'pinecone' | 'qdrant' | 'weaviate' | 'milvus';

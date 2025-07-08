@@ -1,7 +1,7 @@
-import { BasePromptProcessor, IContextManager, ChatHistoryConfig } from '../interfaces';
-import { StandardPromptProcessor } from './standard-prompt-processor';
-import { EnhancedPromptProcessor } from './enhanced-prompt-processor';
-import { logger } from '../utils/logger';
+import { BasePromptProcessor, IContextManager, ChatHistoryConfig } from '../interfaces/index.js';
+import { StandardPromptProcessor } from './standard-prompt-processor.js';
+import { EnhancedPromptProcessor } from './enhanced-prompt-processor.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Prompt processor types

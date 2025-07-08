@@ -1,10 +1,10 @@
-import { SupportedModel } from "../models";
-import { logger } from "../utils/logger";
-import { IContextManager } from './context';
-import { ITaskQueue, ToolSet, AnyTool, ToolCallDefinition, ToolCallParams, ToolExecutionResult } from './tool';
-import { AgentStep } from './prompt';
-import { AgentStatus, ChatMessage } from './base';
-import { BasePromptProcessor } from './base-prompt-processor';
+import { SupportedModel } from "../models/index.js";
+import { logger } from "../utils/logger.js";
+import { IContextManager } from './context.js';
+import { ITaskQueue, ToolSet, AnyTool, ToolCallDefinition, ToolCallParams, ToolExecutionResult } from './tool.js';
+import { AgentStep } from './prompt.js';
+import { AgentStatus, ChatMessage } from './base.js';
+import { BasePromptProcessor } from './base-prompt-processor.js';
 
 /**
  * Agent storage type - Basic information for session persistence
@@ -151,81 +151,6 @@ export interface LLMEvent {
 }
 
 /**
- * Streaming-specific LLM event types
- * Extends basic events with delta/incremental updates
- */
-export interface LLMStreamEvent {
-    type: 'stream_start' | 'text_delta' | 'tool_call_start' | 'tool_call_delta' | 'tool_call_complete' | 'stream_end' | 'error' | 'ping' | 'content_block_start' | 'content_block_stop' | 'chunk';
-    
-    // For text_delta events
-    text?: string;
-    
-    // For tool call events
-    toolCall?: {
-        id: string;
-        name?: string;
-        argumentsDelta?: string;  // Incremental JSON fragments
-        argumentsComplete?: string;  // Complete JSON string
-        parsedArguments?: any;  // Parsed arguments object
-    };
-    
-    // For error events
-    error?: Error;
-    
-    // For content block events (Anthropic)
-    contentBlock?: {
-        type: string;  // 'text', 'tool_use', etc.
-        index: number;
-    };
-    
-    // Provider-specific metadata
-    index?: number;  // Content block index
-    raw?: any;  // Raw provider event for debugging
-    
-    // For generic chunk events (when we don't know the specific type)
-    chunk?: any;
-}
-
-/**
- * Unified callbacks for both streaming and non-streaming LLM calls
- * Uses convenience methods instead of event objects for better ergonomics
- */
-export interface LLMCallbacks {
-    // Lifecycle callbacks
-    onStart?: () => void;
-    onComplete?: () => void;
-    onError?: (error: Error) => void;
-
-    onChunkStart: (chunkIndex: number, chunkData?: any) => void;
-    onChunkComplete: (chunkIndex: number, chunkData?: any) => void;
-    
-    // Content callbacks
-    // Streaming-specific callbacks (only called during streaming)
-    onTextDone?: (chunkIndex: number, text: string) => void;  // text done for one chunk
-    onTextDelta?: (chunkIndex: number, delta: string) => void;  // Incremental text for one chunk 
-    onText?: (text: string) => void; // use for call and stream call (stream call need to collect all the chunk text)
-
-    onToolCallStart?: (chunkIndex: number,toolCall: { id: string; name: string }) => void;
-    onToolCallDelta?: (chunkIndex: number,toolCall: { id: string; delta: string }) => void;  // Incremental tool arguments
-    onToolCallDone?: (chunkIndex: number,toolCall: { id: string; name: string; arguments: any }) => void;  // both use for call and streamCall
-}
-
-/**
- * Extended LLM callbacks that support parallel tool execution
- * Includes additional callbacks for tool execution lifecycle
- */
-export interface LLMCallbacksWithToolExecution extends LLMCallbacks {
-    // Tool execution callbacks (when parallel execution is enabled)
-    onToolExecutionStart?: (toolCall: { id: string; name: string; priority?: number }) => void;
-    onToolExecutionComplete?: (result: ToolExecutionResult) => void;
-    onToolExecutionError?: (toolCall: { id: string; name: string }, error: Error) => void;
-    
-    // Batch tool execution callbacks
-    onBatchToolExecutionStart?: (toolCalls: { id: string; name: string }[], parallel: boolean) => void;
-    onBatchToolExecutionComplete?: (results: ToolExecutionResult[]) => void;
-}
-
-/**
  * LLM流式数据块类型
  */
 export type LLMStreamChunk = 
@@ -262,4 +187,4 @@ export interface ILLM{
 }
 
 // Import forward references
-import { IRAGEnabledContext } from './context'; 
+import { IRAGEnabledContext } from './context.js'; 

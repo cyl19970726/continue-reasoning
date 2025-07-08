@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { AnthropicWrapper } from './anthropic';
+import { AnthropicWrapper } from './anthropic.js';
 import { LLMCallbacks, ToolCallDefinition } from '../interfaces';
 import { ANTHROPIC_MODELS } from '../models';
 import { z } from 'zod';

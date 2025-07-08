@@ -1,11 +1,18 @@
 {
-  "name": "hhh-agi",
+  "name": "@continue-reasoning/workspace",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
+    "build": "pnpm -r run build",
+    "dev": "pnpm -r run dev",
+    "clean": "pnpm -r run clean",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "pnpm -r run lint",
     "start-cli-coding-agent": "tsx examples/cli-with-agent.ts",
     "start-agent": "tsx packages/core/start.ts",
     "start-agent:debug": "tsx packages/core/start.ts --log-level debug",
@@ -19,7 +26,6 @@
     "dev-frontend": "cd packages/web/frontend && npm install && npm run dev",
     "install-mcp": "node scripts/install-mcp.js",
     "postinstall": "pnpm run install-mcp",
-    "lint": "next lint",
     "test:events": "vitest packages/core/__tests__/events/eventBus.test.ts --watch=false",
     "test:web-ui": "vitest packages/web/ --watch=false",
     "test:rag": "vitest packages/core/__tests__/rag/chromaRAG.test.ts --watch=false",
@@ -28,51 +34,17 @@
     "test:snapshot": "vitest packages/agents/contexts/coding/snapshot/__tests__/operation-buffer.test.ts packages/agents/contexts/coding/snapshot/__tests__/session-cache.test.ts packages/agents/contexts/coding/snapshot/__tests__/compression.test.ts packages/agents/contexts/coding/snapshot/__tests__/snapshot-manager-simple.test.ts --watch=false",
     "test:snapshot-ignore": "vitest packages/agents/contexts/coding/snapshot/simple-snapshot-ignore.test.ts --watch=false",
     "test:core": "vitest packages/core/__tests__/ --watch=false",
-    "test": "vitest",
-    "build:packages": "pnpm -r run build",
-    "dev:packages": "pnpm -r run dev"
-  },
-  "dependencies": {
-    "@ai-sdk/openai": "^1.3.6",
-    "@ai-sdk/react": "^1.2.5",
-    "@anthropic-ai/sdk": "^0.40.1",
-    "@google/genai": "0.12.0",
-    "@modelcontextprotocol/sdk": "^1.10.1",
-    "@types/uuid": "^10.0.0",
-    "@types/ws": "^8.18.1",
-    "ai": "^4.2.10",
-    "body-parser": "^2.2.0",
-    "chalk": "^5.4.1",
-    "chromadb": "^2.3.0",
-    "dotenv": "^16.4.7",
-    "express": "^5.1.0",
-    "next": "15.2.4",
-    "openai": "^4.91.1",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "uuid": "^11.1.0",
-    "vitest": "^3.1.1",
-    "ws": "^8.18.2",
-    "zod": "^3.24.2"
+    "example:step-prompt": "node --import tsx/esm examples/step-prompt-saving-example.ts"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
-    "@types/body-parser": "^1.19.5",
-    "@types/dotenv": "^8.2.3",
-    "@types/express": "^5.0.1",
-    "@types/jest": "^29.5.14",
     "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "@types/sinon": "^17.0.4",
-    "@types/sinon-chai": "^4.0.0",
     "eslint": "^9",
     "eslint-config-next": "15.2.4",
-    "sinon": "^20.0.0",
-    "sinon-chai": "^4.0.0",
     "tailwindcss": "^4",
     "tsx": "^4.19.3",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.1.1"
   }
 }

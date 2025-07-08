@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mergeDiffs } from './diff';
+import { mergeDiffs } from './diff.js';
 
 describe('Diff Merge Functionality', () => {
   describe('mergeDiffs', () => {

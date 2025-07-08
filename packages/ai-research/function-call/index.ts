@@ -99,7 +99,7 @@ export class FunctionCallAgent implements IAgent {
         if (!this.llm) {
           throw new Error('LLM not initialized');
         }
-        const llmResponse = await this.llm.call(conversation, toolDefs);
+        const llmResponse = await this.llm.callAsync(conversation, toolDefs);
         const responseText = llmResponse.text;
         const toolCalls = llmResponse.toolCalls || [];
         

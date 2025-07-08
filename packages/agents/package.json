@@ -9,14 +9,20 @@
     "cr": "./dist/start.js"
   },
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
+    "build": "tsc --build",
+    "dev": "tsc --build --watch",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "test": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@continue-reasoning/core": "workspace:*",
-    "@continue-reasoning/react-cli": "workspace:*"
+    "@continue-reasoning/react-cli": "workspace:*",
+    "@types/uuid": "^10.0.0",
+    "uuid": "^11.1.0",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "@types/node": "^20",
@@ -26,4 +32,4 @@
   "peerDependencies": {
     "typescript": "^5"
   }
-} 
+}

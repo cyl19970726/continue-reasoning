@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { AnthropicWrapper, type AnthropicMessage, type ToolChoice } from './anthropic';
+import { AnthropicWrapper, type AnthropicMessage, type ToolChoice } from './anthropic.js';
 import { z } from 'zod';
 import dotenv from 'dotenv';
 import { ANTHROPIC_MODELS } from '../models';

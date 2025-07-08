@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { OpenAIChatWrapper } from './openai-chat';
+import { OpenAIChatWrapper } from './openai-chat.js';
 import { z } from 'zod';
 import dotenv from 'dotenv';
 import { OPENAI_MODELS, DEEPSEEK_MODELS } from '../models';

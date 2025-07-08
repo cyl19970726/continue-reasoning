@@ -5,8 +5,8 @@
  */
 
 // Export interface and types
-export * from './interface';
+export * from './interface.js';
 
 // Export sandbox implementations
-export { NoSandbox } from './no-sandbox';
-export { SeatbeltSandbox } from './seatbelt-sandbox'; 
+export { NoSandbox } from './no-sandbox.js';
+export { SeatbeltSandbox } from './seatbelt-sandbox.js'; 

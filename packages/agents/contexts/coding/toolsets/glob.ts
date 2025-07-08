@@ -1,9 +1,7 @@
 import { z } from 'zod';
-import { createTool } from '../../../../core';
-import { IAgent } from '../../../../core';
+import { createTool, IAgent, logger } from '@continue-reasoning/core';
 import * as fs from 'fs';
 import * as path from 'path';
-import { logger } from '../../../../core';
 
 // Define the structure of a single glob match
 const GlobMatchSchema = z.object({

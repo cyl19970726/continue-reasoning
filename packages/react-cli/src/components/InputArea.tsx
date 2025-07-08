@@ -73,7 +73,7 @@ const InputArea: React.FC<InputAreaProps> = ({
                 placeholder={placeholder}
                 onChange={onChange}
                 onSubmit={handleSubmit}
-                showCursor
+                showCursor={true}
                 focus={!disabled}
               />
             </Box>

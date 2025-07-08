@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { OpenAIWrapper } from './openai';
+import { OpenAIWrapper } from './openai.js';
 import { z } from 'zod';
 import dotenv from 'dotenv';
 import { OPENAI_MODELS } from '../models';
