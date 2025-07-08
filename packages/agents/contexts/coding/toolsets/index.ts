@@ -1,8 +1,11 @@
-// src/core/contexts/coding/toolsets/index.ts
+
+import { BashCommandTool } from './bash';
+import { GrepTool } from './grep';
+import { GlobTool } from './glob';
+import { ReadFileTool } from './read';
 
 // Main editing strategy tools (includes enhanced file operations with diff support)
 export { 
-  ReadFileTool,
   ApplyWholeFileEditTool,
   ApplyEditBlockTool,
   ApplyRangedEditTool,
@@ -13,14 +16,14 @@ export {
   CompareFilesTool,
   EditingStrategyToolSet,
   EditingStrategyToolExamples,
-  ReadToolSet,
 } from './editing-strategy-tools';
 
 // Re-export bash tools for system operations and simple file reading
-export { BashToolSet } from './bash';
-
+export { BashCommandTool } from './bash';
 // Re-export grep tools for code search and pattern matching
 export { GrepTool, GrepToolSet } from './grep';
+export { ReadFileTool } from './read';
+export const NoEditToolSet = [BashCommandTool, GrepTool, ReadFileTool,GlobTool];
 
 // Re-export error handling utilities
 export { formatDetailedError, extractErrorInfo, createErrorResponse, logEnhancedError } from './error-utils';

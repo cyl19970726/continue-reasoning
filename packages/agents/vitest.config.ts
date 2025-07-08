@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import path from 'path';
 
 export default defineConfig({
   test: {
@@ -13,5 +14,12 @@ export default defineConfig({
     testTimeout: 10000,
     hookTimeout: 10000,
     teardownTimeout: 5000,
+  },
+  resolve: {
+    alias: {
+      '@continue-reasoning/core': path.resolve(__dirname, '../core'),
+      '@continue-reasoning/cli-client': path.resolve(__dirname, '../cli-client'),
+      '@continue-reasoning/cr-coding': path.resolve(__dirname, './'),
+    }
   }
 });

@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import path from 'path';
 
 export default defineConfig({
   test: {
@@ -22,7 +23,9 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': '/Users/hhh0x/agent/continue-reasoning/packages'
+      '@continue-reasoning/core': path.resolve(__dirname, '../../../../../core'),
+      '@continue-reasoning/cli-client': path.resolve(__dirname, '../../../../../cli-client'),
+      '@continue-reasoning/cr-coding': path.resolve(__dirname, '../../../'),
     }
   }
 });

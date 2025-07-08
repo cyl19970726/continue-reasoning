@@ -61,13 +61,26 @@ export const BashCommandTool = createTool({
     
     const result = await runtime.execute(params.command, executionOptions);
 
-    return {
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exit_code: result.exitCode,
-      message: result.error?.message,
-      success: result.exitCode === 0,
-    };
+     // 只有在真正的执行错误（比如命令不存在、权限问题等）时才返回false
+    if (result.error) {
+      logger.error(`BashCommandTool: Error executing command "${params.command}": ${result.error.message}`);
+
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exit_code: result.exitCode,
+        message: `Execute command "${params.command}" failed: ${result.error?.message}`,
+        success: false,  
+      }; 
+    }else {
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exit_code: result.exitCode,
+        message: `Execute command "${params.command}" successfully`,
+        success: true,
+      };
+    }
   },
 });
 
