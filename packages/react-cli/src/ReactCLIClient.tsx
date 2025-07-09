@@ -6,10 +6,18 @@ import {
   ClientStatus,
   ClientMessage,
   ISessionManager,
-  AgentCallbacks,
   AgentStep,
   ToolCallParams,
   ToolExecutionResult,
+  IEventBus,
+  AppEvent,
+  SessionEvent,
+  AgentEvent,
+  LLMEvent,
+  ToolEvent,
+  UIEvent,
+  ErrorEvent,
+  EventHandler
 } from '@continue-reasoning/core';
 import { ReactCLIConfig, UIState, ImportedFile } from './interfaces/index.js';
 import { ToolFormatterRegistry } from './formatters/index.js';
@@ -18,7 +26,7 @@ import App from './components/App.js';
 
 /**
  * React CLI 客户端实现
- * 基于最新的 IClient 接口，使用 AgentCallbacks 处理事件
+ * 基于最新的 IClient 接口，使用事件驱动架构处理事件
  */
 export class ReactCLIClient implements IClient {
   // IClient 必需属性
@@ -26,7 +34,10 @@ export class ReactCLIClient implements IClient {
   readonly type: ClientType = 'react-terminal';
   currentSessionId?: string;
   sessionManager?: ISessionManager;
-  agentCallbacks?: AgentCallbacks;
+  eventBus?: IEventBus;
+  
+  // 事件订阅管理
+  private eventSubscriptionIds: string[] = [];
 
   // ReactCLI 特有属性
   private config: ReactCLIConfig;
@@ -58,52 +69,7 @@ export class ReactCLIClient implements IClient {
     this.toolFormatter = new ToolFormatterRegistry();
     this.fileImporter = new FileImporterRegistry();
     
-    // 初始化 agentCallbacks - 这是关键的修复
-    this.agentCallbacks = {
-      onAgentStep: (step: AgentStep<any>) => {
-        this.handleAgentStep(step);
-      },
-      
-      // 工具执行回调
-      onToolExecutionStart: (toolCall: ToolCallParams) => {
-        this.handleToolExecutionStart(toolCall);
-      },
-      
-      onToolExecutionEnd: (result: ToolExecutionResult) => {
-        this.handleToolExecutionEnd(result);
-      },
-      
-      // 流式模式回调
-      onLLMTextDelta: this.config.enableStreaming ? (stepIndex: number, chunkIndex: number, delta: string) => {
-        this.handleStreamDelta(delta);
-      } : undefined,
-      
-      // 会话回调
-      onSessionStart: (sessionId: string) => {
-        this.currentSessionId = sessionId;
-        this.addMessage({
-          id: `session_start_${Date.now()}`,
-          content: `🚀 Session started: ${sessionId}`,
-          type: 'system',
-          timestamp: Date.now()
-        });
-      },
-      
-      onSessionEnd: (sessionId: string) => {
-        this.addMessage({
-          id: `session_end_${Date.now()}`,
-          content: `👋 Session ended: ${sessionId}`,
-          type: 'system',
-          timestamp: Date.now()
-        });
-      },
-      
-      // 必需的存储加载回调
-      loadAgentStorage: async (sessionId: string) => {
-        // 让 SessionManager 处理存储加载
-        return null;
-      }
-    };
+    // 事件订阅将在 setEventBus 中设置
   }
 
   /**
@@ -227,6 +193,9 @@ export class ReactCLIClient implements IClient {
   async stop(): Promise<void> {
     this.isRunning = false;
     
+    // 清理事件订阅
+    this.cleanupSubscriptions();
+    
     if (this.inkInstance) {
       this.inkInstance.unmount();
       this.inkInstance = undefined;
@@ -234,68 +203,158 @@ export class ReactCLIClient implements IClient {
   }
 
   /**
+   * 设置事件总线
+   */
+  setEventBus(eventBus: IEventBus): void {
+    this.eventBus = eventBus;
+    this.setupEventSubscriptions();
+  }
+
+  /**
+   * 设置事件订阅
+   */
+  private setupEventSubscriptions(): void {
+    if (!this.eventBus) return;
+    
+    // 清理现有订阅
+    this.cleanupSubscriptions();
+    
+    // 设置新订阅
+    this.subscribeToSessionEvents();
+    this.subscribeToAgentEvents();
+    this.subscribeToLLMEvents();
+    this.subscribeToToolEvents();
+    this.subscribeToErrorEvents();
+  }
+
+  /**
+   * 订阅会话事件
+   */
+  private subscribeToSessionEvents(): void {
+    if (!this.eventBus) return;
+    
+    // 会话开始
+    const sessionStartId = this.eventBus.subscribe(
+      'session.started',
+      this.handleSessionStarted.bind(this)
+    );
+    
+    // 会话结束
+    const sessionEndId = this.eventBus.subscribe(
+      'session.ended',
+      this.handleSessionEnded.bind(this)
+    );
+    
+    // 会话切换
+    const sessionSwitchId = this.eventBus.subscribe(
+      'session.switched',
+      this.handleSessionSwitched.bind(this)
+    );
+    
+    this.eventSubscriptionIds.push(sessionStartId, sessionEndId, sessionSwitchId);
+  }
+
+  /**
+   * 订阅Agent事件
+   */
+  private subscribeToAgentEvents(): void {
+    if (!this.eventBus) return;
+    
+    // Agent步骤完成
+    const stepCompletedId = this.eventBus.subscribe(
+      'agent.step.completed',
+      this.handleAgentStepCompleted.bind(this)
+    );
+    
+    // Agent停止
+    const agentStoppedId = this.eventBus.subscribe(
+      'agent.stopped',
+      this.handleAgentStopped.bind(this)
+    );
+    
+    this.eventSubscriptionIds.push(stepCompletedId, agentStoppedId);
+  }
+
+  /**
+   * 订阅LLM事件
+   */
+  private subscribeToLLMEvents(): void {
+    if (!this.eventBus || !this.isStreamingMode()) return;
+    
+    // 文本增量 (流式模式)
+    const textDeltaId = this.eventBus.subscribe(
+      'llm.text.delta',
+      this.handleLLMTextDelta.bind(this)
+    );
+    
+    // 文本完成
+    const textCompleteId = this.eventBus.subscribe(
+      'llm.text.completed',
+      this.handleLLMTextCompleted.bind(this)
+    );
+    
+    this.eventSubscriptionIds.push(textDeltaId, textCompleteId);
+  }
+
+  /**
+   * 订阅工具事件
+   */
+  private subscribeToToolEvents(): void {
+    if (!this.eventBus) return;
+    
+    // 工具执行开始
+    const toolStartId = this.eventBus.subscribe(
+      'tool.execution.started',
+      this.handleToolExecutionStarted.bind(this)
+    );
+    
+    // 工具执行完成
+    const toolCompletedId = this.eventBus.subscribe(
+      'tool.execution.completed',
+      this.handleToolExecutionCompleted.bind(this)
+    );
+    
+    // 工具执行失败
+    const toolFailedId = this.eventBus.subscribe(
+      'tool.execution.failed',
+      this.handleToolExecutionFailed.bind(this)
+    );
+    
+    this.eventSubscriptionIds.push(toolStartId, toolCompletedId, toolFailedId);
+  }
+
+  /**
+   * 订阅错误事件
+   */
+  private subscribeToErrorEvents(): void {
+    if (!this.eventBus) return;
+    
+    const errorId = this.eventBus.subscribe(
+      'error.occurred',
+      this.handleError.bind(this),
+      { sessionId: this.currentSessionId } // 只处理当前会话的错误
+    );
+    
+    this.eventSubscriptionIds.push(errorId);
+  }
+
+  /**
    * 设置会话管理器
    */
   setSessionManager(sessionManager: ISessionManager): void {
     this.sessionManager = sessionManager;
-    // 重要：告诉 SessionManager 当前的 client，这样它就可以设置回调
-    if (sessionManager.setClient) {
-      sessionManager.setClient(this);
-    }
   }
 
   /**
-   * 设置 Agent 回调
-   * 这是新架构的核心 - 通过 AgentCallbacks 处理所有事件
+   * 设置 Agent 回调 (已弃用)
+   * @deprecated 请使用 setEventBus 和事件驱动架构代替
    */
-  setAgentCallbacks(callbacks: AgentCallbacks): void {
-    this.agentCallbacks = {
-      ...callbacks,
-      
-      // UI 相关的回调覆盖
-      onAgentStep: (step: AgentStep<any>) => {
-        this.handleAgentStep(step);
-        callbacks.onAgentStep?.(step);
-      },
-      
-      onToolCallStart: (toolCall: ToolCallParams) => {
-        this.handleToolCallStart(toolCall);
-        callbacks.onToolCallStart?.(toolCall);
-      },
-      
-      onToolExecutionEnd: (result: ToolExecutionResult) => {
-        this.handleToolExecutionEnd(result);
-        callbacks.onToolExecutionEnd?.(result);
-      },
-      
-      // 流式模式回调
-      onLLMTextDelta: this.isStreamingMode() ? (stepIndex: number, chunkIndex: number, delta: string) => {
-        this.handleStreamDelta(delta);
-        callbacks.onLLMTextDelta?.(stepIndex, chunkIndex, delta);
-      } : undefined,
-      
-      // 会话回调
-      onSessionStart: (sessionId: string) => {
-        this.currentSessionId = sessionId;
-        this.addMessage({
-          id: `session_start_${Date.now()}`,
-          content: `🚀 Session started: ${sessionId}`,
-          type: 'system',
-          timestamp: Date.now()
-        });
-        callbacks.onSessionStart?.(sessionId);
-      },
-      
-      onSessionEnd: (sessionId: string) => {
-        this.addMessage({
-          id: `session_end_${Date.now()}`,
-          content: `👋 Session ended: ${sessionId}`,
-          type: 'system',
-          timestamp: Date.now()
-        });
-        callbacks.onSessionEnd?.(sessionId);
-      }
-    };
+  setAgentCallbacks(callbacks: any): void {
+    console.warn('setAgentCallbacks is deprecated. Use setEventBus and event-driven architecture instead.');
+    
+    // 为了向后兼容，暂时保留这个方法
+    // 但不建议使用，因为它与新的事件驱动架构冲突
+    // 新的架构应该使用 setEventBus 方法
   }
 
   /**
@@ -503,27 +562,12 @@ export class ReactCLIClient implements IClient {
   }
 
   /**
-   * 处理流式文本增量
+   * 处理流式文本增量 (已弃用)
+   * @deprecated 请使用事件驱动架构中的 handleLLMTextDelta 方法
    */
   private handleStreamDelta(delta: string): void {
-    // // 在流式模式下，我们可以实时更新最后一条消息
-    // if (this.messages.length > 0) {
-    //   const lastMessage = this.messages[this.messages.length - 1];
-    //   if (lastMessage.type === 'agent' && lastMessage.metadata?.streaming) {
-    //     lastMessage.content += delta;
-    //     this.triggerUIUpdate();
-    //     return;
-    //   }
-    // }
-    
-    // // 如果没有正在流式传输的消息，创建新的
-    // this.addMessage({
-    //   id: `stream_${Date.now()}`,
-    //   content: delta,
-    //   type: 'agent',
-    //   timestamp: Date.now(),
-    //   metadata: { streaming: true }
-    // });
+    console.warn('handleStreamDelta is deprecated. Use event-driven architecture instead.');
+    // 此方法已被 handleLLMTextDelta 事件处理方法替代
   }
 
   /**
@@ -568,6 +612,21 @@ export class ReactCLIClient implements IClient {
    */
   private handleUIStateChange(state: Partial<UIState>): void {
     this.uiState = { ...this.uiState, ...state };
+    
+    // 发布UI状态变化事件
+    if (this.eventBus) {
+      this.eventBus.publish({
+        type: 'ui.state.changed',
+        timestamp: Date.now(),
+        source: 'ReactCLIClient',
+        sessionId: this.currentSessionId,
+        data: {
+          state: this.uiState,
+          clientName: this.name
+        }
+      } as UIEvent);
+    }
+    
     this.onUIUpdate?.(this.uiState);
   }
 
@@ -575,6 +634,22 @@ export class ReactCLIClient implements IClient {
    * 处理用户提交
    */
   private handleUserSubmit(message: string): void {
+    // 发布用户消息事件
+    if (this.eventBus) {
+      this.eventBus.publish({
+        type: 'user.message',
+        timestamp: Date.now(),
+        source: 'ReactCLIClient',
+        sessionId: this.currentSessionId,
+        data: {
+          messageContent: message,
+          userId: this.config.userId,
+          clientName: this.name,
+          sessionId: this.currentSessionId
+        }
+      } as UIEvent);
+    }
+    
     if (this.resolveInput) {
       this.resolveInput(message);
       this.resolveInput = undefined;
@@ -720,6 +795,233 @@ export class ReactCLIClient implements IClient {
       
       default:
         return '';
+    }
+  }
+
+  // ========== 事件处理方法 ==========
+
+  /**
+   * 处理会话开始事件
+   */
+  private handleSessionStarted(event: SessionEvent): void {
+    if (event.type === 'session.started') {
+      this.currentSessionId = event.sessionId;
+      this.addMessage({
+        id: `session_start_${Date.now()}`,
+        content: `🚀 Session started: ${event.sessionId}`,
+        type: 'system',
+        timestamp: Date.now()
+      });
+    }
+  }
+
+  /**
+   * 处理会话结束事件
+   */
+  private handleSessionEnded(event: SessionEvent): void {
+    if (event.type === 'session.ended') {
+      this.addMessage({
+        id: `session_end_${Date.now()}`,
+        content: `👋 Session ended: ${event.sessionId}`,
+        type: 'system',
+        timestamp: Date.now()
+      });
+    }
+  }
+
+  /**
+   * 处理会话切换事件
+   */
+  private handleSessionSwitched(event: SessionEvent): void {
+    if (event.type === 'session.switched') {
+      this.currentSessionId = event.sessionId;
+      this.clearMessages();
+      this.addMessage({
+        id: `session_switch_${Date.now()}`,
+        content: `📋 Switched to session: ${event.sessionId}`,
+        type: 'system',
+        timestamp: Date.now()
+      });
+    }
+  }
+
+  /**
+   * 处理Agent步骤完成事件
+   */
+  private handleAgentStepCompleted(event: AgentEvent): void {
+    if (event.type === 'agent.step.completed' && event.data?.step) {
+      const stepMessage: ClientMessage = {
+        id: `step_${event.stepIndex}`,
+        content: this.formatAgentStep(event.data.step),
+        type: 'agent',
+        timestamp: Date.now(),
+        stepIndex: event.stepIndex,
+        metadata: { step: event.data.step }
+      };
+      
+      this.addMessage(stepMessage);
+    }
+  }
+
+  /**
+   * 处理Agent停止事件
+   */
+  private handleAgentStopped(event: AgentEvent): void {
+    if (event.type === 'agent.stopped') {
+      this.addMessage({
+        id: `agent_stopped_${Date.now()}`,
+        content: `🛑 Agent stopped: ${event.data?.reason || 'Unknown reason'}`,
+        type: 'system',
+        timestamp: Date.now()
+      });
+      // 更新UI状态
+      this.updateUIState({ isProcessing: false });
+    }
+  }
+
+  /**
+   * 处理LLM文本增量事件（流式模式）
+   */
+  private handleLLMTextDelta(event: LLMEvent): void {
+    if (event.type === 'llm.text.delta' && event.data?.content) {
+      // 在流式模式下，实时更新最后一条消息
+      if (this.messages.length > 0) {
+        const lastMessage = this.messages[this.messages.length - 1];
+        if (lastMessage.type === 'agent' && lastMessage.metadata?.streaming) {
+          lastMessage.content += event.data.content;
+          this.triggerUIUpdate();
+          return;
+        }
+      }
+      
+      // 如果没有正在流式传输的消息，创建新的
+      this.addMessage({
+        id: `stream_${Date.now()}`,
+        content: event.data.content,
+        type: 'agent',
+        timestamp: Date.now(),
+        metadata: { streaming: true }
+      });
+    }
+  }
+
+  /**
+   * 处理LLM文本完成事件
+   */
+  private handleLLMTextCompleted(event: LLMEvent): void {
+    if (event.type === 'llm.text.completed' && event.data?.content) {
+      // 如果是流式模式，标记最后一条消息为完成
+      if (this.isStreamingMode() && this.messages.length > 0) {
+        const lastMessage = this.messages[this.messages.length - 1];
+        if (lastMessage.type === 'agent' && lastMessage.metadata?.streaming) {
+          lastMessage.metadata.streaming = false;
+          this.triggerUIUpdate();
+          return;
+        }
+      }
+      
+      // 如果是非流式模式，添加完整的消息
+      this.addMessage({
+        id: `llm_text_${Date.now()}`,
+        content: event.data.content,
+        type: 'agent',
+        timestamp: Date.now(),
+        stepIndex: event.stepIndex
+      });
+    }
+  }
+
+  /**
+   * 处理工具执行开始事件
+   */
+  private handleToolExecutionStarted(event: ToolEvent): void {
+    if (event.type === 'tool.execution.started' && event.data?.toolCall) {
+      const paramsStr = event.data.toolCall.parameters && 
+        Object.keys(event.data.toolCall.parameters).length > 0
+          ? JSON.stringify(event.data.toolCall.parameters, null, 2)
+          : 'No parameters';
+      
+      const message: ClientMessage = {
+        id: `tool_start_${event.data.toolCall.call_id}`,
+        content: `🔧 **${event.data.toolCall.name}**\n\`\`\`json\n${paramsStr}\n\`\`\``,
+        type: 'tool',
+        timestamp: Date.now(),
+        metadata: { toolCall: event.data.toolCall, status: 'running' }
+      };
+      
+      this.addMessage(message);
+    }
+  }
+
+  /**
+   * 处理工具执行完成事件
+   */
+  private handleToolExecutionCompleted(event: ToolEvent): void {
+    if (event.type === 'tool.execution.completed' && event.data?.result) {
+      // 使用格式化器格式化结果
+      const formattedContent = this.config.enableToolFormatting
+        ? this.toolFormatter.format(event.data.result.name, event.data.result)
+        : JSON.stringify(event.data.result, null, 2);
+      
+      const message: ClientMessage = {
+        id: `tool_end_${event.data.result.call_id}`,
+        content: formattedContent,
+        type: 'tool',
+        timestamp: Date.now(),
+        metadata: { result: event.data.result, status: 'completed' }
+      };
+      
+      this.addMessage(message);
+    }
+  }
+
+  /**
+   * 处理工具执行失败事件
+   */
+  private handleToolExecutionFailed(event: ToolEvent): void {
+    if (event.type === 'tool.execution.failed' && event.data?.result) {
+      const message: ClientMessage = {
+        id: `tool_failed_${event.data.result.call_id}`,
+        content: `❌ Tool ${event.data.result.name} failed: ${event.data.result.message || 'Unknown error'}`,
+        type: 'tool',
+        timestamp: Date.now(),
+        metadata: { result: event.data.result, status: 'failed' }
+      };
+      
+      this.addMessage(message);
+    }
+  }
+
+  /**
+   * 处理错误事件
+   */
+  private handleError(event: ErrorEvent): void {
+    if (event.type === 'error.occurred') {
+      const errorMessage = event.data.error instanceof Error 
+        ? event.data.error.message 
+        : String(event.data.error);
+      
+      this.addMessage({
+        id: `error_${Date.now()}`,
+        content: `❌ Error: ${errorMessage}`,
+        type: 'error',
+        timestamp: Date.now(),
+        metadata: { context: event.data.context }
+      });
+    }
+  }
+
+  // ========== 资源管理 ==========
+
+  /**
+   * 清理订阅
+   */
+  private cleanupSubscriptions(): void {
+    if (this.eventBus && this.eventSubscriptionIds.length > 0) {
+      this.eventSubscriptionIds.forEach(id => {
+        this.eventBus!.unsubscribe(id);
+      });
+      this.eventSubscriptionIds = [];
     }
   }
 }

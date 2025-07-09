@@ -402,6 +402,60 @@ export class SessionManager implements ISessionManager {
     }
 
     /**
+     * 发送消息给Agent (向后兼容方法)
+     */
+    async sendMessageToAgent(message: string, maxSteps: number, sessionId?: string): Promise<void> {
+        const targetSessionId = sessionId || this.currentSessionId;
+        if (!targetSessionId) {
+            throw new Error('No active session. Please create or select a session first.');
+        }
+
+        const session = this.sessions.get(targetSessionId);
+        if (!session) {
+            throw new Error(`Session ${targetSessionId} not found`);
+        }
+
+        // 发布用户消息事件
+        await this.eventBus.publish({
+            type: 'user.message',
+            timestamp: Date.now(),
+            source: 'SessionManager',
+            sessionId: targetSessionId,
+            data: {
+                messageContent: message,
+                sessionId: targetSessionId,
+                maxSteps
+            }
+        } as any);
+
+        // 调用agent的startWithUserInput方法
+        try {
+            if (this.agent && typeof this.agent.startWithUserInput === 'function') {
+                await this.agent.startWithUserInput(message, maxSteps, targetSessionId);
+            } else {
+                logger.error('Agent does not have startWithUserInput method');
+                throw new Error('Agent does not have startWithUserInput method');
+            }
+        } catch (error) {
+            logger.error('Error sending message to agent:', error);
+            
+            // 发布错误事件
+            await this.eventBus.publish({
+                type: 'error.occurred',
+                timestamp: Date.now(),
+                source: 'SessionManager',
+                sessionId: targetSessionId,
+                data: {
+                    error: error instanceof Error ? error : new Error(String(error)),
+                    context: { message, maxSteps, sessionId: targetSessionId }
+                }
+            } as any);
+            
+            throw error;
+        }
+    }
+
+    /**
      * 清理资源
      */
     dispose(): void {

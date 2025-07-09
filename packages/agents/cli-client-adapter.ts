@@ -1,5 +1,5 @@
 import { ReactCLIClient, ReactCLIConfig } from '@continue-reasoning/react-cli';
-import { IClient, ISessionManager } from '@continue-reasoning/core';
+import { IClient, ISessionManager, IEventBus, SessionManager } from '@continue-reasoning/core';
 
 /**
  * CLI 客户端类型
@@ -99,10 +99,18 @@ export function createCLIClient(type: CLIClientType = 'react-terminal', config: 
  * 创建带会话管理器的 CLI 客户端
  */
 export function createCLIClientWithSession(
-  sessionManager: ISessionManager,
-  config: CLIClientConfig
+  agent: any,
+  config: CLIClientConfig,
+  eventBus: IEventBus
 ): IClient {
   const client = createCLIClient('react-terminal', config);
+  
+  // Set event bus first
+  client.setEventBus(eventBus);
+  
+  // Create SessionManager with client, agent, and eventBus
+  const sessionManager = new SessionManager(client, agent, eventBus);
   client.setSessionManager(sessionManager);
+  
   return client;
 }

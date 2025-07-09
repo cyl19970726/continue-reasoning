@@ -23,6 +23,9 @@ export interface ISessionManager {
     // 事件总线访问
     getEventBus(): IEventBus;
     
+    // 消息发送 (向后兼容)
+    sendMessageToAgent(message: string, maxSteps: number, sessionId?: string): Promise<void>;
+    
     // 资源清理
     dispose(): void;
 }

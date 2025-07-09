@@ -1,4 +1,4 @@
-import { StreamAgent, AgentOptions, LogLevel, AnyTool, IContext, ToolExecutionResult } from '@continue-reasoning/core';
+import { StreamAgent, AgentOptions, LogLevel, AnyTool, IContext, ToolExecutionResult, IEventBus } from '@continue-reasoning/core';
 import { createCodingContext } from './contexts/coding/index.js';
 import { logger } from '@continue-reasoning/core';
 import { SnapshotManager } from './contexts/coding/snapshot/snapshot-manager.js';
@@ -27,6 +27,7 @@ export class CodingAgent extends StreamAgent {
         logLevel?: LogLevel,
         agentOptions?: AgentOptions,
         contexts?: IContext<any>[],
+        eventBus?: IEventBus,
     ) {
 
         // Create coding context
@@ -43,7 +44,8 @@ export class CodingAgent extends StreamAgent {
             enhancedPromptProcessor,
             logLevel,
             agentOptions,
-            [...(contexts || []),codingContext]
+            [...(contexts || []),codingContext],
+            eventBus
         );
         
         this.codingContext = codingContext;

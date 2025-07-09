@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { LogLevel, logger, OPENAI_MODELS, DEEPSEEK_MODELS,ANTHROPIC_MODELS } from '@continue-reasoning/core';
+import { LogLevel, logger, OPENAI_MODELS, DEEPSEEK_MODELS,ANTHROPIC_MODELS, EventBus } from '@continue-reasoning/core';
 import { CodingAgent } from './coding-agent.js';
 import { createCLIClient, createCLIClientWithSession, getCLIClientRegistry } from './cli-client-adapter.js';
 import { SessionManager } from '@continue-reasoning/core';
-import path from 'path';
-import fs from 'fs';
+import * as path from 'path';
+import * as fs from 'fs';
 
 
 
@@ -19,7 +19,11 @@ async function startCLICodingAgent(useReactClient: boolean = false) {
     console.log(`📁 Working directory: ${workspacePath}\n`);
 
     try {
-        // Create CodingAgent
+        // Create EventBus first
+        console.log('🔗 Setting up event bus...');
+        const eventBus = new EventBus(1000);
+        
+        // Create CodingAgent with EventBus
         console.log('🤖 Initializing Coding Agent...');
         const agent = new CodingAgent(
             'cr-coding-agent',
@@ -34,12 +38,8 @@ async function startCLICodingAgent(useReactClient: boolean = false) {
                 temperature: 0.1,
             },
             [],
+            eventBus // Pass eventBus to agent constructor
         );
-
-
-        // Create SessionManager
-        console.log('🔗 Setting up session...');
-        const sessionManager = new SessionManager(agent);
         
         // Create CLI Client with SessionManager
         console.log('🖥️  Starting interactive session...');
@@ -72,6 +72,13 @@ async function startCLICodingAgent(useReactClient: boolean = false) {
                     maxSteps: 50
                 });
                 
+                // Set event bus for event-driven architecture
+                client.setEventBus(eventBus);
+                
+                // Create SessionManager with EventBus and Client
+                console.log('🔗 Setting up session...');
+                const sessionManager = new SessionManager(client, agent, eventBus);
+                
                 // Set session manager
                 client.setSessionManager(sessionManager);
                 
@@ -85,7 +92,7 @@ async function startCLICodingAgent(useReactClient: boolean = false) {
                 console.log('💡 Tip: Try running in a regular terminal for React CLI support\\n');
                 
                 // Fall back to standard client
-                client = createCLIClientWithSession(sessionManager, {
+                client = createCLIClientWithSession(agent, {
                     name: 'Continue Reasoning - Coding Assistant',
                     userId: 'developer',
                     agentId: 'cr-coding-agent',
@@ -96,7 +103,7 @@ async function startCLICodingAgent(useReactClient: boolean = false) {
                     promptPrefix: '💻',
                     multilineDelimiter: '```',
                     maxSteps: 50
-                });
+                }, eventBus);
             }
         } else {
             // Use standard readline client (for non-TTY or explicit choice)
@@ -106,7 +113,7 @@ async function startCLICodingAgent(useReactClient: boolean = false) {
                 console.log('💡 You can open Terminal.app and run the same command there for React CLI\\n');
             }
             
-            client = createCLIClientWithSession(sessionManager, {
+            client = createCLIClientWithSession(agent, {
                 name: 'Continue Reasoning - Coding Assistant',
                 userId: 'developer',
                 agentId: 'cr-coding-agent',
@@ -117,7 +124,7 @@ async function startCLICodingAgent(useReactClient: boolean = false) {
                 promptPrefix: '💻',
                 multilineDelimiter: '```',
                 maxSteps: 50
-            });
+            }, eventBus);
         }
 
         // Setup Agent
@@ -149,7 +156,7 @@ async function startCLICodingAgent(useReactClient: boolean = false) {
                 console.log('💡 Tip: Try running in a regular terminal for React CLI support\\n');
                 
                 // Create standard CLI client as fallback
-                client = createCLIClientWithSession(sessionManager, {
+                client = createCLIClientWithSession(agent, {
                     name: 'Continue Reasoning - Coding Assistant',
                     userId: 'developer',
                     agentId: 'cr-coding-agent',
@@ -160,7 +167,7 @@ async function startCLICodingAgent(useReactClient: boolean = false) {
                     promptPrefix: '💻',
                     multilineDelimiter: '```',
                     maxSteps: 50
-                });
+                }, eventBus);
                 
                 await client.start();
             } else {
