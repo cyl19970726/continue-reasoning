@@ -1,7 +1,7 @@
 import { ISessionManager } from './session.js';
 import { AgentStep } from './prompt.js';
 import { ToolCallParams, ToolExecutionResult } from './tool.js';
-import { AgentCallbacks } from './agent.js';
+import { IEventBus } from '../event-bus/index.js';
 
 /**
  * 客户端消息类型
@@ -62,8 +62,8 @@ export interface IClient {
     currentSessionId?: string;
     sessionManager?: ISessionManager;
     
-    // Agent 回调处理器 - 直接使用 AgentCallbacks
-    agentCallbacks?: AgentCallbacks;
+    // Event Bus for event-driven architecture
+    eventBus?: IEventBus;
     
     // 核心方法
     initialize?(config: ClientConfig): Promise<void>;
@@ -76,8 +76,8 @@ export interface IClient {
     switchSession?(sessionId: string): void;
     newSession(): void;
     
-    // Agent callbacks setup
-    setAgentCallbacks(callbacks: AgentCallbacks): void;
+    // Event Bus setup
+    setEventBus(eventBus: IEventBus): void;
     
     // Streaming mode check
     isStreamingMode(): boolean;

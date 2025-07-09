@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // Import from agent.ts type definitions
 export type LLMProvider = 'openai' | 'anthropic' | 'google';
-export type AgentStatus = 'idle' | 'running' | 'stopping' | 'error';
+export type AgentStatus = 'idle' | 'initializing' | 'running' | 'stopping' | 'error';
 
 /**
  * Configuration for the agent

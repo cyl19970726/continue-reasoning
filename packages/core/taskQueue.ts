@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { ITaskQueue } from './interfaces/tool.js';
 
 export interface ITask{
     id: string;
@@ -10,27 +11,7 @@ export interface ITask{
     createdAt: number;
 }
 
-export interface ITaskQueue{
-
-    tasks: ITask[];     
-    runningTasks: Set<string>;
-    concurrency: number;
-    isRunning: boolean;
-    addTask<T>(taskFn: () => Promise<T>, priority: number, type?: 'processStep' | 'toolCall' | 'custom', id?: string): Promise<T>;
-
-    taskCount(): number;
-
-    runningTaskCount(): number;
-
-    taskStatus(id: string): {id: string, status: string, type?: string} | 'not found';
-
-    run(): Promise<void>;
-    
-    addProcessStepTask<T>(taskFn: () => Promise<T>, priority?: number, id?: string): Promise<T>;
-    addToolCallTask<T>(taskFn: () => Promise<T>, priority?: number, id?: string): Promise<T>;
-    getTasksByType(type: 'processStep' | 'toolCall' | 'custom'): ITask[];
-    clearTasks(type?: 'processStep' | 'toolCall' | 'custom'): number;
-}
+// ITaskQueue interface is now imported from interfaces/tool.ts
 
 export class TaskQueue implements ITaskQueue{
 
@@ -141,6 +122,26 @@ export class TaskQueue implements ITaskQueue{
         const removedCount = tasksToRemove.length;
         this.tasks = this.tasks.filter((task) => !tasksToRemove.includes(task));
         return removedCount;
+    }
+
+    // Lifecycle management methods
+    async start(): Promise<void> {
+        // TaskQueue is already initialized, just mark as ready
+        this.isRunning = false; // Reset running state
+        console.log(`TaskQueue started with concurrency: ${this.concurrency}`);
+    }
+
+    async stop(): Promise<void> {
+        // Wait for all running tasks to complete
+        while (this.runningTasks.size > 0) {
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        this.isRunning = false;
+        console.log('TaskQueue stopped');
+    }
+
+    getConcurrency(): number {
+        return this.concurrency;
     }
 }
 

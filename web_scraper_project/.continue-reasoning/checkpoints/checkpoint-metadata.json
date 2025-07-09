@@ -1,0 +1,25 @@
+{
+  "checkpoints": [
+    {
+      "id": "v4idh1",
+      "timestamp": "2025-07-09T07:12:03.915Z"
+    },
+    {
+      "id": "onc9mj",
+      "timestamp": "2025-07-09T07:12:06.369Z"
+    },
+    {
+      "id": "kw6nxb",
+      "timestamp": "2025-07-09T07:12:06.371Z"
+    },
+    {
+      "id": "g22f4q",
+      "timestamp": "2025-07-09T07:12:08.093Z"
+    },
+    {
+      "id": "xq2xtt",
+      "timestamp": "2025-07-09T07:12:08.094Z"
+    }
+  ],
+  "latestCheckpointId": "xq2xtt"
+}

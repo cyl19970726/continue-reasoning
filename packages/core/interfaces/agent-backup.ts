@@ -30,7 +30,26 @@ export type AgentStorage = {
     lastActiveTime: number;
 };
 
-// AgentCallbacks removed - replaced by Event Bus architecture
+export interface AgentCallbacks {
+    // Session management
+    onSessionStart?: (sessionId: string) => void;
+    onSessionEnd?: (sessionId: string) => void;
+    onAgentStep?: (step: AgentStep<any>) => void;
+    onStateStorage?: (state: AgentStorage) => void;
+    loadAgentStorage: (sessionId: string) => Promise<AgentStorage | null>;
+    
+    // Tool execution callbacks (actual tool execution, not LLM tool calls)
+    onToolCallStart?: (toolCall: ToolCallParams) => void; // only use at streaming mode
+    onToolCallDone?: (toolCall: ToolCallParams) => void; 
+    onToolExecutionStart?:(toolCall: ToolCallParams) => void;
+    onToolExecutionEnd?: (result: ToolExecutionResult) => void;
+    
+    // LLM content callbacks
+    onLLMTextDelta?: (stepIndex: number,chunkIndex: number, delta: string) => void; // only use at streaming mode
+    onLLMTextDone?: (stepIndex: number,chunkIndex: number, text: string) => void;  
+    
+    onError?: (error:any) => void;
+}
 
 /**
  * 🤖 Agent Interface - Core Task Processor
@@ -68,10 +87,10 @@ export interface IAgent{
     // Context collection
     contexts: IRAGEnabledContext<any>[];
 
-    // Event Bus for event-driven architecture
-    eventBus: import('../event-bus/index.js').IEventBus;
+    // callbacks
+    callbacks?: AgentCallbacks;
 
-    getEventBus(): import('../event-bus/index.js').IEventBus;
+    setCallBacks(callbacks:AgentCallbacks): void;
 
     // Core lifecycle methods
     setup(): Promise<void>;
