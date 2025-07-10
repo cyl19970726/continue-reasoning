@@ -100,7 +100,6 @@ export interface IPromptProcessor<TExtractorResult extends ExtractorResult> {
     // Basic properties
     systemPrompt: string;
     currentPrompt: string;
-    chatHistory: ChatMessage[];
     stopSignal: boolean | null;
     
     // Tool call control
@@ -116,6 +115,7 @@ export interface IPromptProcessor<TExtractorResult extends ExtractorResult> {
     
     // Context management
     getChatHistory(): ChatMessage[];
+    getChatHistoryManager(): IChatHistoryManager;
 
     // Reset PromptProcessor
     resetPromptProcessor(): void; 
@@ -197,13 +197,26 @@ export interface ChatHistoryConfig {
 
 /**
  * Chat history manager interface
- * Manages filtering of chat history based on message types and step counts
+ * Manages chat history storage, filtering, and exclusion
  */
 export interface IChatHistoryManager {
+    // Configuration methods
     setConfig(config: Partial<ChatHistoryConfig>): void;
     getConfig(): ChatHistoryConfig;
-    filterChatHistory(chatHistory: ChatMessage[], currentStep: number): ChatMessage[];
     updateTypeConfig(messageType: MessageType, keepSteps: number): void;
+    
+    // Message management methods
+    addMessage(message: Omit<ChatMessage, 'id' | 'timestamp'>): void;
+    addCompleteMessage(message: ChatMessage): void;
+    getChatHistory(): ChatMessage[];
+    clearChatHistory(): void;
+    
+    // Exclusion methods
+    excludeChatHistory(id: string): void;
+    excludeChatHistoryBatch(ids: string[]): void;
+    
+    // Filtering methods
+    getFilteredChatHistory(currentStep: number): ChatMessage[];
 }
 
 /**

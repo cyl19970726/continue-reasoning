@@ -1,12 +1,14 @@
 import { IChatHistoryManager, ChatHistoryConfig } from "../interfaces/prompt.js";
 import { ChatMessage, MessageType } from "../interfaces/base.js";
+import { randomUUID } from "crypto";
 
 /**
  * Default chat history manager implementation
- * Filters chat history based on message type and step count configuration
+ * Manages chat history storage, filtering, and exclusion
  */
 export class ChatHistoryManager implements IChatHistoryManager {
     private config: ChatHistoryConfig;
+    private chatHistory: ChatMessage[] = [];
     
     constructor(config?: Partial<ChatHistoryConfig>) {
         // Default configuration - keep reasonable amounts for each type
@@ -37,8 +39,51 @@ export class ChatHistoryManager implements IChatHistoryManager {
         this.config[messageType] = keepSteps;
     }
 
-    filterChatHistory(chatHistory: ChatMessage[], currentStep: number): ChatMessage[] {
-        return chatHistory.filter(message => {
+    // Message management methods
+    addMessage(message: Omit<ChatMessage, 'id' | 'timestamp'>): void {
+        const completeMessage: ChatMessage = {
+            ...message,
+            id: randomUUID(),
+            timestamp: new Date().toISOString(),
+            type: message.type || MessageType.MESSAGE
+        };
+        this.chatHistory.push(completeMessage);
+    }
+
+    addCompleteMessage(message: ChatMessage): void {
+        this.chatHistory.push(message);
+    }
+
+    getChatHistory(): ChatMessage[] {
+        return [...this.chatHistory];
+    }
+
+    clearChatHistory(): void {
+        this.chatHistory = [];
+    }
+
+    // Exclusion methods
+    excludeChatHistory(id: string): void {
+        const message = this.chatHistory.find(msg => msg.id === id);
+        if (message) {
+            message.flag = 'exclude';
+        }
+    }
+
+    excludeChatHistoryBatch(ids: string[]): void {
+        ids.forEach(id => this.excludeChatHistory(id));
+    }
+
+    // Filtering methods
+    getFilteredChatHistory(currentStep: number): ChatMessage[] {
+        // Stage 1: Filter by step count
+        const stepFiltered = this.filterStepChatHistory(currentStep);
+        // Stage 2: Filter by exclusion flag
+        return this.filterExcludeChatHistory(stepFiltered);
+    }
+
+    private filterStepChatHistory(currentStep: number): ChatMessage[] {
+        return this.chatHistory.filter(message => {
             // Use MESSAGE as default type if not specified
             const messageType = message.type || MessageType.MESSAGE;
             const keepSteps = this.config[messageType];
@@ -52,12 +97,7 @@ export class ChatHistoryManager implements IChatHistoryManager {
         });
     }
 
-    mergeStep(chatHistory: ChatMessage[], currentStep: number): ChatMessage[] {
-        return chatHistory.map(message => {
-            if (message.step === currentStep) {
-                return { ...message, step: currentStep };
-            }
-            return message;
-        });
+    private filterExcludeChatHistory(chatHistory: ChatMessage[]): ChatMessage[] {
+        return chatHistory.filter(msg => msg.flag !== 'exclude');
     }
 }

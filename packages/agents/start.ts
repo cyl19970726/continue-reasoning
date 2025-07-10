@@ -3,6 +3,7 @@
 import { program } from 'commander';
 import { launchCodingAgent, launchReactCLI } from './src/launchers/index.js';
 import { ReactCLIConfig } from '@continue-reasoning/react-cli';
+import { fa } from 'zod/v4/locales';
 const reactConfig: ReactCLIConfig = {
     name: 'coding-agent',
     theme: 'dark',
@@ -18,8 +19,8 @@ const reactConfig: ReactCLIConfig = {
     eventDisplay: {
         agent: {
             showStepCompleted: true,
-            showStepDetails: true,
-            showStopped: true,
+            showStepDetails: false,
+            showStopped: false,
             showResponse: true,
             showReasoning: true,
         },
@@ -34,8 +35,8 @@ const reactConfig: ReactCLIConfig = {
             showStackTrace: true,
         },
         session: {
-            showStarted: true,
-            showEnded: true,
+            showStarted: false,
+            showEnded: false,
             showSwitched: true,
         },
     }

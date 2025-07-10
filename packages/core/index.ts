@@ -17,6 +17,7 @@ export { AsyncAgent } from './async-agent.js';
 export * from './models/index.js';
 export { OpenAIWrapper, AnthropicWrapper, OpenAIChatWrapper, GeminiWrapper } from './models/index.js';
 
+export * from './tools/index.js';
 // Utilities
 export * from './utils/index.js';
 

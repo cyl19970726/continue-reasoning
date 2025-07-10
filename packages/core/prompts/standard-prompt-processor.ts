@@ -44,23 +44,21 @@ export class StandardPromptProcessor
     renderExtractorResultToPrompt(extractorResult: StandardExtractorResult, stepIndex: number): void {
         // Render thinking content
         if (extractorResult.thinking) {
-            this.chatHistory.push({
+            this.chatHistoryManager.addMessage({
                 role: 'agent',
                 step: stepIndex,
                 type: MessageType.THINKING,
-                content: `<think>${extractorResult.thinking}</think>`,
-                timestamp: new Date().toISOString()
+                content: `<think>${extractorResult.thinking}</think>`
             });
         }
         
         // Render response content
         if (extractorResult.response) {
-            this.chatHistory.push({
+            this.chatHistoryManager.addMessage({
                 role: 'agent',
                 step: stepIndex,
                 type: MessageType.RESPONSE,
-                content: `<response>${extractorResult.response}</response>`,
-                timestamp: new Date().toISOString()
+                content: `<response>${extractorResult.response}</response>`
             });
         }
         
