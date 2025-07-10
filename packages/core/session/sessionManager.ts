@@ -1,309 +1,510 @@
+import { ISessionManager, SessionStats, AgentStorage, IClient } from "../interfaces/index.js";
+import { logger } from "../utils/logger.js";
 import { 
-  ISessionManager, 
-  AgentStorage, 
-  IAgent, 
-  ToolExecutionResult, 
-  AgentStep, 
-  ToolCallParams,
-  AgentCallbacks 
-} from '../interfaces/index.js';
-import { logger } from '../utils/logger.js';
-import { v4 as uuidv4 } from 'uuid';
+    EventBus, 
+    EventSubscriber, 
+    IEventBus,
+    SessionEvent,
+    AgentEvent,
+    ErrorEvent,
+    StorageEvent,
+    AppEvent
+} from "../event-bus/index.js";
 
-const DEFAULT_AGENT_STEPS = 1000;
 
 /**
- * Session manager - Responsible for session state management and callback coordination
+ * 具体的EventSubscriber实现
+ */
+class SessionManagerEventSubscriber extends EventSubscriber {}
+
+/**
+ * 会话管理器 - 基于事件驱动架构
+ * 替代传统的回调机制，通过事件总线监听Agent状态变化
  */
 export class SessionManager implements ISessionManager {
-  private sessions = new Map<string, AgentStorage>();
-  private client?: any; // IClient 实例，可选
-  
-  agent: IAgent;
+    private eventSubscriber: SessionManagerEventSubscriber;
+    private sessions: Map<string, AgentStorage> = new Map();
+    private currentSessionId?: string;
 
-  constructor(agent: IAgent, client?: any) {
-    this.agent = agent;
-    this.client = client;
-    if (client) {
-      this.setupAgentCallbacks();
+    constructor(
+        private agent: any, // 支持StreamAgent或AsyncAgent
+        private eventBus: IEventBus
+    ) {
+        // 初始化事件订阅者
+        this.eventSubscriber = new SessionManagerEventSubscriber(eventBus, 'SessionManager');
+        
+        // 设置事件订阅
+        this.setupEventSubscriptions();
+        
+        logger.info('SessionManager: Initialized with event-driven architecture');
     }
-  }
 
-  /**
-   * Set client (for connecting client handlers)
-   */
-  setClient(client: any): void {
-    this.client = client;
-    this.setupAgentCallbacks();
-  }
+    /**
+     * 设置事件订阅
+     */
+    private setupEventSubscriptions(): void {
+        // 订阅会话相关事件
+        this.eventSubscriber.subscribeToSessionEvents(
+            this.handleSessionEvent.bind(this)
+        );
 
-  /**
-   * Setup Agent callbacks - 职责分离：SessionManager 处理会话相关，Client 处理 UI 相关
-   */
-  private setupAgentCallbacks(): void {
-    // 获取 client 的 agentCallbacks
-    const clientCallbacks = this.client?.agentCallbacks;
-    
-    // 检查 client 是否支持流式模式
-    const isStreamingMode = this.client?.isStreamingMode?.() ?? false;
-    
-    // SessionManager 专门处理会话相关的回调
-    const sessionSpecificCallbacks: AgentCallbacks = {
-      // 会话状态管理 - SessionManager 的核心职责
-      onStateStorage: (state: AgentStorage) => {
-        this.saveSession(state.sessionId, state);
-        // 也通知 client，让它知道状态已更新
-        clientCallbacks?.onStateStorage?.(state);
-      },
-      
-      loadAgentStorage: async (sessionId: string): Promise<AgentStorage | null> => {
-        // 优先使用 client 的自定义存储逻辑
-        if (clientCallbacks?.loadAgentStorage) {
-          const clientResult = await clientCallbacks.loadAgentStorage(sessionId);
-          if (clientResult) {
-            return clientResult;
-          }
+        // 订阅Agent步骤事件
+        this.eventSubscriber.subscribeToAgentEvents(
+            this.handleAgentEvent.bind(this)
+        );
+
+        // 订阅存储事件
+        this.eventSubscriber.subscribeToStorageEvents(
+            this.handleStorageEvent.bind(this)
+        );
+
+        // 订阅错误事件
+        this.eventSubscriber.subscribeToErrorEvents(
+            this.handleErrorEvent.bind(this)
+        );
+
+        logger.info('SessionManager: Event subscriptions configured');
+    }
+
+    /**
+     * 处理会话事件
+     */
+    private async handleSessionEvent(event: SessionEvent): Promise<void> {
+        try {
+            switch (event.type) {
+                case 'session.started':
+                    await this.onSessionStarted(event.sessionId, event.data);
+                    break;
+                
+                case 'session.ended':
+                    await this.onSessionEnded(event.sessionId, event.data);
+                    break;
+                
+                default:
+                    logger.debug(`SessionManager: Unhandled session event: ${event.type}`);
+            }
+        } catch (error) {
+            logger.error('SessionManager: Error handling session event:', error);
         }
-        // 回退到 SessionManager 的本地存储
-        return await this.loadSession(sessionId);
-      },
-      
-      // 会话生命周期管理
-      onSessionStart: (sessionId: string) => {
-        // SessionManager 的会话开始处理
-        logger.debug(`SessionManager: Session ${sessionId} started`);
-        // 通知 client
-        clientCallbacks?.onSessionStart?.(sessionId);
-      },
-      
-      onSessionEnd: (sessionId: string) => {
-        // SessionManager 的会话结束处理
-        logger.debug(`SessionManager: Session ${sessionId} ended`);
-        // 通知 client
-        clientCallbacks?.onSessionEnd?.(sessionId);
-      }
-    };
-    
-    // 合并 SessionManager 的会话回调和 Client 的 UI 回调
-    const mergedCallbacks: AgentCallbacks = {
-      ...clientCallbacks,  // Client 的 UI 回调优先
-      ...sessionSpecificCallbacks  // SessionManager 的会话回调覆盖
-    };
-    
-    // 🆕 流式模式检查：过滤掉非流式模式下不应启用的回调
-    if (!isStreamingMode) {
-      // 移除流式模式专用的回调
-      delete mergedCallbacks.onLLMTextDelta;
-      delete mergedCallbacks.onToolCallStart;
-      
-      logger.debug('SessionManager: Non-streaming mode - filtered out streaming-only callbacks');
-    } else {
-      logger.debug('SessionManager: Streaming mode - all callbacks enabled');
     }
-    
-    // 将合并后的回调传递给 Agent
-    this.agent.setCallBacks(mergedCallbacks);
-  }
 
-  /**
-   * Send message to Agent
-   */
-  async sendMessageToAgent(message: string, maxSteps: number = DEFAULT_AGENT_STEPS, sessionId: string): Promise<string> {
-    let session = await this.loadSession(sessionId);
-    if (!session) {
-      sessionId = this.createSession();
+    /**
+     * 处理Agent事件
+     */
+    private async handleAgentEvent(event: AgentEvent): Promise<void> {
+        try {
+            switch (event.type) {
+                case 'agent.step.completed':
+                    await this.onAgentStepCompleted(event);
+                    break;
+                
+                case 'agent.step.failed':
+                    await this.onAgentStepFailed(event);
+                    break;
+                
+                case 'agent.stopped':
+                    await this.onAgentStopped(event);
+                    break;
+                
+                default:
+                    logger.debug(`SessionManager: Unhandled agent event: ${event.type}`);
+            }
+        } catch (error) {
+            logger.error('SessionManager: Error handling agent event:', error);
+        }
     }
-    
-    // Start Agent processing
-    await this.agent.startWithUserInput(message, maxSteps, sessionId);
-    return sessionId;
-  }
 
-  /**
-   * Create new session
-   */
-  createSession(userId?: string, agentId?: string): string {
-    const sessionId = uuidv4();
-    const initialState: AgentStorage = {
-      sessionId,
-      agentId: agentId || 'default-agent',
-      userId,
-      currentStep: 0,
-      agentSteps: [],
-      contexts: [],
-      totalTokensUsed: 0,
-      sessionStartTime: Date.now(),
-      lastActiveTime: Date.now()
-    };
-    
-    this.sessions.set(sessionId, initialState);
-    logger.info(`SessionManager: Created session ${sessionId} for user ${userId || 'anonymous'}`);
-    
-    return sessionId;
-  }
-
-  /**
-   * Load session state
-   */
-  async loadSession(sessionId: string): Promise<AgentStorage | null> {
-    const state = this.sessions.get(sessionId);
-    if (state) {
-      state.lastActiveTime = Date.now();
-      logger.debug(`SessionManager: Loaded session ${sessionId}`);
-    } else {
-      logger.warn(`SessionManager: Session ${sessionId} not found`);
+    /**
+     * 处理存储事件
+     */
+    private async handleStorageEvent(event: StorageEvent): Promise<void> {
+        try {
+            switch (event.type) {
+                case 'storage.save.requested':
+                    if (event.data?.storage) {
+                        await this.saveSession(event.sessionId!, event.data.storage);
+                    }
+                    break;
+                
+                case 'storage.load.requested':
+                    if (event.sessionId) {
+                        const storage = await this.loadSession(event.sessionId);
+                        // 通过事件总线发布加载的存储数据
+                        await this.eventBus.publish({
+                            type: 'storage.updated',
+                            timestamp: Date.now(),
+                            source: 'SessionManager',
+                            sessionId: event.sessionId,
+                            data: { storage }
+                        } as StorageEvent);
+                    }
+                    break;
+                
+                default:
+                    logger.debug(`SessionManager: Unhandled storage event: ${event.type}`);
+            }
+        } catch (error) {
+            logger.error('SessionManager: Error handling storage event:', error);
+        }
     }
-    return state || null;
-  }
 
-  /**
-   * Save session state
-   */
-  async saveSession(sessionId: string, state: AgentStorage): Promise<void> {
-    state.lastActiveTime = Date.now();
-    this.sessions.set(sessionId, state);
-    logger.debug(`SessionManager: Saved session ${sessionId}, step: ${state.currentStep}, agentSteps: ${state.agentSteps.length}`);
-  }
-
-  /**
-   * Archive session (delete and optionally persist)
-   */
-  async archiveSession(sessionId: string): Promise<void> {
-    const state = this.sessions.get(sessionId);
-    if (state) {
-      // TODO: Persist to database or file
-      this.sessions.delete(sessionId);
-      logger.info(`SessionManager: Archived session ${sessionId} with ${state.agentSteps.length} steps`);
-    } else {
-      logger.warn(`SessionManager: Cannot archive session ${sessionId} - not found`);
+    /**
+     * 处理错误事件
+     */
+    private async handleErrorEvent(event: ErrorEvent): Promise<void> {
+        try {
+            logger.error(`SessionManager: Error event received for session ${event.sessionId}:`, event.data?.error);
+            
+            // 如果是会话相关的错误，可能需要保存错误状态
+            if (event.sessionId && this.sessions.has(event.sessionId)) {
+                const session = this.sessions.get(event.sessionId)!;
+                // 可以在这里记录错误历史或采取其他措施
+                session.lastActiveTime = Date.now();
+                await this.saveSession(event.sessionId, session);
+            }
+        } catch (error) {
+            logger.error('SessionManager: Error handling error event:', error);
+        }
     }
-  }
 
-  /**
-   * Get active sessions list
-   */
-  getActiveSessions(): string[] {
-    return Array.from(this.sessions.keys());
-  }
+    /**
+     * 会话开始处理
+     */
+    private async onSessionStarted(sessionId: string, data?: any): Promise<void> {
+        logger.info(`SessionManager: Session started: ${sessionId}`);
+        
+        this.currentSessionId = sessionId;
+        
+        // 尝试加载现有会话或创建新会话
+        let session = await this.loadSession(sessionId);
+        if (!session) {
+            session = {
+                sessionId,
+                agentId: this.agent.id,
+                currentStep: 0,
+                contexts: [],
+                agentSteps: [],
+                totalTokensUsed: 0,
+                sessionStartTime: Date.now(),
+                lastActiveTime: Date.now(),
+            };
+        } else {
+            // 更新会话活跃时间
+            session.lastActiveTime = Date.now();
+        }
+        
+        this.sessions.set(sessionId, session);
+        await this.saveSession(sessionId, session);
+    }
 
-  /**
-   * Get session count
-   */
-  getSessionCount(): number {
-    return this.sessions.size;
-  }
+    /**
+     * 会话结束处理
+     */
+    private async onSessionEnded(sessionId: string, data?: any): Promise<void> {
+        logger.info(`SessionManager: Session ended: ${sessionId}`);
+        
+        if (this.sessions.has(sessionId)) {
+            const session = this.sessions.get(sessionId)!;
+            session.lastActiveTime = Date.now();
+            await this.saveSession(sessionId, session);
+        }
+        
+        // 清理当前会话ID
+        if (this.currentSessionId === sessionId) {
+            this.currentSessionId = undefined;
+        }
+    }
 
-  /**
-   * Clean up expired sessions (optional feature)
-   */
-  cleanupExpiredSessions(maxAgeMs: number = 24 * 60 * 60 * 1000): number {
-    const now = Date.now();
-    let cleanedCount = 0;
-    
-    for (const [sessionId, state] of this.sessions.entries()) {
-      if (now - state.lastActiveTime > maxAgeMs) {
+    /**
+     * Agent步骤完成处理
+     */
+    private async onAgentStepCompleted(event: AgentEvent): Promise<void> {
+        if (!event.sessionId || !event.data?.step) {
+            return;
+        }
+
+        logger.debug(`SessionManager: Agent step ${event.stepIndex} completed for session ${event.sessionId}`);
+        
+        const session = this.sessions.get(event.sessionId);
+        if (session) {
+            // 更新会话数据
+            session.currentStep = event.stepIndex || 0;
+            session.lastActiveTime = Date.now();
+            
+            // 添加步骤到历史
+            if (!session.agentSteps) {
+                session.agentSteps = [];
+            }
+            session.agentSteps.push(event.data.step);
+            
+            // 保存会话
+            await this.saveSession(event.sessionId, session);
+        }
+    }
+
+    /**
+     * Agent步骤失败处理
+     */
+    private async onAgentStepFailed(event: AgentEvent): Promise<void> {
+        if (!event.sessionId) {
+            return;
+        }
+
+        logger.warn(`SessionManager: Agent step ${event.stepIndex} failed for session ${event.sessionId}: ${event.data?.error}`);
+        
+        const session = this.sessions.get(event.sessionId);
+        if (session) {
+            session.currentStep = event.stepIndex || 0;
+            session.lastActiveTime = Date.now();
+            await this.saveSession(event.sessionId, session);
+        }
+    }
+
+    /**
+     * Agent停止处理
+     */
+    private async onAgentStopped(event: AgentEvent): Promise<void> {
+        if (!event.sessionId) {
+            return;
+        }
+
+        logger.info(`SessionManager: Agent stopped for session ${event.sessionId}: ${event.data?.reason}`);
+        
+        const session = this.sessions.get(event.sessionId);
+        if (session) {
+            session.lastActiveTime = Date.now();
+            await this.saveSession(event.sessionId, session);
+        }
+    }
+
+    // ===========================================
+    // ISessionManager 接口实现
+    // ===========================================
+
+    createSession(userId?: string, agentId?: string): string {
+        const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        const session: AgentStorage = {
+            sessionId,
+            agentId: agentId || this.agent.id,
+            currentStep: 0,
+            contexts: [],
+            agentSteps: [],
+            totalTokensUsed: 0,
+            sessionStartTime: Date.now(),
+            lastActiveTime: Date.now(),
+        };
+
+        this.sessions.set(sessionId, session);
+        // 异步保存会话，但不等待完成
+        this.saveSession(sessionId, session).catch(error => {
+            logger.error(`Failed to save session ${sessionId}:`, error);
+        });
+        
+        logger.info(`SessionManager: Created session ${sessionId}`);
+        return sessionId;
+    }
+
+    async saveSession(sessionId: string, storage: AgentStorage): Promise<void> {
+        try {
+            // 更新内存中的会话数据
+            this.sessions.set(sessionId, storage);
+            
+            // 这里可以实现持久化存储（文件系统、数据库等）
+            // 目前仅保存在内存中
+            
+            logger.debug(`SessionManager: Session ${sessionId} saved`);
+        } catch (error) {
+            logger.error(`SessionManager: Failed to save session ${sessionId}:`, error);
+            throw error;
+        }
+    }
+
+    async loadSession(sessionId: string): Promise<AgentStorage | null> {
+        try {
+            const session = this.sessions.get(sessionId);
+            if (session) {
+                logger.debug(`SessionManager: Session ${sessionId} loaded from memory`);
+                return session;
+            }
+            
+            // 这里可以实现从持久化存储加载
+            // 目前仅从内存加载
+            
+            logger.debug(`SessionManager: Session ${sessionId} not found`);
+            return null;
+        } catch (error) {
+            logger.error(`SessionManager: Failed to load session ${sessionId}:`, error);
+            return null;
+        }
+    }
+
+    async switchSession(sessionId: string): Promise<void> {
+        const session = await this.loadSession(sessionId);
+        if (!session) {
+            throw new Error(`Session ${sessionId} not found`);
+        }
+
+        this.currentSessionId = sessionId;
+        
+        // 通过事件总线通知会话切换
+        await this.eventBus.publish({
+            type: 'session.switched',
+            timestamp: Date.now(),
+            source: 'SessionManager',
+            sessionId,
+            data: { userId: undefined, agentId: session.agentId }
+        } as SessionEvent);
+        
+        logger.info(`SessionManager: Switched to session ${sessionId}`);
+    }
+
+    async deleteSession(sessionId: string): Promise<void> {
         this.sessions.delete(sessionId);
-        cleanedCount++;
-        logger.info(`SessionManager: Cleaned up expired session ${sessionId}`);
-      }
-    }
-    
-    return cleanedCount;
-  }
-
-  /**
-   * Get session statistics
-   */
-  getStats(): {
-    totalSessions: number;
-    activeSessions: number;
-    averageStepsPerSession: number;
-    averageMessagesPerSession: number;
-    averageAgentStepsPerSession: number;
-  } {
-    const sessions = Array.from(this.sessions.values());
-    const totalSessions = sessions.length;
-    const activeSessions = sessions.filter(s => Date.now() - s.lastActiveTime < 60 * 60 * 1000).length;
-    
-    const totalSteps = sessions.reduce((sum, s) => sum + s.currentStep, 0);
-    const totalAgentSteps = sessions.reduce((sum, s) => sum + s.agentSteps.length, 0);
-    
-    return {
-      totalSessions,
-      activeSessions,
-      averageStepsPerSession: totalSessions > 0 ? totalSteps / totalSessions : 0,
-      averageMessagesPerSession: 0, // Not available in current AgentStorage
-      averageAgentStepsPerSession: totalSessions > 0 ? totalAgentSteps / totalSessions : 0
-    };
-  }
-
-  /**
-   * Get specific session details (for debugging)
-   */
-  getSessionDetails(sessionId: string): {
-    sessionId: string;
-    agentId: string;
-    userId?: string;
-    currentStep: number;
-    agentStepsCount: number;
-    messagesCount: number;
-    totalTokensUsed: number;
-    sessionDuration: number;
-    lastActiveTime: string;
-  } | null {
-    const state = this.sessions.get(sessionId);
-    if (!state) {
-      return null;
+        
+        // 清理当前会话ID
+        if (this.currentSessionId === sessionId) {
+            this.currentSessionId = undefined;
+        }
+        
+        logger.info(`SessionManager: Deleted session ${sessionId}`);
     }
 
-    return {
-      sessionId: state.sessionId,
-      agentId: state.agentId,
-      userId: state.userId,
-      currentStep: state.currentStep,
-      agentStepsCount: state.agentSteps.length,
-      messagesCount: 0, // Not available in current AgentStorage
-      totalTokensUsed: state.totalTokensUsed,
-      sessionDuration: Date.now() - state.sessionStartTime,
-      lastActiveTime: new Date(state.lastActiveTime).toISOString()
-    };
-  }
-
-  /**
-   * Update session token usage
-   */
-  async updateTokenUsage(sessionId: string, additionalTokens: number): Promise<void> {
-    const state = await this.loadSession(sessionId);
-    if (state) {
-      state.totalTokensUsed += additionalTokens;
-      await this.saveSession(sessionId, state);
-      logger.debug(`SessionManager: Updated token usage for session ${sessionId}: +${additionalTokens} (total: ${state.totalTokensUsed})`);
+    async listSessions(): Promise<AgentStorage[]> {
+        return Array.from(this.sessions.values());
     }
-  }
 
-  /**
-   * Get summary information for all sessions
-   */
-  getAllSessionsSummary(): Array<{
-    sessionId: string;
-    agentId: string;
-    userId?: string;
-    currentStep: number;
-    agentStepsCount: number;
-    isActive: boolean;
-    lastActiveTime: string;
-  }> {
-    const now = Date.now();
-    const activeThreshold = 60 * 60 * 1000; // 1 hour
+    getCurrentSessionId(): string | undefined {
+        return this.currentSessionId;
+    }
 
-    return Array.from(this.sessions.values()).map(state => ({
-      sessionId: state.sessionId,
-      agentId: state.agentId,
-      userId: state.userId,
-      currentStep: state.currentStep,
-      agentStepsCount: state.agentSteps.length,
-      isActive: (now - state.lastActiveTime) < activeThreshold,
-      lastActiveTime: new Date(state.lastActiveTime).toISOString()
-    }));
-  }
+    async getSessionStats(): Promise<SessionStats> {
+        const now = Date.now();
+        const fiveMinutesAgo = now - 5 * 60 * 1000; // 5分钟前
+        
+        const activeSessions = Array.from(this.sessions.values())
+            .filter(session => session.lastActiveTime > fiveMinutesAgo)
+            .length;
+
+        return {
+            totalSessions: this.sessions.size,
+            activeSessions,
+            currentSessionId: this.currentSessionId
+        };
+    }
+
+    /**
+     * 获取事件总线实例（用于外部订阅）
+     */
+    getEventBus(): IEventBus {
+        return this.eventBus;
+    }
+
+    /**
+     * 发送消息给Agent (向后兼容方法)
+     */
+    async sendMessageToAgent(message: string, maxSteps: number, sessionId?: string): Promise<void> {
+        const targetSessionId = sessionId || this.currentSessionId;
+        if (!targetSessionId) {
+            throw new Error('No active session. Please create or select a session first.');
+        }
+
+        const session = this.sessions.get(targetSessionId);
+        if (!session) {
+            throw new Error(`Session ${targetSessionId} not found`);
+        }
+
+        // 发布用户消息事件
+        await this.eventBus.publish({
+            type: 'user.message',
+            timestamp: Date.now(),
+            source: 'SessionManager',
+            sessionId: targetSessionId,
+            data: {
+                messageContent: message,
+                sessionId: targetSessionId,
+                maxSteps
+            }
+        } as any);
+
+        // 调用agent的startWithUserInput方法
+        try {
+            if (this.agent && typeof this.agent.startWithUserInput === 'function') {
+                await this.agent.startWithUserInput(message, maxSteps, targetSessionId);
+            } else {
+                logger.error('Agent does not have startWithUserInput method');
+                throw new Error('Agent does not have startWithUserInput method');
+            }
+        } catch (error) {
+            logger.error('Error sending message to agent:', error);
+            
+            // 发布错误事件
+            await this.eventBus.publish({
+                type: 'error.occurred',
+                timestamp: Date.now(),
+                source: 'SessionManager',
+                sessionId: targetSessionId,
+                data: {
+                    error: error instanceof Error ? error : new Error(String(error)),
+                    context: { message, maxSteps, sessionId: targetSessionId }
+                }
+            } as any);
+            
+            throw error;
+        }
+    }
+
+    /**
+     * 停止Agent
+     */
+    async stopAgent(): Promise<void> {
+        if (!this.agent) {
+            throw new Error('No agent available to stop');
+        }
+
+        // 检查Agent是否有stop方法
+        if (typeof this.agent.stop === 'function') {
+            this.agent.stop();
+        } else {
+            logger.warn('Agent does not have stop method');
+        }
+
+        logger.info('SessionManager: Agent stopped');
+    }
+
+    /**
+     * 检查Agent是否正在运行
+     */
+    isAgentRunning(): boolean {
+        if (!this.agent) {
+            return false;
+        }
+
+        // 检查Agent是否有isRunning属性
+        if (typeof this.agent.isRunning === 'boolean') {
+            return this.agent.isRunning;
+        }
+
+        // 检查Agent是否有shouldStop属性（相反逻辑）
+        if (typeof this.agent.shouldStop === 'boolean') {
+            return !this.agent.shouldStop;
+        }
+
+        // 默认返回false
+        return false;
+    }
+
+    /**
+     * 清理资源
+     */
+    dispose(): void {
+        // 取消所有事件订阅
+        this.eventSubscriber.cleanup();
+        
+        // 清理会话数据
+        this.sessions.clear();
+        this.currentSessionId = undefined;
+        
+        logger.info('SessionManager: Disposed');
+    }
 } 

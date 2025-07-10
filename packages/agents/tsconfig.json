@@ -29,8 +29,6 @@
     "**/*.spec.ts",
     "**/tests/**",
     "contexts/coding/snapshot/tests/**",
-    "contexts/coding/toolsets/glob.ts",
-    "contexts/coding/toolsets/grep.ts",
     "contexts/interaction/**"
   ],
   "references": [

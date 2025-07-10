@@ -2,7 +2,7 @@ import { IContext, ITool, IAgent, ToolExecutionResult, ToolSet as ToolSetInterfa
 import { z } from 'zod';
 import { logger } from '@continue-reasoning/core';
 import { createTool } from '@continue-reasoning/core';
-import { EditingStrategyToolSet, EditingStrategyToolExamples } from './toolsets/index.js';
+import { EditingStrategyToolSet } from './toolsets/index.js';
 import { ContextHelper } from '@continue-reasoning/core';
 import { IRuntime } from './runtime/interface.js';
 import { NodeJsSandboxedRuntime } from './runtime/impl/node-runtime.js';
@@ -12,9 +12,6 @@ import { SeatbeltSandbox } from './sandbox/seatbelt-sandbox.js';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { SnapshotManager } from './snapshot/snapshot-manager.js';
-import { SnapshotEditingToolSet } from './snapshot/snapshot-enhanced-tools.js';
-import { ReadSnapshotTool, snapshotManagerTools } from './snapshot/snapshot-manager-tools.js';
 import { WebSearchTool } from '@continue-reasoning/core';
 import { NoEditToolSet } from './toolsets/index.js';
 
@@ -44,18 +41,16 @@ const AgentStopTool = createTool({
 
     try {
       // Call the agent's stop method
-      await agent.stop();
+      agent.stop();
       
       return {
         success: true,
         message: `Agent stopped successfully. Reason: ${reason}`,
-        stopped: true
       };
     } catch (error) {
       return {
         success: false,
         message: `Failed to stop agent: ${error}`,
-        stopped: false
       };
     }
   }
@@ -147,11 +142,10 @@ export const CodingContextDataSchema = z.object({
 
 export type CodingContextData = z.infer<typeof CodingContextDataSchema>;
 
-// Extended interface that includes runtime, sandbox, and snapshot functionality  
+// Extended interface that includes runtime and sandbox functionality  
 export interface ICodingContext extends IRAGEnabledContext<typeof CodingContextDataSchema> {
   getRuntime(): IRuntime;
   getSandbox(): ISandbox;
-  getSnapshotManager(): SnapshotManager;
   getCurrentWorkspace(): string;
   switchToWorkspace(workspacePath: string): Promise<void>;
 }
@@ -212,7 +206,7 @@ function createWorkspaceTools(context: ICodingContext): ITool<any, any, IAgent>[
   
   const SwitchWorkspaceTool = createTool({
     name: 'SwitchWorkspaceTool',
-    description: 'Switch to a different workspace. This will close the current SnapshotManager and create a new one for the target workspace. The target directory will be created if it doesn\'t exist.',
+    description: 'Switch to a different workspace. The target directory will be created if it doesn\'t exist.',
     inputSchema: z.object({
       workspacePath: z.string().describe('The absolute or relative path to the workspace directory to switch to')
     }),
@@ -250,7 +244,7 @@ function createWorkspaceTools(context: ICodingContext): ITool<any, any, IAgent>[
         
         return {
           success: true,
-          message: `Successfully switched to workspace: ${resolvedPath}. SnapshotManager has been reinitialized.`,
+          message: `Successfully switched to workspace: ${resolvedPath}.`,
           currentWorkspace: resolvedPath
         };
       } catch (error) {
@@ -293,8 +287,6 @@ export function createCodingContext(workspacePath: string): ICodingContext {
   // Will be replaced with platform-specific sandbox once initialized
   let sandbox: ISandbox = new NoSandbox();
   
-  // Initialize the snapshot manager for the initial workspace
-  let snapshotManager = new SnapshotManager(workspacePath);
   
   // Start the async initialization of the sandbox
   initializeSandbox(sandbox).then(newSandbox => {
@@ -331,13 +323,12 @@ export function createCodingContext(workspacePath: string): ICodingContext {
       const workspaceTools = createWorkspaceTools(extendedCtx);
       
       const allTools: ITool<any, any, IAgent>[] = [
-        ...workspaceTools,
-        ...SnapshotEditingToolSet,
-        ReadSnapshotTool,
-        ...NoEditToolSet,
-        WebSearchTool,
         TodoUpdateTool,
         AgentStopTool,
+        ...EditingStrategyToolSet,
+        ...NoEditToolSet,
+        ...workspaceTools,
+        WebSearchTool,
       ];
       
       return {
@@ -389,7 +380,6 @@ export function createCodingContext(workspacePath: string): ICodingContext {
   
   extendedContext.getRuntime = () => runtime;
   extendedContext.getSandbox = () => sandbox;
-  extendedContext.getSnapshotManager = () => snapshotManager;
   
   // Get current workspace
   extendedContext.getCurrentWorkspace = () => {
@@ -402,12 +392,7 @@ export function createCodingContext(workspacePath: string): ICodingContext {
     // Update the workspace
     extendedContext.setData({ current_workspace: targetWorkspacePath });
     
-    // Close current SnapshotManager and create new one for the target workspace
-    // Note: JavaScript doesn't have explicit cleanup for the old manager, 
-    // but creating a new instance will replace the reference
-    snapshotManager = new SnapshotManager(targetWorkspacePath);
-    
-    logger.info(`Switched to workspace: ${targetWorkspacePath}, SnapshotManager recreated`);
+    logger.info(`Switched to workspace: ${targetWorkspacePath}`);
   };
   
   return extendedContext;

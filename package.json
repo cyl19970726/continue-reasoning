@@ -46,5 +46,8 @@
     "tsx": "^4.19.3",
     "typescript": "^5",
     "vitest": "^3.1.1"
+  },
+  "dependencies": {
+    "zod": "^3.24.2"
   }
 }

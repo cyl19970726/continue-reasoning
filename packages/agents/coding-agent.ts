@@ -1,7 +1,6 @@
-import { StreamAgent, AgentOptions, LogLevel, AnyTool, IContext, ToolExecutionResult } from '@continue-reasoning/core';
+import { StreamAgent, AgentOptions, LogLevel, AnyTool, IContext, ToolExecutionResult, IEventBus } from '@continue-reasoning/core';
 import { createCodingContext } from './contexts/coding/index.js';
 import { logger } from '@continue-reasoning/core';
-import { SnapshotManager } from './contexts/coding/snapshot/snapshot-manager.js';
 import { ICodingContext } from './contexts/coding/coding-context.js';
 import { createEnhancedPromptProcessor } from '@continue-reasoning/core';
 
@@ -26,7 +25,7 @@ export class CodingAgent extends StreamAgent {
         maxSteps: number = 20,
         logLevel?: LogLevel,
         agentOptions?: AgentOptions,
-        contexts?: IContext<any>[],
+        eventBus?: IEventBus,
     ) {
 
         // Create coding context
@@ -34,7 +33,7 @@ export class CodingAgent extends StreamAgent {
         
         // Create enhanced prompt processor, system prompt will be overridden in CodingAgent
         const enhancedPromptProcessor = createEnhancedPromptProcessor('');
-        
+        enhancedPromptProcessor.setEnableToolCallsForStep
         super(
             id,
             name,
@@ -43,7 +42,8 @@ export class CodingAgent extends StreamAgent {
             enhancedPromptProcessor,
             logLevel,
             agentOptions,
-            [...(contexts || []),codingContext]
+            [codingContext],
+            eventBus
         );
         
         this.codingContext = codingContext;
@@ -333,11 +333,7 @@ I'll help you understand the calculateTotal function. Let me find and read it fi
 ### PHASE 3: IMPLEMENT CHANGES
 **Purpose:** Execute planned modifications following project standards.
 
-#### 3.1 Prepare Environment
-- **WriteSnapshotIgnore**: Create .snapshotignore to prevent unintended changes
-- Ensure clean working state
-
-#### 3.2 Execute Implementation
+#### 3.1 Execute Implementation
 - Use editing tools (Apply* Tool) following existing code style
 - Maintain consistency with project patterns
 - Apply changes incrementally and verify each step
@@ -375,33 +371,12 @@ I'll help you understand the calculateTotal function. Let me find and read it fi
 6. Share implementation plan with user
 
 # Phase 3: Implement
-7. Write .snapshotignore
-8. Apply edits following existing patterns
+7. Apply edits following existing patterns
+8. Write test code if needed
 
 # Phase 4: Verify
 9. npm run test
-10. npm run lint && npm run typecheck
-\`\`\`
-
-### Python Project Analysis
-\`\`\`
-# Phase 1: Understand
-1. ReadFile: ./setup.py, ./requirements.txt
-2. Glob pattern="**/*.py"
-3. Grep pattern="class.*:" include_patterns=["*.py"]
-4. Grep pattern="from.*import" context_lines=1
-
-# Phase 2: Plan
-5. Map out module dependencies
-6. Design changes aligned with Python conventions
-
-# Phase 3: Implement
-7. Write .snapshotignore
-8. Implement following PEP 8 standards
-
-# Phase 4: Verify
-9. python -m pytest
-10. ruff check && mypy
+10s. npm run lint && npm run typecheck
 \`\`\`
 
 **WARNING:** Skipping Phase 1 (Understanding) will likely result in broken functionality or inconsistent code. ALWAYS analyze before implementing.
@@ -476,13 +451,6 @@ Working directory: ${currentWorkspace}
         return this.codingContext.getCurrentWorkspace();
     }
 
-    /**
-     * 🔧 获取快照管理器
-     * 提供对快照系统的统一访问
-     */
-    getSnapshotManager(): SnapshotManager {
-        return this.codingContext.getSnapshotManager();
-    }
 
     /**
      * 🔧 设置新的工作空间

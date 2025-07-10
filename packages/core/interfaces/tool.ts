@@ -95,4 +95,9 @@ export interface ITaskQueue{
     addToolCallTask<T>(taskFn: () => Promise<T>, priority?: number, id?: string): Promise<T>;
     getTasksByType(type: 'processStep' | 'toolCall' | 'custom'): ITask[];
     clearTasks(type?: 'processStep' | 'toolCall' | 'custom'): number;
+    
+    // Lifecycle management
+    start(): Promise<void>;
+    stop(): Promise<void>;
+    getConcurrency(): number;
 } 

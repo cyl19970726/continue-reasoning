@@ -247,7 +247,7 @@ export function createContextSearchTool<
  */
 export function createTool<
   InputSchema extends z.ZodObject<any>,
-  OutputSchema extends z.ZodType<{ success: boolean; error?: string } & Record<string, any>>
+  OutputSchema extends z.ZodType<{ success: boolean; message?: string } & Record<string, any>>
 >(options: {
   id?: string;
   name: string;

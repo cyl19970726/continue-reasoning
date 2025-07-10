@@ -1,5 +1,6 @@
-import { ITaskQueue } from './taskQueue.js';
-import { AnyTool, ToolCallParams, ToolExecutionResult, AgentCallbacks } from './interfaces/index.js';
+import { ITaskQueue } from './interfaces/tool.js';
+import { AnyTool, ToolCallParams, ToolExecutionResult } from './interfaces/index.js';
+import { IEventBus } from './event-bus/index.js';
 import { logger } from './utils/logger.js';
 
 export interface ToolExecutionTask {
@@ -8,7 +9,7 @@ export interface ToolExecutionTask {
     tool: AnyTool;
     agent: any; // BaseAgent reference
     startTime: number;
-    callbacks?: AgentCallbacks;
+    eventBus?: IEventBus;
 }
 
 export interface ToolExecutorOptions {
@@ -35,11 +36,48 @@ export class ToolExecutor {
     /**
      * 执行单个工具调用
      */
+    async execute(
+        toolCall: ToolCallParams,
+        agent: any,
+        priority?: number
+    ): Promise<ToolExecutionResult> {
+        const taskId = toolCall.call_id || `${toolCall.name}_${Date.now()}`;
+        
+        // 找到对应的工具
+        const tool = agent.getActiveTools().find((t: AnyTool) => t.name === toolCall.name);
+        if (!tool) {
+            throw new Error(`Tool not found: ${toolCall.name}`);
+        }
+        
+        logger.debug(`[ToolExecutor] Queuing tool call: ${tool.name} (${taskId})`);
+        
+        const executionTask: ToolExecutionTask = {
+            id: taskId,
+            toolCall,
+            tool,
+            agent,
+            startTime: Date.now(),
+            eventBus: agent.eventBus
+        };
+
+        // 将工具执行任务添加到任务队列
+        const result = await this.taskQueue.addToolCallTask(
+            () => this.executeToolInternal(executionTask),
+            priority || this.options.defaultPriority,
+            taskId
+        );
+
+        return result;
+    }
+
+    /**
+     * 执行单个工具调用 (legacy method for backward compatibility)
+     */
     async executeToolCall(
         toolCall: ToolCallParams,
         tool: AnyTool,
         agent: any,
-        callbacks?: AgentCallbacks,
+        eventBus?: IEventBus,
         priority?: number
     ): Promise<ToolExecutionResult> {
         const taskId = toolCall.call_id || `${tool.name}_${Date.now()}`;
@@ -52,7 +90,7 @@ export class ToolExecutor {
             tool,
             agent,
             startTime: Date.now(),
-            callbacks
+            eventBus
         };
 
         // 将工具执行任务添加到任务队列
@@ -72,7 +110,7 @@ export class ToolExecutor {
         toolCalls: ToolCallParams[],
         tools: AnyTool[],
         agent: any,
-        callbacks?: AgentCallbacks,
+        eventBus?: IEventBus,
         priority?: number
     ): Promise<ToolExecutionResult[]> {
         if (!this.options.enableParallelExecution) {
@@ -81,7 +119,7 @@ export class ToolExecutor {
             for (const toolCall of toolCalls) {
                 const tool = tools.find(t => t.name === toolCall.name);
                 if (tool) {
-                    const result = await this.executeToolCall(toolCall, tool, agent, callbacks, priority);
+                    const result = await this.executeToolCall(toolCall, tool, agent, eventBus, priority);
                     results.push(result);
                 } else {
                     results.push(this.createErrorResult(toolCall, `Tool ${toolCall.name} not found`));
@@ -96,7 +134,7 @@ export class ToolExecutor {
         for (const toolCall of toolCalls) {
             const tool = tools.find(t => t.name === toolCall.name);
             if (tool) {
-                const promise = this.executeToolCall(toolCall, tool, agent, callbacks, priority);
+                const promise = this.executeToolCall(toolCall, tool, agent, eventBus, priority);
                 executionPromises.push(promise);
             } else {
                 // 立即返回错误结果
@@ -128,14 +166,26 @@ export class ToolExecutor {
      * 内部工具执行方法
      */
     private async executeToolInternal(executionTask: ToolExecutionTask): Promise<ToolExecutionResult> {
-        const { toolCall, tool, agent, callbacks, startTime } = executionTask;
+        const { toolCall, tool, agent, eventBus, startTime } = executionTask;
         
+        console.log('[[[toolCall:]]]', toolCall);
         try {
             // 标记任务开始执行
             this.runningTasks.set(executionTask.id, executionTask);
             
             // 发布工具执行开始事件
-            callbacks?.onToolExecutionStart?.(toolCall);
+            if (eventBus) {
+                eventBus.publish({
+                    type: 'tool.execution.started',
+                    timestamp: Date.now(),
+                    source: `tool.${tool.name}`,
+                    data: {
+                        toolCall,
+                        agentId: agent.id,
+                        sessionId: agent.sessionId
+                    }
+                });
+            }
             
             logger.debug(`[ToolExecutor] Executing tool: ${tool.name} with params:`, toolCall.parameters);
             
@@ -156,7 +206,20 @@ export class ToolExecutor {
             this.completedTasks.set(executionTask.id, toolCallResult);
             
             // 发布工具执行结果事件
-            callbacks?.onToolExecutionEnd?.(toolCallResult);
+            if (eventBus) {
+                eventBus.publish({
+                    type: 'tool.execution.completed',
+                    timestamp: Date.now(),
+                    source: `tool.${tool.name}`,
+                    data: {
+                        toolCall,
+                        result: toolCallResult,
+                        agentId: agent.id,
+                        sessionId: agent.sessionId,
+                        executionTime
+                    }
+                });
+            }
             
             logger.debug(`[ToolExecutor] Tool ${tool.name} completed successfully in ${executionTime}ms`);
             
@@ -175,8 +238,23 @@ export class ToolExecutor {
             
             // 存储失败的任务
             this.completedTasks.set(executionTask.id, errorResult);
-            // 发布工具执行结果事件
-            callbacks?.onToolExecutionEnd?.(errorResult);
+            
+            // 发布工具执行失败事件
+            if (eventBus) {
+                eventBus.publish({
+                    type: 'tool.execution.failed',
+                    timestamp: Date.now(),
+                    source: `tool.${tool.name}`,
+                    data: {
+                        toolCall,
+                        result: errorResult,
+                        error: error instanceof Error ? error.message : String(error),
+                        agentId: agent.id,
+                        sessionId: agent.sessionId,
+                        executionTime
+                    }
+                });
+            }
             
             logger.error(`[ToolExecutor] Tool ${tool.name} failed:`, errorResult.message);
             
@@ -237,14 +315,14 @@ export class ToolExecutor {
     }
 
     /**
-     * 设置并行执行选项
+     * 设置选项
      */
     setOptions(options: Partial<ToolExecutorOptions>): void {
         this.options = { ...this.options, ...options };
     }
 
     /**
-     * 获取当前配置
+     * 获取选项
      */
     getOptions(): Required<ToolExecutorOptions> {
         return { ...this.options };

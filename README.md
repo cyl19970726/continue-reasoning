@@ -170,6 +170,93 @@ The framework supports enhanced thinking modes:
 - **Reasoning**: Logical reasoning and decision-making processes
 - **Interactive Response**: User interaction and communication
 
+## 🔄 Event-Driven Architecture
+
+The framework uses a comprehensive event-driven architecture for real-time communication between components:
+
+### Event Types
+
+- **Session Events**: Handle session lifecycle management
+  - `session.started` - Session initialization
+  - `session.ended` - Session completion
+  - `session.switched` - Session switching
+
+- **Agent Events**: Track agent execution and reasoning
+  - `agent.step.completed` - Agent step completion with full context
+  - `agent.stopped` - Agent execution termination
+
+- **Tool Events**: Monitor tool execution lifecycle
+  - `tool.execution.started` - Tool execution initiation
+  - `tool.execution.completed` - Tool execution completion
+  - `tool.execution.failed` - Tool execution failure
+
+- **Error Events**: Handle error reporting and debugging
+  - `error.occurred` - System error notification
+
+### Event Processing Strategy
+
+#### ReactCLI Client Event Handling
+
+The ReactCLI client uses a unified event processing approach:
+
+```typescript
+// Primary text display through AgentStep events
+eventBus.subscribe('agent.step.completed', (event: AgentEvent) => {
+  const stepMessage = {
+    id: `step_${event.stepIndex}`,
+    content: formatAgentStep(event.data.step), // Contains response, thinking, rawText
+    type: 'agent',
+    timestamp: Date.now(),
+    stepIndex: event.stepIndex
+  };
+  addMessage(stepMessage);
+});
+
+// Tool execution monitoring
+eventBus.subscribe('tool.execution.started', (event: ToolEvent) => {
+  // Display tool execution start with parameters
+});
+
+eventBus.subscribe('tool.execution.completed', (event: ToolEvent) => {
+  // Display formatted tool results
+});
+```
+
+#### Text Processing Architecture
+
+**Unified Display Strategy**: Instead of handling streaming text events (`llm.text.delta`, `llm.text.completed`), the system processes all text content through completed AgentStep events. This ensures:
+
+- **Consistency**: All text content is processed uniformly
+- **Completeness**: Full context is available for each step
+- **Reliability**: No fragmented or duplicate text display
+- **Simplicity**: Single event handler for all text-based responses
+
+The `formatAgentStep()` method handles multiple text formats:
+- **Response Text**: Primary agent response (`step.extractorResult?.response`)
+- **Thinking Process**: Agent reasoning (`step.extractorResult?.thinking`)
+- **Raw Text**: Direct LLM output (`step.rawText`)
+- **Tool Results**: Tool execution summaries
+
+### Event Bus Configuration
+
+```typescript
+// Initialize EventBus with queue size
+const eventBus = new EventBus(1000);
+
+// Set up event subscriptions
+client.setEventBus(eventBus);
+agent.setEventBus(eventBus);
+sessionManager.setEventBus(eventBus);
+```
+
+### Benefits of Event-Driven Design
+
+- **Decoupled Components**: Clear separation between agent logic and UI updates
+- **Real-time Updates**: Immediate UI feedback during agent execution
+- **Extensible**: Easy to add new event types and handlers
+- **Debugging**: Comprehensive event logging for troubleshooting
+- **Scalable**: Efficient event distribution across multiple subscribers
+
 ## 🛠️ Development
 
 ### Running Tests

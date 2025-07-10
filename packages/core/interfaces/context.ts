@@ -126,9 +126,13 @@ export function asRAGEnabledContext<T extends z.ZodObject<any>>(context: IContex
 export interface IContextManager{
     contexts: AnyRAGEnableContext[];
     registerContext<T extends z.ZodObject<any>>(context: IRAGEnabledContext<T> ): void;
+    registerContexts(contexts: IRAGEnabledContext<any>[]): void;
     findContextById: (id: string) => AnyRAGEnableContext;
     renderPrompt: () => string | Promise<string>;
     contextList: () => AnyRAGEnableContext[];
+    
+    // Lifecycle management
+    setup(): Promise<void>;
     
     /**
      * Centrally manage MCP server installation for all Contexts
@@ -146,20 +150,4 @@ export interface IContextManager{
             mcpServersCount?: number
         }>
     }>;
-
-    /**
-     * Render structured PromptCtx
-     * Collect all Context's PromptCtx and assemble them according to specified strategy
-     */
-    renderStructuredPrompt?: (strategy?: PromptAssemblyStrategy) => Promise<PromptCtx> | PromptCtx;
-
-    /**
-     * Set prompt assembly strategy
-     */
-    setPromptAssemblyStrategy?: (strategy: PromptAssemblyStrategy) => void;
-
-    /**
-     * Get current prompt assembly strategy
-     */
-    getPromptAssemblyStrategy?: () => PromptAssemblyStrategy;
 } 

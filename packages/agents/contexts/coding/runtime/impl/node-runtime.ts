@@ -734,7 +734,7 @@ export class NodeJsRuntime implements IRuntime {
         await fs.writeFile(saveDiffPath, diffContent, 'utf-8');
         savedDiffPathResult = saveDiffPath;
       } catch (error: any) {
-        console.error(`Failed to save diff to ${saveDiffPath}:`, error);
+        throw error(`Failed to save diff to ${saveDiffPath}:`, error);
         // Continue with the operation even if saving fails
       }
     }

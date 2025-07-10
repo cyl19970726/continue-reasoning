@@ -26,6 +26,33 @@ export interface ReactCLIConfig extends ClientConfig {
   // 调试配置
   debug?: boolean;
   logLevel?: 'debug' | 'info' | 'warn' | 'error';
+  
+  // 事件显示配置
+  eventDisplay?: {
+    // 控制不同事件类型的显示
+    session?: {
+      showStarted?: boolean;
+      showEnded?: boolean;
+      showSwitched?: boolean;
+    };
+    agent?: {
+      showStepCompleted?: boolean;
+      showStepDetails?: boolean; // 控制是否显示步骤的详细内容
+      showReasoning?: boolean;   // 控制是否显示推理过程
+      showResponse?: boolean;    // 控制是否显示响应内容
+      showStopped?: boolean;
+    };
+    tool?: {
+      showStarted?: boolean;
+      showCompleted?: boolean;
+      showFailed?: boolean;
+      showDetails?: boolean; // 控制是否显示工具的详细输出
+    };
+    error?: {
+      showErrors?: boolean;
+      showStackTrace?: boolean;
+    };
+  };
 }
 
 /**
