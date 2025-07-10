@@ -35,8 +35,12 @@ const MessageList: React.FC<MessageListProps> = ({
     switch (type) {
       case 'user': return theme === 'dark' ? 'cyan' : 'blue';
       case 'agent': return theme === 'dark' ? 'green' : 'darkgreen';
+      case 'agent.reasoning': return theme === 'dark' ? 'magenta' : 'purple';
+      case 'agent.response': return theme === 'dark' ? 'green' : 'darkgreen';
       case 'system': return theme === 'dark' ? 'yellow' : 'orange';
       case 'tool': return theme === 'dark' ? 'magenta' : 'purple';
+      case 'tool.start': return theme === 'dark' ? 'cyan' : 'blue';
+      case 'tool.completed': return theme === 'dark' ? 'green' : 'darkgreen';
       case 'error': return 'red';
       default: return 'white';
     }
@@ -46,8 +50,12 @@ const MessageList: React.FC<MessageListProps> = ({
     switch (type) {
       case 'user': return '👤';
       case 'agent': return '🤖';
+      case 'agent.reasoning': return '💭';
+      case 'agent.response': return '💬';
       case 'system': return '⚙️';
       case 'tool': return '🔧';
+      case 'tool.start': return '🚀';
+      case 'tool.completed': return '✅';
       case 'error': return '❌';
       default: return '📝';
     }
@@ -60,6 +68,16 @@ const MessageList: React.FC<MessageListProps> = ({
       minute: '2-digit',
       second: '2-digit'
     });
+  };
+
+  // 简化的文本渲染，保持原始格式
+  const renderMessageContent = (content: string): React.ReactNode => {
+    // 直接渲染原始内容，让 Ink 处理换行
+    return (
+      <Text>
+        {content}
+      </Text>
+    );
   };
 
   if (messages.length === 0) {
@@ -84,7 +102,7 @@ const MessageList: React.FC<MessageListProps> = ({
             paddingLeft={isSelected ? 1 : 0}
           >
             {/* 消息头部 */}
-            <Box>
+            <Box flexDirection="row">
               {isSelected && <Text color="yellow">▶ </Text>}
               
               <Text color={messageColor} bold>
@@ -101,17 +119,13 @@ const MessageList: React.FC<MessageListProps> = ({
             </Box>
             
             {/* 消息内容 */}
-            <Box paddingLeft={isSelected ? 3 : 2} paddingRight={1}>
-              {message.content.split('\n').map((line, lineIndex) => (
-                <Text key={lineIndex} wrap="wrap">
-                  {line}
-                </Text>
-              ))}
+            <Box paddingLeft={isSelected ? 3 : 2} marginTop={compactMode ? 0 : 1}>
+              {renderMessageContent(message.content)}
             </Box>
             
             {/* 元数据（调试模式） */}
             {message.metadata && theme === 'dark' && (
-              <Box paddingLeft={2}>
+              <Box paddingLeft={2} marginTop={1}>
                 <Text dimColor>
                   {JSON.stringify(message.metadata).slice(0, 50)}...
                 </Text>

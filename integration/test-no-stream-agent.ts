@@ -1,8 +1,9 @@
-import { NoStreamAgent } from '../packages/core/no-stream-agent';
+import { AsyncAgent } from '../packages/core/async-agent';
 import { createStandardPromptProcessor } from '../packages/core/prompts/prompt-processor-factory';
 import { OPENAI_MODELS } from '../packages/core/models';
 import { z } from 'zod';
 import { createTool } from '../packages/core/utils';
+import { EventBus } from '../packages/core/event-bus';
 
 // 简单的天气工具 - 返回随机温度
 const WeatherTool = createTool({
@@ -93,10 +94,10 @@ const CalculationTool = createTool({
 // 测试 NoStreamAgent (非流式)
 async function testNoStreamAgent() {
     console.log('🧪 测试 NoStreamAgent (非流式) ...\n');
-    
+    let eventBus = new EventBus(100);
     // 创建 NoStreamAgent 实例
     const promptProcessor = createStandardPromptProcessor('');
-    const agent = new NoStreamAgent(
+    const agent = new AsyncAgent(
         'no-stream-test-agent',
         'No Stream Test Agent',
         'Testing non-streaming agent with tool execution',
@@ -109,7 +110,9 @@ async function testNoStreamAgent() {
             toolExecutionPriority: 8,
             taskConcurency: 4,
             executionMode: 'auto'
-        }
+        },
+        eventBus,
+
     );
 
     // 添加测试工具
@@ -123,72 +126,69 @@ async function testNoStreamAgent() {
     
     agent.addToolSet(testToolSet);
 
-    // 设置回调监控
+    // 设置事件监听器
     const events: any[] = [];
     let finalStep: any = null;
     
-    agent.setCallBacks({
-        onLLMTextDelta: (stepIndex, chunkIndex, delta) => {
-            // NoStreamAgent 不应该触发这个回调
-            events.push({ 
-                type: 'llm_text_delta', 
-                stepIndex, 
-                chunkIndex,
-                deltaLength: delta.length,
-                timestamp: Date.now() 
-            });
-        },
-        onLLMTextDone: (stepIndex, chunkIndex, text) => {
-            events.push({ 
-                type: 'llm_text_done', 
-                stepIndex, 
-                chunkIndex,
-                textLength: text.length,
-                timestamp: Date.now() 
-            });
-            console.log(`📝 LLM 文本完成 (步骤 ${stepIndex}): ${text.length} 字符`);
-        },
-        onToolExecutionStart: (toolCall) => {
-            events.push({ 
-                type: 'tool_execution_start', 
-                toolName: toolCall.name,
-                timestamp: Date.now() 
-            });
-            console.log(`🔧 工具执行开始: ${toolCall.name}`);
-        },
-        onToolExecutionEnd: (result) => {
-            events.push({ 
-                type: 'tool_execution_end', 
-                toolName: result.name,
-                status: result.status,
-                executionTime: result.executionTime,
-                timestamp: Date.now() 
-            });
-            console.log(`🔧 工具执行完成: ${result.name} (${result.status}) - ${result.executionTime}ms`);
-            if (result.result) {
-                console.log(`   结果: ${JSON.stringify(result.result, null, 2)}`);
-            }
-        },
-        onAgentStep: (step) => {
-            finalStep = step;
-            events.push({ 
-                type: 'agent_step_complete', 
-                stepIndex: step.stepIndex,
-                textLength: step.rawText?.length || 0,
-                toolCallsCount: step.toolCalls?.length || 0,
-                toolExecutionResultsCount: step.toolExecutionResults?.length || 0,
-                timestamp: Date.now() 
-            });
-            console.log(`🔄 Agent 步骤 ${step.stepIndex} 完成:`);
-            console.log(`  - 响应文本: ${step.rawText?.length || 0} 字符`);
-            console.log(`  - 工具调用: ${step.toolCalls?.length || 0} 个`);
-            console.log(`  - 工具执行结果: ${step.toolExecutionResults?.length || 0} 个`);
-        },
-        onError: (error) => {
-            console.error('❌ Agent 错误:', error);
-            events.push({ type: 'error', error: error.message, timestamp: Date.now() });
-        },
-        loadAgentStorage: async () => null
+    // 监听工具执行相关事件
+    agent.eventBus.subscribe('tool.execution.started', (event) => {
+        const toolCall = (event as any).data?.toolCall;
+        events.push({ 
+            type: 'tool_execution_start', 
+            toolName: toolCall?.name,
+            toolCall: toolCall,
+            timestamp: Date.now() 
+        });
+        console.log(`🔧 工具执行开始: ${toolCall?.name}`);
+        console.log(`🔧 工具调用详情: ${JSON.stringify(toolCall, null, 2)}`);
+    });
+    
+    agent.eventBus.subscribe('tool.execution.completed', (event) => {
+        const result = (event as any).data?.result;
+        events.push({ 
+            type: 'tool_execution_end', 
+            toolName: result?.name,
+            status: result?.status,
+            executionTime: result?.executionTime,
+            timestamp: Date.now() 
+        });
+        console.log(`🔧 工具执行完成: ${result?.name} (${result?.status}) - ${result?.executionTime}ms`);
+        if (result?.result) {
+            console.log(`   结果: ${JSON.stringify(result.result, null, 2)}`);
+        }
+    });
+    
+    agent.eventBus.subscribe('llm.text.completed', (event) => {
+        const text = (event as any).data?.text;
+        events.push({ 
+            type: 'llm_text_done', 
+            stepIndex: event.stepIndex,
+            textLength: text?.length || 0,
+            timestamp: Date.now() 
+        });
+        console.log(`📝 LLM 文本完成 (步骤 ${event.stepIndex}): ${text?.length || 0} 字符`);
+    });
+    
+    agent.eventBus.subscribe('agent.step.completed', (event) => {
+        const step = (event as any).data?.step;
+        finalStep = step;
+        events.push({ 
+            type: 'agent_step_complete', 
+            stepIndex: step?.stepIndex,
+            textLength: step?.rawText?.length || 0,
+            toolCallsCount: step?.toolCalls?.length || 0,
+            toolExecutionResultsCount: step?.toolExecutionResults?.length || 0,
+            timestamp: Date.now() 
+        });
+        console.log(`🔄 Agent 步骤 ${step?.stepIndex} 完成:`);
+        console.log(`  - 响应文本: ${step?.rawText?.length || 0} 字符`);
+        console.log(`  - 工具调用: ${step?.toolCalls?.length || 0} 个`);
+        console.log(`  - 工具执行结果: ${step?.toolExecutionResults?.length || 0} 个`);
+    });
+    
+    agent.eventBus.subscribe('error', (event) => {
+        console.error('❌ Agent 错误:', (event as any).data);
+        events.push({ type: 'error', error: (event as any).data?.message, timestamp: Date.now() });
     });
 
     // 设置 Agent
