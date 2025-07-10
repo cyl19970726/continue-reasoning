@@ -27,7 +27,6 @@ export class SessionManager implements ISessionManager {
     private currentSessionId?: string;
 
     constructor(
-        private client: IClient,
         private agent: any, // 支持StreamAgent或AsyncAgent
         private eventBus: IEventBus
     ) {
@@ -453,6 +452,46 @@ export class SessionManager implements ISessionManager {
             
             throw error;
         }
+    }
+
+    /**
+     * 停止Agent
+     */
+    async stopAgent(): Promise<void> {
+        if (!this.agent) {
+            throw new Error('No agent available to stop');
+        }
+
+        // 检查Agent是否有stop方法
+        if (typeof this.agent.stop === 'function') {
+            this.agent.stop();
+        } else {
+            logger.warn('Agent does not have stop method');
+        }
+
+        logger.info('SessionManager: Agent stopped');
+    }
+
+    /**
+     * 检查Agent是否正在运行
+     */
+    isAgentRunning(): boolean {
+        if (!this.agent) {
+            return false;
+        }
+
+        // 检查Agent是否有isRunning属性
+        if (typeof this.agent.isRunning === 'boolean') {
+            return this.agent.isRunning;
+        }
+
+        // 检查Agent是否有shouldStop属性（相反逻辑）
+        if (typeof this.agent.shouldStop === 'boolean') {
+            return !this.agent.shouldStop;
+        }
+
+        // 默认返回false
+        return false;
     }
 
     /**

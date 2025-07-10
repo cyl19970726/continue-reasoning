@@ -57,41 +57,10 @@ export class AsyncAgent extends BaseAgent {
     ): Promise<void> {
         this.currentSessionId = sessionId || `session_${Date.now()}`;
         
-        // 发布会话开始事件
-        await this.eventPublisher.publishSessionStarted(
-            this.currentSessionId,
-            undefined, // userId - 可以从options中获取
-            this.id    // agentId
-        );
+        // 会话管理事件由 BaseAgent 统一发布，避免重复
         
-        try {
-            // 调用父类的启动逻辑，但不依赖回调
-            await super.startWithUserInput(userInput, maxSteps, this.currentSessionId, options);
-            
-            // 发布会话结束事件
-            await this.eventPublisher.publishSessionEnded(
-                this.currentSessionId,
-                undefined, // userId
-                this.id    // agentId
-            );
-            
-        } catch (error) {
-            // 发布错误事件
-            await this.eventPublisher.publishErrorEvent(
-                error instanceof Error ? error : new Error(String(error)),
-                { userInput, maxSteps, options },
-                this.currentSessionId
-            );
-            
-            // 发布会话结束事件（即使出错也要结束）
-            await this.eventPublisher.publishSessionEnded(
-                this.currentSessionId,
-                undefined, // userId
-                this.id    // agentId
-            );
-            
-            throw error;
-        }
+        // 调用父类的启动逻辑，但不依赖回调
+        await super.startWithUserInput(userInput, maxSteps, this.currentSessionId, options);
     }
 
     /**
@@ -104,8 +73,7 @@ export class AsyncAgent extends BaseAgent {
         continueProcessing: boolean;
         agentStep: AgentStep;
     }> {
-        // 发布步骤开始事件
-        await this.eventPublisher.publishStepStarted(stepIndex, this.currentSessionId);
+        // 步骤开始事件由 BaseAgent 统一发布，避免重复
 
         try {
             // 生成prompt
@@ -161,12 +129,7 @@ export class AsyncAgent extends BaseAgent {
                 toolExecutionResults: this.currentStepData?.toolExecutionResults || []
             };
 
-            // 发布步骤完成事件
-            await this.eventPublisher.publishStepCompleted(
-                stepIndex, 
-                this.currentSessionId, 
-                agentStep
-            );
+            // 事件发布由 BaseAgent 统一处理，避免重复发布
 
             return {
                 continueProcessing: true,
@@ -176,12 +139,7 @@ export class AsyncAgent extends BaseAgent {
         } catch (error) {
             logger.error('Error in AsyncAgentV2 step:', error);
 
-            // 发布步骤失败事件
-            await this.eventPublisher.publishStepFailed(
-                stepIndex,
-                this.currentSessionId,
-                error instanceof Error ? error.message : String(error)
-            );
+            // 步骤失败事件由 BaseAgent 统一发布，避免重复
 
             // add error to prompt
             this.promptProcessor.renderErrorToPrompt(
@@ -343,12 +301,7 @@ export class AsyncAgent extends BaseAgent {
         stepIndex: number
     ): Promise<void> {
         try {
-            // 发布工具执行开始事件
-            await this.eventPublisher.publishToolExecutionStarted(
-                toolCall,
-                stepIndex,
-                this.currentSessionId
-            );
+            // 工具执行事件由 BaseAgent 统一发布，避免重复
 
             // 找到对应的工具
             const tool = this.getActiveTools().find(t => t.name === toolCall.name);
@@ -361,7 +314,7 @@ export class AsyncAgent extends BaseAgent {
                 toolCall,
                 tool,
                 this,
-                undefined, // 不再需要回调
+                this.eventBus, // 不再需要回调
                 this.toolExecutionPriority
             );
 
@@ -373,20 +326,10 @@ export class AsyncAgent extends BaseAgent {
                 this.currentStepData.toolExecutionResults.push(result);
             }
 
-            // 发布工具执行完成事件
-            await this.eventPublisher.publishToolExecutionCompleted(
-                result,
-                stepIndex,
-                this.currentSessionId
-            );
+            // 工具执行完成和失败事件由 BaseAgent 统一发布，避免重复
 
         } catch (error) {
-            // 发布工具执行失败事件
-            await this.eventPublisher.publishToolExecutionFailed(
-                error instanceof Error ? error.message : String(error),
-                stepIndex,
-                this.currentSessionId
-            );
+            // 工具执行失败事件由 BaseAgent 统一发布，避免重复
 
             // 重新抛出错误以保持原有的错误处理逻辑
             throw error;

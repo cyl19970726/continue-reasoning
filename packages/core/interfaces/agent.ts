@@ -35,6 +35,8 @@ export type AgentStorage = {
 /**
  * 🤖 Agent Interface - Core Task Processor
  * Responsibility: Task understanding, tool calling, thinking and reasoning
+ * 
+ * 🆕 Uses EventBus for decoupled communication with Client
  */
 export interface IAgent{
     // Basic properties

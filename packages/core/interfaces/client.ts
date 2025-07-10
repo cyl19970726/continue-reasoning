@@ -1,19 +1,11 @@
-import { ISessionManager } from './session.js';
-import { AgentStep } from './prompt.js';
-import { ToolCallParams, ToolExecutionResult } from './tool.js';
-import { IEventBus } from '../event-bus/index.js';
+import { IEventBus } from './events.js';
+import { AgentStorage } from './agent.js';
+import { ISessionManager, SessionStats } from './session.js';
 
 /**
- * 客户端消息类型
+ * 客户端类型
  */
-export interface ClientMessage {
-    id: string;
-    content: string;
-    type: 'user' | 'agent' | 'system' | 'tool' | 'error';
-    timestamp: number;
-    stepIndex?: number;
-    metadata?: Record<string, any>;
-}
+export type ClientType = 'web' | 'cli' | 'api' | 'react-terminal';
 
 /**
  * 客户端配置
@@ -22,21 +14,10 @@ export interface ClientConfig {
     name?: string;
     userId?: string;
     agentId?: string;
-    sessionId?: string;
-    enableStreaming?: boolean;
-    maxSteps?: number;
-    theme?: 'light' | 'dark';
-    displayOptions?: {
-        showTimestamps?: boolean;
-        showStepNumbers?: boolean;
-        compactMode?: boolean;
-    };
+    debug?: boolean;
+    // 可扩展的配置
+    [key: string]: any;
 }
-
-/**
- * 客户端类型
- */
-export type ClientType = 'readline' | 'react-terminal' | 'web' | 'custom';
 
 /**
  * 客户端状态
@@ -53,44 +34,78 @@ export interface ClientStatus {
 }
 
 /**
- * 通用客户端接口 - 所有客户端实现的核心接口
+ * 客户端消息类型
+ */
+export interface ClientMessage {
+    id: string;
+    content: string;
+    type: 'user' | 'agent' | 'agent.response' | 'agent.reasoning' | 'system' | 'tool' | 'tool.start' | 'tool.completed' | 'error';
+    timestamp: number;
+    stepIndex?: number;
+    metadata?: Record<string, any>;
+}
+
+// 移除重复的接口定义，从session.ts中导入
+
+/**
+ * 统一的客户端接口 - 基于事件驱动架构
+ * 通过SessionManager与Agent交互，不直接管理Agent
  */
 export interface IClient {
-    // 基本属性
+    // ==================== 基本属性 ====================
     readonly name: string;
     readonly type: ClientType;
     currentSessionId?: string;
+    
+    // ==================== 核心依赖 ====================
+    // Session Manager for agent interaction
     sessionManager?: ISessionManager;
     
     // Event Bus for event-driven architecture
     eventBus?: IEventBus;
     
-    // 核心方法
+    // ==================== 生命周期管理 ====================
     initialize?(config: ClientConfig): Promise<void>;
     start?(): Promise<void>;
     stop?(): Promise<void>;
     
-    // Session management
+    // ==================== Session Manager 管理 ====================
+    // 设置Session Manager实例
     setSessionManager(sessionManager: ISessionManager): void;
-    createSession?(userId?: string, agentId?: string): string | undefined;
-    switchSession?(sessionId: string): void;
-    newSession(): void;
     
+    // ==================== Agent通信 (通过SessionManager) ====================
+    // Agent通信 - 委托给SessionManager
+    sendMessageToAgent(message: string): Promise<void>;
+    
+    // ==================== 会话管理 (委托给SessionManager) ====================
+    // 会话操作
+    createSession(userId?: string, agentId?: string): string;
+    switchSession(sessionId: string): Promise<void>;
+    deleteSession(sessionId: string): Promise<void>;
+    
+    // 会话状态管理
+    loadSession(sessionId: string): Promise<AgentStorage | null>;
+    saveSession(sessionId: string, storage: AgentStorage): Promise<void>;
+    
+    // 会话查询
+    getCurrentSessionId(): string | undefined;
+    listSessions(): Promise<AgentStorage[]>;
+    getSessionStats(): Promise<SessionStats>;
+    
+    // ==================== 事件管理 ====================
     // Event Bus setup
     setEventBus(eventBus: IEventBus): void;
     
-    // Streaming mode check
+    // ==================== 消息管理 ====================
+    // 流式模式检查
     isStreamingMode(): boolean;
-
-    // Communication
-    sendMessageToAgent(message: string): Promise<void>;
     
-    // 消息管理 (可选实现)
+    // 消息管理
     addMessage?(message: ClientMessage): void;
     clearMessages?(): void;
     getMessages?(): ClientMessage[];
     
-    // Status
+    // ==================== 状态查询 ====================
     getStatus(): ClientStatus;
 }
 

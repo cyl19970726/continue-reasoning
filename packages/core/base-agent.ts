@@ -326,9 +326,18 @@ export abstract class BaseAgent implements IAgent {
         await this.contextManager.setup();
         logger.info(`✅ ContextManager initialized with ${this.contextManager.contextList().length} contexts`);
 
+        // 从 contexts 中提取 toolSets 并添加到 agent
+        await this.initializeToolSetsFromContexts();
+
         // 初始化 Task Queue
         await this.taskQueue.start();
         logger.info(`✅ Task Queue started with concurrency: ${this.taskQueue.getConcurrency()}`);
+
+        // 设置初始系统提示
+        const tools = this.getActiveTools();
+        const systemPrompt = this.getBaseSystemPrompt(tools);
+        this.promptProcessor.updateSystemPrompt(systemPrompt);
+        logger.info(`✅ System prompt initialized (${systemPrompt.length} chars)`);
 
         await this.changeState('idle', 'Agent setup completed');
         
@@ -344,6 +353,49 @@ export abstract class BaseAgent implements IAgent {
         });
 
         logger.info(`✅ Agent setup completed for ${this.name}`);
+    }
+
+    /**
+     * 从 contexts 中提取 toolSet 并添加到 agent
+     */
+    private async initializeToolSetsFromContexts(): Promise<void> {
+        const contexts = this.contextManager.contextList();
+        let totalTools = 0;
+        
+        for (const context of contexts) {
+            try {
+                // 检查 context 是否有 toolSet 或 toolSetFn 方法
+                let toolSet = null;
+                
+                if (typeof (context as any).toolSetFn === 'function') {
+                    toolSet = (context as any).toolSetFn();
+                } else if (typeof (context as any).toolSet === 'function') {
+                    toolSet = (context as any).toolSet();
+                } else if ((context as any).toolSet) {
+                    toolSet = (context as any).toolSet;
+                }
+                
+                if (toolSet) {
+                    // 如果是数组，遍历添加
+                    if (Array.isArray(toolSet)) {
+                        for (const ts of toolSet) {
+                            this.addToolSet(ts);
+                            totalTools += ts.tools?.length || 0;
+                        }
+                    } else {
+                        // 单个 toolSet
+                        this.addToolSet(toolSet);
+                        totalTools += toolSet.tools?.length || 0;
+                    }
+                    
+                    logger.debug(`✅ Added toolSet from context ${context.id}: ${toolSet.name || 'unnamed'}`);
+                }
+            } catch (error) {
+                logger.error(`❌ Error extracting toolSet from context ${context.id}:`, error);
+            }
+        }
+        
+        logger.info(`✅ Initialized ${this.toolSets.length} toolSets with ${totalTools} total tools from ${contexts.length} contexts`);
     }
 
     async changeState(newState: AgentStatus, reason?: string): Promise<void> {
@@ -418,6 +470,13 @@ export abstract class BaseAgent implements IAgent {
 
         // 重置 promptProcessor
         this.promptProcessor.resetPromptProcessor();
+        
+        // 设置系统提示 - 这是关键的修复！
+        const tools = this.getActiveTools();
+        const systemPrompt = this.getBaseSystemPrompt(tools);
+        this.promptProcessor.updateSystemPrompt(systemPrompt);
+        
+        logger.info(`🔧 System prompt updated (${systemPrompt.length} chars)`);
 
         // 添加用户输入到聊天历史
         this.promptProcessor.chatHistory.push({
@@ -434,8 +493,38 @@ export abstract class BaseAgent implements IAgent {
 
         logger.info(`🚀 Starting agent execution with maxSteps: ${maxSteps}, currentStep: ${this.currentStep}`);
 
-        // 开始执行步骤循环
-        await this.stepsLoop(userInput, maxSteps, options);
+        // 发布会话开始事件
+        if (this.eventPublisher) {
+            await this.eventPublisher.publishSessionStarted(
+                this.sessionId,
+                this.id
+            );
+        }
+
+        try {
+            // 开始执行步骤循环
+            await this.stepsLoop(userInput, maxSteps, options);
+        } catch (error) {
+            logger.error('❌ Agent execution failed:', error);
+            
+            // 发布错误事件
+            if (this.eventPublisher) {
+                await this.eventPublisher.publishErrorEvent(
+                    error instanceof Error ? error : new Error(String(error)),
+                    'Agent execution failed'
+                );
+            }
+            
+            // 发布会话结束事件
+            if (this.eventPublisher) {
+                await this.eventPublisher.publishSessionEnded(
+                    this.sessionId,
+                    this.id
+                );
+            }
+            
+            throw error;
+        }
 
         // 在所有步骤完成后，一次性保存所有步骤的prompt
         if (options?.savePromptPerStep && this.promptProcessor) {
@@ -444,6 +533,14 @@ export abstract class BaseAgent implements IAgent {
 
         logger.info('✅ Agent execution completed successfully');
         await this.changeState('idle', 'Task processing completed');
+        
+        // 发布会话结束事件
+        if (this.eventPublisher) {
+            await this.eventPublisher.publishSessionEnded(
+                this.sessionId,
+                this.id
+            );
+        }
     }
 
     private async stepsLoop(userInput: string, maxSteps: number, _options?: {
@@ -455,28 +552,60 @@ export abstract class BaseAgent implements IAgent {
         while (this.currentStep < maxSteps && !this.shouldStop) {
             logger.info(`\n🔄 --- Step ${this.currentStep}/${maxSteps} ---`);
             
+            // 发布步骤开始事件
+            if (this.eventPublisher) {
+                await this.eventPublisher.publishStepStarted(
+                    this.currentStep,
+                    this.sessionId
+                );
+            }
+            
             // 使用PromptProcessor处理此步骤
-            const result = await this.processStep(
-                userInput,
-                this.currentStep,
-            );
-            agentSteps.push(result.agentStep);
+            try {
+                const result = await this.processStep(
+                    userInput,
+                    this.currentStep,
+                );
+                agentSteps.push(result.agentStep);
 
-            // 发布Agent步骤完成事件
-            this.eventBus.publish({
-                type: 'agent.step.completed',
-                timestamp: Date.now(),
-                source: `agent.${this.id}`,
-                stepIndex: this.currentStep,
-                data: {
-                    step: result.agentStep,
-                    sessionId: this.sessionId
+                // 发布Agent步骤完成事件
+                this.eventBus.publish({
+                    type: 'agent.step.completed',
+                    timestamp: Date.now(),
+                    source: `agent.${this.id}`,
+                    stepIndex: this.currentStep,
+                    data: {
+                        step: result.agentStep,
+                        sessionId: this.sessionId
+                    }
+                });
+
+                if (!result.continueProcessing) {
+                    logger.info(`✅ Agent decided to stop at step ${this.currentStep}`);
+                    break;
                 }
-            });
-
-            if (!result.continueProcessing) {
-                logger.info(`✅ Agent decided to stop at step ${this.currentStep}`);
-                break;
+            } catch (error) {
+                logger.error(`❌ Step ${this.currentStep} failed:`, error);
+                
+                // 发布步骤失败事件
+                if (this.eventPublisher) {
+                    await this.eventPublisher.publishStepFailed(
+                        this.currentStep,
+                        this.sessionId,
+                        error instanceof Error ? error.message : String(error)
+                    );
+                }
+                
+                // 发布通用错误事件
+                if (this.eventPublisher) {
+                    await this.eventPublisher.publishErrorEvent(
+                        error instanceof Error ? error : new Error(String(error)),
+                        `Step ${this.currentStep} processing failed`
+                    );
+                }
+                
+                // 根据错误类型决定是否继续
+                throw error;
             }
 
             this.currentStep++;

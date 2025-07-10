@@ -1,5 +1,5 @@
 import { logger } from "../utils/logger.js";
-import { AgentStep, IClient, ISessionManager, ToolCallParams, ToolExecutionResult, ClientStatus, ClientType, AgentStorage, ClientConfig } from "../interfaces/index.js";
+import { AgentStep, IClient, ISessionManager, ToolCallParams, ToolExecutionResult, ClientStatus, ClientType, AgentStorage, ClientConfig, SessionStats } from "../interfaces/index.js";
 import { IEventBus } from "../event-bus/index.js";
 
 /**
@@ -7,7 +7,7 @@ import { IEventBus } from "../event-bus/index.js";
  */
 export class SimpleClient implements IClient {
     readonly name: string;
-    readonly type: ClientType = 'custom';
+    readonly type: ClientType = 'cli';
     currentSessionId?: string;
     sessionManager?: ISessionManager;
     eventBus?: IEventBus;
@@ -68,10 +68,10 @@ export class SimpleClient implements IClient {
         logger.info(`EventBus set for SimpleClient ${this.name}`);
     }
 
-    createSession(userId?: string, agentId?: string): string | undefined {
+    createSession(userId?: string, agentId?: string): string {
         if (!this.sessionManager) {
             logger.error('SessionManager not available');
-            return undefined;
+            throw new Error('SessionManager not available');
         }
         
         const sessionId = this.sessionManager.createSession(userId, agentId);
@@ -80,24 +80,76 @@ export class SimpleClient implements IClient {
         return sessionId;
     }
 
-    switchSession(sessionId: string): void {
+    async switchSession(sessionId: string): Promise<void> {
         if (!this.sessionManager) {
             logger.error('SessionManager not available');
-            return;
+            throw new Error('SessionManager not available');
         }
         
-        this.sessionManager.switchSession(sessionId).then(() => {
-            this.currentSessionId = sessionId;
-            logger.info(`Switched to session: ${sessionId}`);
-        }).catch(error => {
-            logger.error('Failed to switch session:', error);
-        });
+        await this.sessionManager.switchSession(sessionId);
+        this.currentSessionId = sessionId;
+        logger.info(`Switched to session: ${sessionId}`);
     }
 
-    newSession(): void {
+    async deleteSession(sessionId: string): Promise<void> {
+        if (!this.sessionManager) {
+            throw new Error('SessionManager not available');
+        }
+        
+        await this.sessionManager.deleteSession(sessionId);
+        
+        // 如果删除的是当前会话，清除当前会话ID
+        if (this.currentSessionId === sessionId) {
+            this.currentSessionId = undefined;
+        }
+        
+        logger.info(`Deleted session: ${sessionId}`);
+    }
+
+    async loadSession(sessionId: string): Promise<AgentStorage | null> {
+        if (!this.sessionManager) {
+            return null;
+        }
+        
+        return await this.sessionManager.loadSession(sessionId);
+    }
+
+    async saveSession(sessionId: string, storage: AgentStorage): Promise<void> {
+        if (!this.sessionManager) {
+            throw new Error('SessionManager not available');
+        }
+        
+        await this.sessionManager.saveSession(sessionId, storage);
+    }
+
+    getCurrentSessionId(): string | undefined {
+        return this.currentSessionId;
+    }
+
+    async listSessions(): Promise<AgentStorage[]> {
+        if (!this.sessionManager) {
+            return [];
+        }
+        
+        return await this.sessionManager.listSessions();
+    }
+
+    async getSessionStats(): Promise<SessionStats> {
+        if (!this.sessionManager) {
+            return {
+                totalSessions: 0,
+                activeSessions: 0,
+                currentSessionId: this.currentSessionId
+            };
+        }
+        
+        return await this.sessionManager.getSessionStats();
+    }
+
+    async newSession(): Promise<void> {
         const sessionId = this.createSession();
         if (sessionId) {
-            this.switchSession(sessionId);
+            await this.switchSession(sessionId);
         }
     }
 

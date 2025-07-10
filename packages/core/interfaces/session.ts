@@ -26,6 +26,10 @@ export interface ISessionManager {
     // 消息发送 (向后兼容)
     sendMessageToAgent(message: string, maxSteps: number, sessionId?: string): Promise<void>;
     
+    // Agent控制
+    stopAgent(): Promise<void>;
+    isAgentRunning(): boolean;
+    
     // 资源清理
     dispose(): void;
 }

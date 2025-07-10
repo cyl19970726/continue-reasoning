@@ -1,10 +1,8 @@
 import { z } from 'zod';
-import { createTool } from '@continue-reasoning/core';
-import { IAgent } from '@continue-reasoning/core';
-import { ContextHelper } from '@continue-reasoning/core';
-import { PromptCtx } from '@continue-reasoning/core';
 import { v4 as uuidv4 } from 'uuid';
-import { logger } from '@continue-reasoning/core';
+import { createTool, ContextHelper, logger } from '../../../core/utils/index.js';
+import { IAgent } from '../../../core/interfaces/index.js';
+import { PromptCtx } from '../../../core/interfaces/index.js';
 
 // ===== 交互上下文定义 =====
 

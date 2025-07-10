@@ -168,6 +168,7 @@ export class ToolExecutor {
     private async executeToolInternal(executionTask: ToolExecutionTask): Promise<ToolExecutionResult> {
         const { toolCall, tool, agent, eventBus, startTime } = executionTask;
         
+        console.log('[[[toolCall:]]]', toolCall);
         try {
             // 标记任务开始执行
             this.runningTasks.set(executionTask.id, executionTask);

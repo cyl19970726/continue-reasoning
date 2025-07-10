@@ -57,41 +57,10 @@ export class StreamAgent extends BaseAgent {
     ): Promise<void> {
         this.currentSessionId = sessionId || `session_${Date.now()}`;
         
-        // 发布会话开始事件
-        await this.eventPublisher.publishSessionStarted(
-            this.currentSessionId,
-            undefined, // userId - 可以从options中获取
-            this.id    // agentId
-        );
+        // 会话管理事件由 BaseAgent 统一发布，避免重复
         
-        try {
-            // 调用父类的启动逻辑，但不依赖回调
-            await super.startWithUserInput(userInput, maxSteps, this.currentSessionId, options);
-            
-            // 发布会话结束事件
-            await this.eventPublisher.publishSessionEnded(
-                this.currentSessionId,
-                undefined, // userId
-                this.id    // agentId
-            );
-            
-        } catch (error) {
-            // 发布错误事件
-            await this.eventPublisher.publishErrorEvent(
-                error instanceof Error ? error : new Error(String(error)),
-                { userInput, maxSteps, options },
-                this.currentSessionId
-            );
-            
-            // 发布会话结束事件（即使出错也要结束）
-            await this.eventPublisher.publishSessionEnded(
-                this.currentSessionId,
-                undefined, // userId
-                this.id    // agentId
-            );
-            
-            throw error;
-        }
+        // 调用父类的启动逻辑，但不依赖回调
+        await super.startWithUserInput(userInput, maxSteps, this.currentSessionId, options);
     }
 
     /**
@@ -104,13 +73,13 @@ export class StreamAgent extends BaseAgent {
         continueProcessing: boolean;
         agentStep: AgentStep;
     }> {
-        // 发布步骤开始事件
-        await this.eventPublisher.publishStepStarted(stepIndex, this.currentSessionId);
+        // 步骤开始事件由 BaseAgent 统一发布，避免重复
 
         try {
             // 生成prompt
             const prompt = await this.promptProcessor.formatPrompt(stepIndex);
             logger.debug('Generated prompt', { length: prompt.length });
+            // logger.debug('Generated prompt', {prompt});
 
             // 获取工具定义
             const toolDefs = this.promptProcessor.enableToolCallsForStep(stepIndex)
@@ -128,45 +97,11 @@ export class StreamAgent extends BaseAgent {
             }
 
             // 执行流式调用
-            await this.processStreamResponse(prompt, toolDefs, stepIndex);
+            let agentStep = await this.processStreamResponse(prompt, toolDefs, stepIndex);
             
-            // 等待 LLM 调用完成和工具执行完成
-            let waitCount = 0;
-            const maxWait = 300; // 30秒超时
-            
-            while ((!this.currentStepData || !this.currentStepData.isComplete) && waitCount < maxWait) {
-                await new Promise(resolve => setTimeout(resolve, 100));
-                waitCount++;
-            }
-            
-            if (waitCount >= maxWait) {
-                logger.warn(`[StreamAgentV2] 步骤 ${stepIndex} 超时，强制继续`);
-            }
-            
-            // 构建结果
-            const rawText = this.currentStepData?.rawText || '';
-            const toolCallsCount = this.currentStepData?.toolCalls?.length || 0;
-            
-            logger.debug(`[StreamAgentV2] 步骤 ${stepIndex} 完成: 文本长度 ${rawText.length}, 工具调用 ${toolCallsCount} 个`);
-
-            // 创建AgentStep
-            const agentStep: AgentStep<any> = {
-                stepIndex: stepIndex,
-                rawText: rawText,
-                toolCalls: this.currentStepData?.toolCalls?.map(call => ({
-                    name: call.name,
-                    call_id: call.call_id,
-                    params: call.params
-                })) || [],
-                toolExecutionResults: this.currentStepData?.toolExecutionResults || []
-            };
-
-            // 发布步骤完成事件
-            await this.eventPublisher.publishStepCompleted(
-                stepIndex, 
-                this.currentSessionId, 
-                agentStep
-            );
+           
+            logger.debug('[StreamAgentV2] agentStep completed:', agentStep);
+            // 事件发布由 BaseAgent 统一处理，避免重复发布
 
             return {
                 continueProcessing: true,
@@ -176,12 +111,7 @@ export class StreamAgent extends BaseAgent {
         } catch (error) {
             logger.error('Error in StreamAgentV2 step:', error);
 
-            // 发布步骤失败事件
-            await this.eventPublisher.publishStepFailed(
-                stepIndex,
-                this.currentSessionId,
-                error instanceof Error ? error.message : String(error)
-            );
+            // 步骤失败事件由 BaseAgent 统一发布，避免重复
 
             // add error to prompt
             this.promptProcessor.renderErrorToPrompt(
@@ -209,7 +139,7 @@ export class StreamAgent extends BaseAgent {
         prompt: string,
         toolDefs: any[],
         stepIndex: number
-    ): Promise<void> {
+    ): Promise<AgentStep<any>> {
         const llmEvents = LLMEventMapper.createStreamCallEvents(
             stepIndex,
             this.currentSessionId,
@@ -244,15 +174,10 @@ export class StreamAgent extends BaseAgent {
             }
 
             // 处理步骤完成
-            await this.handleStepCompletion();
-
-            // 发布LLM调用完成事件
-            await this.eventBus.publish(llmEvents.completed({
-                text: this.currentStepData.rawText,
-                toolCalls: this.currentStepData.toolCalls
-            }));
+            let currentStep = await this.handleStepCompletion();
 
             logger.debug(`[StreamAgentV2] 流式处理完成步骤 ${stepIndex}`);
+            return currentStep;
 
         } catch (error) {
             logger.error(`[StreamAgentV2] 流式处理失败步骤 ${stepIndex}:`, error);
@@ -290,12 +215,15 @@ export class StreamAgent extends BaseAgent {
             // 处理不同类型的事件
             switch (event.type) {
                 case 'llm.text.delta':
-                    if (event.data?.content) {
-                        this.currentStepData.rawText += event.data.content;
-                    }
+                    // if (event.data?.content) {
+                    //     this.currentStepData.rawText += event.data.content;
+                    // }
                     break;
                     
                 case 'llm.tool.call.started':
+                    break;
+                
+                case 'llm.tool.call.completed':
                     if (event.data?.toolCall) {
                         // 添加工具调用到当前步骤
                         this.currentStepData.toolCalls!.push({
@@ -309,14 +237,11 @@ export class StreamAgent extends BaseAgent {
                         this.currentStepData.toolExecutionPromises.push(toolPromise);
                     }
                     break;
-                    
+
                 case 'llm.text.completed':
-                    // 流式文本完成，等待所有工具调用完成
-                    if (this.currentStepData.toolExecutionPromises.length > 0) {
-                        logger.debug(`[StreamAgentV2] 等待 ${this.currentStepData.toolExecutionPromises.length} 个工具调用完成...`);
-                        await Promise.all(this.currentStepData.toolExecutionPromises);
-                        logger.debug(`[StreamAgentV2] 所有工具调用已完成`);
-                    }
+                    // 流式文本完成，只标记文本完成状态
+                    logger.debug('[[[llm.text.completed]]]', event.data.content);
+                    this.currentStepData.rawText = event.data.content;
                     break;
             }
         }
@@ -325,12 +250,19 @@ export class StreamAgent extends BaseAgent {
     /**
      * 处理步骤完成 - 事件驱动版本
      */
-    private async handleStepCompletion(): Promise<void> {
+    private async handleStepCompletion(): Promise<AgentStep<any>> {
         if (!this.currentStepData) {
-            return;
+            throw new Error('[StreamAgentV2] handleStepCompletion: currentStepData is null');
         }
 
         const { stepIndex, rawText, toolCalls } = this.currentStepData;
+        
+        // 等待所有工具调用完成
+        if (this.currentStepData.toolExecutionPromises.length > 0) {
+            logger.debug(`[StreamAgentV2] 等待 ${this.currentStepData.toolExecutionPromises.length} 个工具调用完成...`);
+            await Promise.all(this.currentStepData.toolExecutionPromises);
+            logger.debug(`[StreamAgentV2] 所有工具调用已完成`);
+        }
         
         logger.debug(`[StreamAgentV2] 处理步骤 ${stepIndex} 完成: 文本长度 ${rawText?.length || 0}, 工具调用 ${toolCalls?.length || 0} 个`);
         
@@ -348,24 +280,19 @@ export class StreamAgent extends BaseAgent {
         
         // 提取结果并处理文本内容
         const extractorResult = this.promptProcessor.textExtractor(rawText || '');
+        logger.debug('[StreamAgentV2] ExtractorResult:', extractorResult);
         currentStep.extractorResult = extractorResult;
         
-        // 使用 PromptProcessor 处理步骤结果（文本部分）
+        // 使用 PromptProcessor 处理步骤结果（文本部分+ToolResult）
         this.promptProcessor.processStepResult(currentStep);
-        
-        // 如果有工具调用结果，处理工具调用结果
-        if (this.currentStepData.toolExecutionResults && this.currentStepData.toolExecutionResults.length > 0) {
-            // 使用 PromptProcessor 处理工具调用结果
-            this.promptProcessor.renderToolCallToPrompt(currentStep.toolExecutionResults, stepIndex);
-            
-            logger.debug(`[StreamAgentV2] 处理了 ${this.currentStepData.toolExecutionResults.length} 个工具调用结果`);
-        }
         
         // 标记步骤完成
         this.currentStepData.isComplete = true;
         
         // 注意：这里不再通过回调发送步骤完成，而是在processStep中发布事件
         logger.debug(`[StreamAgentV2] 步骤 ${stepIndex} 处理完成`);
+
+        return currentStep;
     }
 
     /**
@@ -376,12 +303,7 @@ export class StreamAgent extends BaseAgent {
         stepIndex: number
     ): Promise<void> {
         try {
-            // 发布工具执行开始事件
-            await this.eventPublisher.publishToolExecutionStarted(
-                toolCall,
-                stepIndex,
-                this.currentSessionId
-            );
+            // 工具执行事件由 BaseAgent 统一发布，避免重复
 
             // 找到对应的工具
             const tool = this.getActiveTools().find(t => t.name === toolCall.name);
@@ -394,7 +316,7 @@ export class StreamAgent extends BaseAgent {
                 toolCall,
                 tool,
                 this,
-                undefined, // 不再需要回调
+                this.eventBus,
                 this.toolExecutionPriority
             );
 
@@ -406,20 +328,10 @@ export class StreamAgent extends BaseAgent {
                 this.currentStepData.toolExecutionResults.push(result);
             }
 
-            // 发布工具执行完成事件
-            await this.eventPublisher.publishToolExecutionCompleted(
-                result,
-                stepIndex,
-                this.currentSessionId
-            );
+            // 工具执行完成和失败事件由 BaseAgent 统一发布，避免重复
 
         } catch (error) {
-            // 发布工具执行失败事件
-            await this.eventPublisher.publishToolExecutionFailed(
-                error instanceof Error ? error.message : String(error),
-                stepIndex,
-                this.currentSessionId
-            );
+            // 工具执行失败事件由 BaseAgent 统一发布，避免重复
 
             // 重新抛出错误以保持原有的错误处理逻辑
             throw error;
