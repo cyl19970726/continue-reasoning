@@ -2,7 +2,7 @@ import { IContext, ITool, IAgent, ToolExecutionResult, ToolSet as ToolSetInterfa
 import { z } from 'zod';
 import { logger } from '@continue-reasoning/core';
 import { createTool } from '@continue-reasoning/core';
-import { EditingStrategyToolSet } from './toolsets/index.js';
+import { EditingStrategyToolSet, ExcludeChatHistoryTool } from './toolsets/index.js';
 import { ContextHelper } from '@continue-reasoning/core';
 import { IRuntime } from './runtime/interface.js';
 import { NodeJsSandboxedRuntime } from './runtime/impl/node-runtime.js';
@@ -325,6 +325,7 @@ export function createCodingContext(workspacePath: string): ICodingContext {
       const allTools: ITool<any, any, IAgent>[] = [
         TodoUpdateTool,
         AgentStopTool,
+        ExcludeChatHistoryTool,
         ...EditingStrategyToolSet,
         ...NoEditToolSet,
         ...workspaceTools,

@@ -104,30 +104,27 @@ export class EnhancedPromptProcessor
         reasoning?: string;
     }, stepIndex: number): void {
         if (thinking.analysis) {
-            this.chatHistory.push({
+            this.chatHistoryManager.addMessage({
                 role: 'agent',
                 type: MessageType.ANALYSIS,
                 step: stepIndex,
-                content: thinking.analysis,
-                timestamp: new Date().toISOString()
+                content: thinking.analysis
             });
         }
         if (thinking.plan) {
-            this.chatHistory.push({
+            this.chatHistoryManager.addMessage({
                 role: 'agent',
                 type: MessageType.PLAN,
                 step: stepIndex,
-                content: thinking.plan,
-                timestamp: new Date().toISOString()
+                content: thinking.plan
             });
         }
         if (thinking.reasoning) {
-            this.chatHistory.push({
+            this.chatHistoryManager.addMessage({
                 role: 'agent',  
                 type: MessageType.REASONING,
                 step: stepIndex,
-                content: thinking.reasoning,
-                timestamp: new Date().toISOString()
+                content: thinking.reasoning
             });
         }
     }
@@ -140,12 +137,11 @@ export class EnhancedPromptProcessor
         stopSignal?: boolean;
     }, stepIndex: number): void {
         if (interactive.response) {
-            this.chatHistory.push({
+            this.chatHistoryManager.addMessage({
                 role: 'agent',
                 type: MessageType.RESPONSE,
                 step: stepIndex,
-                content: interactive.response,
-                timestamp: new Date().toISOString()
+                content: interactive.response
             });
         }
         

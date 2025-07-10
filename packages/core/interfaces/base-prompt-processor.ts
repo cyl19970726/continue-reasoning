@@ -19,7 +19,6 @@ export abstract class BasePromptProcessor<TExtractorResult extends ExtractorResu
     type: 'standard' | 'enhanced';
     systemPrompt: string = '';
     currentPrompt: string = '';
-    chatHistory: ChatMessage[] = [];
     stopSignal: boolean | null = null;
 
     constructor(type: 'standard' | 'enhanced', chatHistoryConfig?: Partial<ChatHistoryConfig>) {
@@ -46,10 +45,20 @@ export abstract class BasePromptProcessor<TExtractorResult extends ExtractorResu
      */
     renderChatMessageToPrompt(messages: ChatMessage[]): void {
         messages.forEach(message => {
-            if (!message.type) {
-                message.type = MessageType.MESSAGE;
+            // If message already has id and timestamp, add it directly
+            if (message.id && message.timestamp) {
+                // For messages that already exist (like from external sources)
+                this.chatHistoryManager.addCompleteMessage(message);
+            } else {
+                // For new messages, use addMessage to generate id and timestamp
+                this.chatHistoryManager.addMessage({
+                    role: message.role,
+                    type: message.type || MessageType.MESSAGE,
+                    step: message.step,
+                    content: message.content,
+                    flag: message.flag
+                });
             }
-            this.chatHistory.push(message);
         });
     }
         
@@ -71,12 +80,11 @@ export abstract class BasePromptProcessor<TExtractorResult extends ExtractorResu
     </tool_call_result>`
             ).join('\n');
     
-            this.chatHistory.push({
+            this.chatHistoryManager.addMessage({
                 role: 'agent',
                 step: stepIndex,
                 type: MessageType.TOOL_CALL,
-                content: toolResultsText,
-                timestamp: new Date().toISOString()
+                content: toolResultsText
             });
         }
         
@@ -110,11 +118,15 @@ export abstract class BasePromptProcessor<TExtractorResult extends ExtractorResu
     }
 
     getChatHistory(): ChatMessage[] {
-        return this.chatHistory;
+        return this.chatHistoryManager.getChatHistory();
+    }
+
+    getChatHistoryManager(): IChatHistoryManager {
+        return this.chatHistoryManager;
     }
 
     resetPromptProcessor(): void {
-        this.chatHistory = [];
+        this.chatHistoryManager.clearChatHistory();
         this.stopSignal = null;
         this.currentPrompt = '';
         this.stepPrompts = [];
@@ -168,15 +180,35 @@ export abstract class BasePromptProcessor<TExtractorResult extends ExtractorResu
         }
         
         // 2. ExecutionHistory (ChatHistory List) - Now with filtering
-        if (this.chatHistory.length > 0) {
-            // Filter chat history based on current step and configuration
-            const filteredHistory = this.chatHistoryManager.filterChatHistory(this.chatHistory, stepIndex);
-            
+        const chatHistory = this.chatHistoryManager.getChatHistory();
+        if (chatHistory.length > 0) {
+            // Get filtered chat history
+            const filteredHistory = this.chatHistoryManager.getFilteredChatHistory(stepIndex);
+
             if (filteredHistory.length > 0) {
-                prompt += '\n# Execution History\n';
+                prompt += `
+# ChatHistory Context\n
+
+## Context Management with excludeChatHistory
+
+You have access to the excludeChatHistory tool to manage your ChatHistory context. Use this tool to:
+
+- Remove redundant, repetitive, outdated, irrelevant messages that add noise.
+
+**Example usage:**
+When you notice multiple similar error messages or outdated implementation attempts, use:
+excludeChatHistory({ messageIds: ["id1", "id2", "id3"], reason: "Outdated implementation attempts" })
+                
+## ChatHistory Context
+                `;
+
+
+
+
                 filteredHistory.forEach(message => {
                     prompt += `
 <chat_history>
+id: ${message.id}
 role: ${message.role}
 step: ${message.step}
 type: ${message.type}
@@ -206,6 +238,20 @@ timestamp: ${message.timestamp}
         return this.stepPrompts[stepIndex];
     }
 
+    /**
+     * Exclude a chat message by ID
+     */
+    excludeChatHistory(id: string): void {
+        this.chatHistoryManager.excludeChatHistory(id);
+    }
+
+    /**
+     * Exclude multiple chat messages by IDs
+     */
+    excludeChatHistoryBatch(ids: string[]): void {
+        this.chatHistoryManager.excludeChatHistoryBatch(ids);
+    }
+
     getStepPrompts(stepRange?: { start: number; end: number }): string[] {
         if (!stepRange) {
             return [...this.stepPrompts];
@@ -232,12 +278,11 @@ timestamp: ${message.timestamp}
      * Render error to prompt - base implementation
      */
     renderErrorToPrompt(error: string, stepIndex: number): void {
-        this.chatHistory.push({
+        this.chatHistoryManager.addMessage({
             role: 'agent',
             step: stepIndex,
             type: MessageType.ERROR,
-            content: `<error>${error}</error>`,
-            timestamp: new Date().toISOString()
+            content: `<error>${error}</error>`
         });
     }
 
@@ -345,7 +390,7 @@ timestamp: ${message.timestamp}
             data.metadata = {
                 generated: new Date().toISOString(),
                 totalSteps: this.stepPrompts.length,
-                relatedMessages: this.chatHistory.filter(msg => msg.step === stepIndex)
+                relatedMessages: this.chatHistoryManager.getChatHistory().filter(msg => msg.step === stepIndex)
             };
         }
 
@@ -358,7 +403,7 @@ timestamp: ${message.timestamp}
         if (includeMetadata) {
             content += `**Generated:** ${new Date().toISOString()}\n`;
             content += `**Total Steps:** ${this.stepPrompts.length}\n`;
-            content += `**Total Messages:** ${this.chatHistory.length}\n`;
+            content += `**Total Messages:** ${this.chatHistoryManager.getChatHistory().length}\n`;
             content += `**Has Stop Signal:** ${!!this.getStopSignal()}\n\n`;
         }
 
@@ -389,7 +434,7 @@ timestamp: ${message.timestamp}
     protected formatPromptSummaryAsJSON(includeMetadata?: boolean): any {
         const data: any = {
             totalSteps: this.stepPrompts.length,
-            totalMessages: this.chatHistory.length,
+            totalMessages: this.chatHistoryManager.getChatHistory().length,
             hasStopSignal: !!this.getStopSignal(),
             promptLengths: this.stepPrompts.map(p => p.length),
             estimatedTokens: this.stepPrompts.map(p => Math.round(p.length / 4))

@@ -20,6 +20,9 @@ export { BashCommandTool } from './bash.js';
 export { ReadFileTool } from './read.js';
 export const NoEditToolSet = [BashCommandTool, ReadFileTool,GrepTool,GlobTool];
 
+  // Export chat history management tool
+  export { ExcludeChatHistoryTool } from '@continue-reasoning/core';
+
 // Re-export error handling utilities
 export { formatDetailedError, extractErrorInfo, createErrorResponse, logEnhancedError } from './error-utils.js';
 

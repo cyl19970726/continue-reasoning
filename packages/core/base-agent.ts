@@ -28,6 +28,7 @@ import { logger } from "./utils/logger.js";
 import { ContextManager } from "./context.js";
 import { getSystemPromptForMode } from "./prompts/system-prompt.js";
 import { OpenAIChatWrapper } from "./models/openai-chat.js";
+import { randomUUID } from "crypto";
 
 dotenv.config();
 
@@ -479,12 +480,11 @@ export abstract class BaseAgent implements IAgent {
         logger.info(`🔧 System prompt updated (${systemPrompt.length} chars)`);
 
         // 添加用户输入到聊天历史
-        this.promptProcessor.chatHistory.push({
+        this.promptProcessor.getChatHistoryManager().addMessage({
             role: 'user',
             type: MessageType.MESSAGE,
             content: userInput,
-            step: this.currentStep,
-            timestamp: new Date().toISOString()
+            step: this.currentStep
         });
 
         await this.changeState('running', 'Starting task processing');
@@ -747,12 +747,13 @@ export abstract class BaseAgent implements IAgent {
         hasFinalAnswer: boolean;
         finalAnswer: string | null;
     } {
-        const lastResponse = this.promptProcessor.chatHistory
+        const chatHistory = this.promptProcessor.getChatHistory();
+        const lastResponse = chatHistory
             .filter((msg: ChatMessage) => msg.role === 'agent' && msg.type === MessageType.MESSAGE)
             .pop();
         
         return {
-            totalMessages: this.promptProcessor.chatHistory.length,
+            totalMessages: chatHistory.length,
             currentStep: this.currentStep,
             hasFinalAnswer: !!this.promptProcessor.getStopSignal(),
             finalAnswer: lastResponse?.content || null

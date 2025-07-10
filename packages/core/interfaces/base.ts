@@ -48,11 +48,13 @@ export enum MessageType {
  * Chat message type for PromptProcessor history management
  */
 export interface ChatMessage {
+    id: string;                           // Unique identifier for the message
     role: 'user' | 'agent' | 'system';
     type?: MessageType;
     step: number;
     content: string;
     timestamp: string;
+    flag?: 'include' | 'exclude';         // Flag to control message inclusion in history
 }
 
 /**
