@@ -41,6 +41,14 @@ const App: React.FC<AppProps> = ({
 
   // 键盘输入处理
   useInput((input, key) => {
+    // ESC 键 - 停止 Agent
+    if (key.escape) {
+      if (uiState.isProcessing) {
+        client.stopAgent();
+      }
+      return;
+    }
+
     // 退出
     if (key.ctrl && input === 'c') {
       onExit();

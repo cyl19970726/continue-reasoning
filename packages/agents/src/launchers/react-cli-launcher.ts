@@ -37,7 +37,7 @@ export class ReactCLILauncher {
       'A coding agent that works through CLI interface for interactive development',
       this.workspacePath,
       500, // Allow more steps for interactive sessions
-      LogLevel.DEBUG,
+      LogLevel.NONE,
       {
         model: ANTHROPIC_MODELS.CLAUDE_3_7_SONNET_LATEST,
         enableParallelToolCalls: true,

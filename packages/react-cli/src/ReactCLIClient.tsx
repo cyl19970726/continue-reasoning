@@ -252,6 +252,40 @@ export class ReactCLIClient implements IClient {
   }
 
   /**
+   * 停止当前运行的 Agent
+   */
+  async stopAgent(): Promise<void> {
+    if (this.agent && typeof this.agent.stop === 'function') {
+      try {
+        await this.agent.stop();
+        this.addMessage({
+          id: `agent_stop_${Date.now()}`,
+          content: '🛑 Agent execution stopped by user',
+          type: 'system',
+          timestamp: Date.now()
+        });
+      } catch (error) {
+        this.addMessage({
+          id: `agent_stop_error_${Date.now()}`,
+          content: `❌ Failed to stop agent: ${error instanceof Error ? error.message : String(error)}`,
+          type: 'error',
+          timestamp: Date.now()
+        });
+      }
+    } else {
+      this.addMessage({
+        id: `agent_stop_na_${Date.now()}`,
+        content: '⚠️ No running agent to stop',
+        type: 'system',
+        timestamp: Date.now()
+      });
+    }
+    
+    // 更新 UI 状态
+    this.updateUIState({ isProcessing: false });
+  }
+
+  /**
    * 设置事件总线
    */
   setEventBus(eventBus: IEventBus): void {
@@ -916,8 +950,10 @@ export class ReactCLIClient implements IClient {
 • Type your questions or coding tasks directly
 • Use triple backticks to enter multiline mode
 • Press Ctrl+C to cancel current input
+• Press ESC to stop running agent
 
 ⌨️ Keyboard Shortcuts:
+• ESC             Stop running agent
 • Ctrl+H          Toggle help panel
 • Ctrl+L          Clear messages
 • Ctrl+K          Toggle compact mode
@@ -1267,8 +1303,8 @@ export class ReactCLIClient implements IClient {
    */
   private formatToolCompleted(result: any): string {
     const toolName = result.name;
-    const success = result.success;
-    const message = result.message || '';
+    const success = result.result?.success;
+    const message = result.result?.message || '';
     
     // 根据工具类型进行特殊格式化
     switch (toolName) {
@@ -1406,7 +1442,7 @@ export class ReactCLIClient implements IClient {
       // 只在配置允许时显示工具完成消息
       if (this.config.eventDisplay?.tool?.showCompleted) {
         // 修复数据结构问题 - 检查result的结构
-        const result = event.data.result.result || event.data.result;
+        const result = event.data.result;
         const formattedContent = this.formatToolCompleted(result);
         
         const message: ClientMessage = {
