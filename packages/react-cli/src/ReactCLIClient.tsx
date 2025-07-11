@@ -1301,10 +1301,11 @@ export class ReactCLIClient implements IClient {
   /**
    * 格式化工具完成消息
    */
-  private formatToolCompleted(result: any): string {
-    const toolName = result.name;
-    const success = result.result?.success;
-    const message = result.result?.message || '';
+  private formatToolCompleted(toolExecutionResult: any): string {
+    const toolName = toolExecutionResult.name;
+    const result = toolExecutionResult.result;
+    const success = result.success;
+    const message = result.message || '';
     
     // 根据工具类型进行特殊格式化
     switch (toolName) {
@@ -1317,13 +1318,22 @@ export class ReactCLIClient implements IClient {
         // editing-strategy-tools: 显示 success, message, diff
         let content = `${success ? '✅' : '❌'} **${toolName}**\n📄 ${message}`;
         
+        if (result.path) {
+          // 限制diff显示在100行以内
+          const path = result.path;
+          
+          content += `📋 **Path:**\`\`\`\n${path}`;
+        
+          content += '\n```';
+        }
+
         if (result.diff) {
           // 限制diff显示在100行以内
-          const diffLines = result.diff.split('\n');
+          const diffLines = result.result.diff.split('\n');
           const limitedDiff = diffLines.slice(0, 100).join('\n');
           const hasMore = diffLines.length > 100;
           
-          content += `\n\n📋 **Diff:**\n\`\`\`diff\n${limitedDiff}`;
+          content += `\n📋 **Diff:**\n\`\`\`diff\n${limitedDiff}`;
           if (hasMore) {
             content += `\n... (${diffLines.length - 100} more lines)`;
           }
