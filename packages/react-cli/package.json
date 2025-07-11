@@ -1,6 +1,6 @@
 {
   "name": "@continue-reasoning/react-cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "React-based CLI client for Continue Reasoning agent interaction",
   "type": "module",
   "main": "dist/index.js",

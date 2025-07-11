@@ -1292,6 +1292,35 @@ export class ReactCLIClient implements IClient {
         const command = params.command || 'Unknown command';
         return `🔧 **Bash Command**\n📋 Call ID: ${callId}\n💻 **Command**: ${command}`;
         
+      case 'ReadFile':
+        // ReadFile工具：显示路径
+        const readPath = params.path || 'N/A';
+        const startLine = params.startLine;
+        const endLine = params.endLine;
+        let readInfo = `📄 **Read File**\n📋 Call ID: ${callId}\n📁 **Path**: ${readPath}`;
+        if (startLine && endLine) {
+          readInfo += `\n📄 **Lines**: ${startLine}-${endLine}`;
+        }
+        return readInfo;
+        
+      case 'Grep':
+        // Grep工具：显示搜索模式
+        const pattern = params.pattern || 'N/A';
+        const searchPaths = params.paths || ['.'];
+        return `🔍 **Grep Search**\n📋 Call ID: ${callId}\n🔎 **Pattern**: ${pattern}\n📁 **Paths**: ${searchPaths.join(', ')}`;
+        
+      case 'Glob':
+        // Glob工具：显示匹配模式
+        const globPattern = params.pattern || 'N/A';
+        const globPaths = params.paths || ['.'];
+        return `📂 **Glob Search**\n📋 Call ID: ${callId}\n🎯 **Pattern**: ${globPattern}\n📁 **Paths**: ${globPaths.join(', ')}`;
+        
+      case 'WaitingTool':
+        // WaitingTool：显示等待时间和原因
+        const seconds = params.seconds || 0;
+        const waitReason = params.reason || 'No reason provided';
+        return `⏳ **Waiting**\n📋 Call ID: ${callId}\n⏰ **Duration**: ${seconds}s\n💬 **Reason**: ${waitReason}`;
+        
       default:
         // 默认格式：显示工具名和call_id
         return `🔧 **${toolName}**\n📋 Call ID: ${callId}`;
@@ -1355,10 +1384,31 @@ export class ReactCLIClient implements IClient {
         
         return todoContent;
         
+              case 'ReadFile':
+        // ReadFile工具：显示路径和内容（最多50行）
+        let readFileContent = `${success ? '✅' : '❌'} **Read File**\n📄 ${message}`;
+        
+        if (result.path) {
+          readFileContent += `\n📁 **Path**: \`${result.path}\``;
+        }
+        
+        if (result.content) {
+          const contentLines = result.content.split('\n');
+          const limitedContent = contentLines.slice(0, 50).join('\n');
+          const hasMore = contentLines.length > 50;
+          
+          readFileContent += `\n\n📄 **Content**:\n\`\`\`\n${limitedContent}`;
+          if (hasMore) {
+            readFileContent += `\n... (${contentLines.length - 50} more lines)`;
+          }
+          readFileContent += '\n```';
+        }
+        
+        return readFileContent;
       case 'AgentStopTool':
         // AgentStopTool：显示停止结果
         return `${success ? '✅' : '❌'} **Agent Stop Tool**\n📄 ${message}`;
-        
+      
       case 'BashCommand':
         // BashCommand工具：显示命令执行结果
         let bashContent = `${success ? '✅' : '❌'} **Bash Command**\n📄 ${message}`;
@@ -1377,6 +1427,58 @@ export class ReactCLIClient implements IClient {
         }
         
         return bashContent;
+        
+      case 'Grep':
+        // Grep工具：显示搜索结果
+        let grepContent = `${success ? '✅' : '❌'} **Grep Search**\n📄 ${message}`;
+        
+        if (result.matches && result.matches.length > 0) {
+          grepContent += `\n\n🔍 **Search Results** (${result.total_matches} matches in ${result.files_searched} files):`;
+          
+          // 显示前5个匹配结果
+          const displayMatches = result.matches.slice(0, 5);
+          for (const match of displayMatches) {
+            grepContent += `\n\n📁 **${match.file_path}** (Line ${match.line_number}):`;
+            grepContent += `\n\`\`\`\n${match.line_content}\n\`\`\``;
+          }
+          
+          if (result.matches.length > 5) {
+            grepContent += `\n\n... (${result.matches.length - 5} more matches)`;
+          }
+        }
+        
+        return grepContent;
+        
+      case 'Glob':
+        // Glob工具：显示匹配文件
+        let globContent = `${success ? '✅' : '❌'} **Glob Search**\n📄 ${message}`;
+        
+        if (result.files && result.files.length > 0) {
+          globContent += `\n\n📂 **Found Files** (${result.total_matches} matches):`;
+          
+          // 显示前20个文件
+          const displayFiles = result.files.slice(0, 20);
+          for (const file of displayFiles) {
+            const sizeInfo = file.size_bytes ? ` (${Math.round(file.size_bytes / 1024)}KB)` : '';
+            globContent += `\n• \`${file.file_path}\`${sizeInfo}`;
+          }
+          
+          if (result.files.length > 20) {
+            globContent += `\n... (${result.files.length - 20} more files)`;
+          }
+        }
+        
+        return globContent;
+        
+      case 'WaitingTool':
+        // WaitingTool：显示等待结果
+        let waitingContent = `${success ? '✅' : '❌'} **Waiting**\n📄 ${message}`;
+        
+        if (result.waited_seconds) {
+          waitingContent += `\n⏰ **Actually Waited**: ${result.waited_seconds}s`;
+        }
+        
+        return waitingContent;
         
       default:
         // 默认格式

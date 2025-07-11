@@ -56,31 +56,19 @@ execute: async (params, agent?: IAgent) => {
     
     const linesRead = content ? content.split('\n').length : 0;
     
-    // Update the coding context with the read file
-    const contextData = codingContext.getData();
-    const openFiles = { ...contextData.open_files };
-    
-    openFiles[params.path] = {
-        content_hash: String(Date.now()), // Simple hash based on time
-        last_read_content: content
-    };
-    
-    codingContext.setData({
-        ...contextData,
-        open_files: openFiles
-    });
-    
     return {
         success: true,
         content,
-        linesRead
+        linesRead,
+        path: params.path
     };
     } catch (error: any) {
     return {
         success: false,
         message: error.message || 'Unknown error',
         content: '',
-        linesRead: 0
+        linesRead: 0,
+        path: params.path
     };
     }
 },

@@ -69,13 +69,13 @@ export class ReactCLILauncher {
       eventDisplay: {
         session: {
           showStarted: true,
-          showEnded: true,
-          showSwitched: true
+          showEnded: false,
+          showSwitched: false
         },
         agent: {
           showStepCompleted: false,
           showStepDetails: false,
-          showStopped: true,
+          showStopped: false,
           showResponse: true,
           showReasoning: false
         },
