@@ -1,7 +1,7 @@
 import { ILLM } from '@continue-reasoning/core';
-import { IAgent, ITool, AgentResult, AgentStep as IAgentStep, ToolCallDefinition } from '../interfaces';
-import { quickExtract } from '../xml-extractor';
-import { logger } from '../utils/logger';
+import { IAgent, ITool, AgentResult, AgentStep as IAgentStep, ToolCallDefinition } from '../interfaces.js';
+import { quickExtract } from '../xml-extractor.js';
+import { logger } from '../utils/logger.js';
 
 // 导入 PromptProcessor 相关类型
 type ChatMessage = {

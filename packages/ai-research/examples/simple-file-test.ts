@@ -1,10 +1,10 @@
-import { ModularFunctionCallAgent, DefaultPromptProcessor } from '../function-call/agent';
+import { ModularFunctionCallAgent, DefaultPromptProcessor } from '../function-call/agent.js';
 import { OpenAIWrapper } from '@continue-reasoning/core';
 import { OPENAI_MODELS } from '@continue-reasoning/core';
-import { ThinkTool } from '../tools/think';
-import { createFileTool } from "../tools/file-tool";
-import { createCalculatorTool } from "../tools";
-import { logger, LogLevel } from '../utils/logger';
+import { ThinkTool } from '../tools/think.js';
+import { createFileTool } from "../tools/file-tool.js";
+import { createCalculatorTool } from "../tools.js";
+import { logger, LogLevel } from '../utils/logger.js';
 
 // 设置日志级别为DEBUG以查看所有日志
 logger.setLogLevel(LogLevel.DEBUG);

@@ -1,6 +1,6 @@
 import { ILLM } from '@continue-reasoning/core';
-import { IAgent, ITool, AgentResult, AgentStep } from '../interfaces';
-import { quickExtract } from '../xml-extractor';
+import { IAgent, ITool, AgentResult, AgentStep } from '../interfaces.js';
+import { quickExtract } from '../xml-extractor.js';
 
 // 文本提取函数类型定义
 export type TextExtractorFunc = (responseText: string, currentStep: AgentStep) => void;
