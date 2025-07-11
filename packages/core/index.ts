@@ -38,3 +38,6 @@ export * from './prompts/index.js';
 
 // Session management
 export * from './session/index.js';
+
+// Tools
+export { WaitingTool } from './tools/waiting.js';
