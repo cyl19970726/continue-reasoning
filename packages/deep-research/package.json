@@ -5,6 +5,9 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "deep-research": "./dist/start.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -34,11 +37,13 @@
     "test:watch": "vitest --watch",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
-    "example:vla": "tsx examples/vla-research-example.ts"
+    "example:vla": "tsx examples/vla-research-example.ts",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@continue-reasoning/core": "workspace:*",
+    "@continue-reasoning/core": "0.1.0",
     "@types/uuid": "^10.0.0",
+    "commander": "^12.1.0",
     "uuid": "^11.1.0",
     "zod": "^3.24.2"
   },
@@ -49,5 +54,21 @@
   },
   "peerDependencies": {
     "typescript": "^5"
-  }
-} 
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/continue-reasoning/continue-reasoning"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "research",
+    "deep-research",
+    "cli"
+  ],
+  "license": "MIT",
+  "author": "Continue Reasoning Team"
+}
