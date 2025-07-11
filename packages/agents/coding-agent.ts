@@ -1,4 +1,4 @@
-import { StreamAgent, AgentOptions, LogLevel, AnyTool, IContext, ToolExecutionResult, IEventBus } from '@continue-reasoning/core';
+import { StreamAgent, AgentOptions, LogLevel, AnyTool, IContext, ToolExecutionResult, IEventBus, MessageType } from '@continue-reasoning/core';
 import { createCodingContext } from './contexts/coding/index.js';
 import { logger } from '@continue-reasoning/core';
 import { ICodingContext } from './contexts/coding/coding-context.js';
@@ -32,8 +32,21 @@ export class CodingAgent extends StreamAgent {
         const codingContext = createCodingContext(workspacePath);
         
         // Create enhanced prompt processor, system prompt will be overridden in CodingAgent
-        const enhancedPromptProcessor = createEnhancedPromptProcessor('');
-        enhancedPromptProcessor.setEnableToolCallsForStep
+        // Default configuration - keep reasonable amounts for each type
+        let config = {
+            [MessageType.MESSAGE]: 100,        // Keep last 100 steps for messages
+            [MessageType.TOOL_CALL]: 20,      // Keep last 10 steps for tool calls
+            [MessageType.ERROR]: 10,          // Keep last 20 steps for errors  
+            [MessageType.THINKING]: 3,        // Keep last 8 steps for thinking messages
+            [MessageType.ANALYSIS]: 3,        // Keep last 8 steps for analysis messages
+            [MessageType.PLAN]: 3,            // Keep last 8 steps for plan messages
+            [MessageType.REASONING]: 3,       // Keep last 8 steps for reasoning messages
+            [MessageType.INTERACTIVE]: 5,     // Keep last 5 steps for interactive messages
+            [MessageType.RESPONSE]: 5,       // Keep last 10 steps for response messages
+            [MessageType.STOP_SIGNAL]: 0,     // Keep last 3 steps for stop signal messages
+        };
+        const enhancedPromptProcessor = createEnhancedPromptProcessor('',undefined,'enhanced',config);
+        enhancedPromptProcessor.setEnableToolCallsForStep(() => true);
         super(
             id,
             name,
