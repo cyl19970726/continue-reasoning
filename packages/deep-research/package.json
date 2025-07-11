@@ -1,0 +1,53 @@
+{
+  "name": "@continue-reasoning/deep-research",
+  "version": "0.1.0",
+  "description": "Deep research agent for continue-reasoning framework",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./agents/*": {
+      "types": "./dist/agents/*.d.ts",
+      "import": "./dist/agents/*.js"
+    },
+    "./tools/*": {
+      "types": "./dist/tools/*.d.ts",
+      "import": "./dist/tools/*.js"
+    },
+    "./utils/*": {
+      "types": "./dist/utils/*.d.ts",
+      "import": "./dist/utils/*.js"
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "dev": "tsc --build --watch",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "test": "vitest",
+    "test:watch": "vitest --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx",
+    "example:vla": "tsx examples/vla-research-example.ts"
+  },
+  "dependencies": {
+    "@continue-reasoning/core": "workspace:*",
+    "@types/uuid": "^10.0.0",
+    "uuid": "^11.1.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5",
+    "vitest": "^3.1.1"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+} 
