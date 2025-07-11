@@ -1,5 +1,5 @@
 import z from "zod";
-import { ITool, ToolCallDefinition } from "../interfaces";
+import { ITool, ToolCallDefinition } from "../interfaces.js";
 
 export class ThinkTool implements ITool {
     name = 'think';

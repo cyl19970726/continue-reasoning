@@ -1,4 +1,4 @@
-import { ITool, ToolCallDefinition } from '../interfaces';
+import { ITool, ToolCallDefinition } from '../interfaces.js';
 import { z } from 'zod';
 
 // 天气API工具

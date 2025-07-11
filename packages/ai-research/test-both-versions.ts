@@ -1,7 +1,7 @@
-import { createThinkToolAgent, createThinkTextAgent } from "./function-call";
-import { createCalculatorTool } from "./tools";
-import { createWeatherTool } from "./tools/weather-tool";
-import { OpenAIWrapper, OPENAI_MODELS, AnthropicWrapper, ANTHROPIC_MODELS } from "@continue-reasoning/core";
+import { createThinkToolAgent, createThinkTextAgent } from "./function-call/index.js";
+import { createCalculatorTool } from "./tools/index.js";
+import { createWeatherTool } from "./tools/weather-tool.js";
+import { OpenAIWrapper, OPENAI_MODELS } from "@continue-reasoning/core";
 import { z } from "zod";
 
 // 手动创建 ThinkTool 避免导入问题

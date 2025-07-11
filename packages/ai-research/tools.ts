@@ -1,4 +1,4 @@
-import { ITool, ToolCallDefinition } from './interfaces';
+import { ITool, ToolCallDefinition } from './interfaces.js';
 import { z } from 'zod';
 
 // Web 搜索工具（模拟实现）

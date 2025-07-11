@@ -15,7 +15,9 @@
   "references": [
     { "path": "./packages/core" },
     { "path": "./packages/agents" },
-    { "path": "./packages/react-cli" }
+    { "path": "./packages/react-cli" },
+    { "path": "./packages/deep-research" },
+    { "path": "./packages/ai-research" }
   ],
   "include": [],
   "files": []

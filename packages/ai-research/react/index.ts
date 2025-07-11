@@ -1,7 +1,7 @@
 import { ILLM } from '@continue-reasoning/core';
-import { IAgent, ITool, AgentResult, AgentStep } from '../interfaces';
-import { SimpleXmlExtractor } from '../xml-extractor';
-import { zodToJsonNostrict } from '@continue-reasoning/core/utils/jsonHelper';
+import { IAgent, ITool, AgentResult, AgentStep } from '../interfaces.js';
+import { SimpleXmlExtractor } from '../xml-extractor.js';
+import { zodToJsonNostrict } from '@continue-reasoning/core';
 
 export class ReactAgent implements IAgent {
   name: string;
@@ -65,7 +65,7 @@ ${toolsDescription}
         if (!this.llm) {
           throw new Error('LLM not initialized');
         }
-        const response = await this.llm.call(conversation, []);
+        const response = await this.llm.callAsync(conversation, []);
         const responseText = response.text;
         
         console.log('LLM 响应:', responseText);

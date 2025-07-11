@@ -1,11 +1,10 @@
-import { FunctionCallAgent } from '../function-call';
-import { DefaultPromptProcessor, ModularFunctionCallAgent } from '../function-call/agent';
+import { DefaultPromptProcessor, ModularFunctionCallAgent } from '../function-call/agent.js';
 import { OpenAIWrapper } from '@continue-reasoning/core';
 import { OPENAI_MODELS } from '@continue-reasoning/core';
-import { ThinkTool } from '../tools/think';
-import { createCalculatorTool } from "../tools";
-import { createWeatherTool } from "../tools/weather-tool";
-import { logger, LogLevel } from '../utils/logger';
+import { ThinkTool } from '../tools/think.js';
+import { createCalculatorTool } from "../tools.js";
+import { createWeatherTool } from "../tools/weather-tool.js";
+import { logger, LogLevel } from '../utils/logger.js';
 
 // 设置日志级别
 logger.setLogLevel(LogLevel.INFO);
