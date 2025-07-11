@@ -3,7 +3,6 @@
 import { program } from 'commander';
 import { launchCodingAgent, launchReactCLI } from './src/launchers/index.js';
 import { ReactCLIConfig } from '@continue-reasoning/react-cli';
-import { fa } from 'zod/v4/locales';
 const reactConfig: ReactCLIConfig = {
     name: 'coding-agent',
     theme: 'dark',
